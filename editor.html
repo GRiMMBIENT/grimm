@@ -1,0 +1,230 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Copyright (C) 2026 GR!MM
+     GR!MM's editor: the FM-1's sounds, samples and a backup, over Web MIDI SysEx (docs/EDITOR_PROTOCOL.md). Its sections
+     in a left menu and its way of editing (the tracks' sounds, live, as the knobs) follow SLOOP's editor (isod89/sloop-fm1,
+     web/, GPL-3.0); its code and look are GR!MM's. The sounds play here in GR!MM's own engine (grimm.wasm, the firmware's
+     code), its screen beside the keys. The font: Press Start 2P (SIL OFL 1.1, LICENSES/OFL-PressStart2P.txt). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GR!MM editor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 fill=%22%230b0b0a%22/%3E%3Crect x=%223%22 y=%223%22 width=%2210%22 height=%2210%22 fill=%22%23c8321e%22/%3E%3C/svg%3E">
+<style>
+@font-face { font-family: "Press Start 2P"; src: url("PressStart2P-Regular.ttf") format("truetype"); font-display: block; }
+:root { --k: #0b0b0a; --d: #26251f; --m: #5e5b54; --l: #b8b4a9; --w: #e8e4d8; --a: #c8321e; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--k); color: var(--l); }
+body { font: 13px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
+.px, h1, h2, h3, button, label, select, input, nav a, .slot, table { font-family: "Press Start 2P", monospace; font-size: 8px; line-height: 1.6; }
+header { display: flex; gap: 6px; padding: 6px; }
+header .tag { background: var(--a); color: var(--k); padding: 8px 10px; font-size: 16px; }
+header .bar { flex: 1; background: var(--d); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+header .bar span { font-size: 8px; }
+header .bar b { font-size: 16px; font-weight: normal; color: var(--l); }
+#conn { color: var(--m); }
+#conn.on { color: var(--w); }
+.wrap { display: flex; gap: 6px; padding: 0 6px 6px; min-height: calc(100vh - 54px); }
+nav { width: 132px; flex: none; display: flex; flex-direction: column; gap: 4px; }
+nav a { display: block; background: var(--d); color: var(--l); padding: 10px 8px; text-decoration: none; cursor: pointer; }
+nav a.on { background: var(--a); color: var(--k); }
+nav a.off { color: var(--m); }
+main { flex: 1; min-width: 0; }
+section { display: none; }
+section.on { display: block; }
+h2 { font-size: 16px; font-weight: normal; margin: 6px 0 12px; color: var(--w); }
+h3 { font-weight: normal; color: var(--m); margin: 16px 0 6px; }
+p.note { color: var(--m); max-width: 60em; margin: 6px 0; }
+button { background: var(--d); color: var(--w); border: 2px solid var(--m); padding: 8px 10px; cursor: pointer; }
+button:hover { border-color: var(--l); }
+button.go { background: var(--a); color: var(--k); border-color: var(--a); }
+button:disabled { opacity: .35; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+select, input[type=text], input[type=number] { background: var(--k); color: var(--w); border: 2px solid var(--m); padding: 6px; }
+#msgs { position: sticky; top: 0; z-index: 3; }
+#msg { background: var(--d); padding: 8px 10px; margin-bottom: 6px; min-height: 30px; color: var(--l); }
+#msg.ok { color: var(--w); border-left: 6px solid var(--l); }
+#msg.err { color: var(--w); border-left: 6px solid var(--a); }
+#prog { height: 6px; background: var(--d); margin-bottom: 6px; visibility: hidden; }
+#prog i { display: block; height: 100%; width: 0; background: var(--a); }
+table.kv td { padding: 3px 14px 3px 0; }
+table.kv td:first-child { color: var(--m); }
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 3px; }
+.slot { background: var(--d); padding: 7px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 2px solid transparent; }
+.slot .n { color: var(--m); }
+.slot.empty { color: var(--m); }
+.slot.sel { border-color: var(--a); }
+.slot.dirty::after { content: " *"; color: var(--a); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.grp { background: var(--d); padding: 10px; }
+.grp h3 { margin: 0 0 8px; color: var(--l); }
+.ctl { margin: 0 0 10px; }
+.ctl .lab { display: flex; justify-content: space-between; gap: 8px; }
+.ctl .lab span { color: var(--w); }
+input[type=range] { width: 100%; appearance: none; -webkit-appearance: none; height: 18px; background: var(--k); margin: 4px 0 0; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 18px; background: var(--a); border: 0; }
+input[type=range]::-moz-range-thumb { width: 12px; height: 18px; background: var(--a); border: 0; border-radius: 0; }
+.ops { width: 100%; border-collapse: collapse; }
+.ops td { padding: 2px 4px 2px 0; vertical-align: middle; }
+.ops td.o { color: var(--w); width: 34px; }
+.ops input[type=range] { margin: 0; }
+.ops .v { color: var(--w); width: 56px; padding-right: 16px; text-align: right; }
+canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pixelated; background: var(--k); margin-top: 6px; }
+.toggle { border-color: var(--m); }
+.toggle.on { background: var(--l); color: var(--k); }
+.kbd { position: relative; height: 112px; max-width: 760px; margin-top: 8px; user-select: none; touch-action: none; }
+.kbd .w, .kbd .b { position: absolute; top: 0; border: 2px solid var(--k); cursor: pointer; }
+.kbd .w { background: var(--l); height: 112px; }
+.kbd .b { background: var(--d); height: 66px; z-index: 2; }
+.kbd .down { background: var(--a) !important; }
+.kbd span { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; color: var(--k); }
+.kbd .b span { color: var(--m); }
+.smp { display: grid; grid-template-columns: 70px 1fr; gap: 6px; background: var(--d); padding: 10px; margin-bottom: 6px; }
+.smp .drop { border: 2px dashed var(--m); padding: 10px; color: var(--m); }
+.smp .drop.hot { border-color: var(--a); color: var(--w); }
+.big { font-size: 16px; color: var(--w); }
+#log { background: var(--k); border: 2px solid var(--d); color: var(--l); padding: 8px; height: 260px; overflow: auto;
+       font: 11px/1.5 Consolas, "Courier New", monospace; white-space: pre-wrap; word-break: break-all; margin: 6px 0; }
+.trks { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; }
+.trk { flex: 1 1 200px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.trk b { font-weight: normal; color: var(--a); }
+.trk.on { background: var(--a); color: var(--k); border-color: var(--a); }
+.trk.on b { color: var(--k); }
+.play { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+#screen { width: 480px; max-width: 100%; aspect-ratio: 1; image-rendering: pixelated; display: block; background: var(--k); }
+.play .keys { flex: 1 1 360px; min-width: 0; }
+.pickbar { position: sticky; top: 46px; z-index: 2; background: var(--k); padding: 4px 0; }
+a.lnk { color: var(--l); }
+</style>
+</head>
+<body>
+<header>
+  <div class="tag px">GR!MM</div>
+  <div class="bar"><b class="px">EDITOR</b><span><a class="lnk px" href="index.html">DEMO</a> · <span id="conn" class="px">NOT CONNECTED</span></span></div>
+</header>
+<div class="wrap">
+  <nav>
+    <a data-s="connect">CONNECT</a>
+    <a data-s="sounds">SOUNDS</a>
+    <a data-s="editor">SOUND EDITOR</a>
+    <a data-s="samples">SAMPLES</a>
+    <a data-s="backup">BACKUP</a>
+  </nav>
+  <main>
+    <div id="msgs"><div id="msg" class="px">LOADING GR!MM…</div><div id="prog"><i></i></div></div>
+
+    <section id="s-connect">
+      <h2>CONNECT</h2>
+      <div class="row">
+        <button id="b-connect" class="go">CONNECT FM-1 (USB)</button>
+        <button id="b-try">TRY WITHOUT AN FM-1</button>
+        <button id="b-disconnect">DISCONNECT</button>
+      </div>
+      <p class="note">Connect the FM-1 with a USB data cable, switch it on with GR!MM, close other apps that use its MIDI
+        port, then click CONNECT and allow MIDI (SysEx) when the browser asks. Chrome or Edge on a computer.
+        TRY WITHOUT AN FM-1 runs GR!MM's own code in this page instead: everything works, nothing is kept.</p>
+      <p class="note">The FM-1 only accepts writes while it is stopped and silent: stop the sequencer and let every
+        note, release and DELAY or SPACE tail end. Nothing is ever written without you clicking a button.</p>
+      <table class="kv" id="info"></table>
+      <div class="row"><button id="b-log" class="toggle">MIDI LOG</button><button id="b-logclear">CLEAR LOG</button></div>
+      <pre id="log" hidden></pre>
+    </section>
+
+    <section id="s-sounds">
+      <h2>SOUNDS</h2>
+      <div class="row">
+        <button id="b-readall" class="go">READ ALL FROM FM-1</button>
+        <span id="readat" class="px"></span>
+      </div>
+      <div class="pickbar">
+        <div class="row"><span class="px" id="pickname">—</span></div>
+        <div class="row">
+          <span class="px">LOAD TO</span>
+          <button id="b-load0" class="go">T1</button><button id="b-load1" class="go">T2</button>
+          <button id="b-load2" class="go">T3</button><button id="b-load3" class="go">T4</button>
+          <button id="b-export">EXPORT</button>
+          <span class="px">· USER SLOT:</span>
+          <button id="b-rename">RENAME</button>
+          <button id="b-clear">CLEAR</button>
+          <button id="b-import">IMPORT</button>
+          <button id="b-send" class="go">SEND TO FM-1</button>
+          <input type="file" id="f-import" accept=".json,.grimmsound" hidden>
+        </div>
+      </div>
+      <p class="note">Click a sound, then LOAD TO a track (or double-click: the track in the editor): it plays there at once,
+        on the FM-1 too, and the SOUND EDITOR opens on it. RENAME, CLEAR and IMPORT change a user slot here (marked *)
+        until SEND TO FM-1 writes it.</p>
+      <h3>USER SLOTS (ON THE FM-1)</h3>
+      <div class="slots" id="user"></div>
+      <h3>FACTORY SOUNDS (BUILT IN)</h3>
+      <div class="slots" id="factory"></div>
+    </section>
+
+    <section id="s-editor">
+      <div class="trks" id="tracks"></div>
+      <h2 id="ed-title">T1</h2>
+      <p class="note" id="ed-from"></p>
+      <div class="row">
+        <button id="b-store" class="go">STORE IN SLOT</button>
+        <select id="ed-slot"></select>
+        <button id="b-eexport">EXPORT</button>
+        <button id="b-eimport">IMPORT</button>
+        <button id="b-revert">REVERT</button>
+        <input type="file" id="f-eimport" accept=".json,.grimmsound" hidden>
+      </div>
+      <div class="grp play">
+        <canvas id="screen" width="240" height="240"></canvas>
+        <div class="keys">
+          <h3>PLAY: GR!MM IN THIS PAGE, THE SELECTED TRACK</h3>
+          <div class="kbd" id="kbd"></div>
+          <div class="row">
+            <button id="b-panic">ALL NOTES OFF</button>
+            <span class="px">KEYS: Z X C V B N M , . / · S D F H J L ; ' · Q .. O (HIGHER)</span>
+          </div>
+          <p class="note">Every move of a control reaches the track at once: on the FM-1 (live, as its knobs; nothing is
+            saved until STORE IN SLOT) and in GR!MM here, whose screen this is and whose keys these are. Turn a knob on
+            the FM-1 and this page follows. A latched note stays until its key again, or ALL NOTES OFF. The TRACK
+            filter (HOME's CUTOFF, RESONANCE, FX) belongs to the track, not to a sound.</p>
+        </div>
+      </div>
+      <div class="grid" id="ed" style="margin-top:6px"></div>
+      <div class="grp" id="fm" style="margin-top:6px"></div>
+    </section>
+
+    <section id="s-samples">
+      <h2>SAMPLES</h2>
+      <div class="row"><button id="b-sinfo">REFRESH</button><button id="b-sfactory">RESTORE FACTORY SAMPLES</button></div>
+      <div id="smp"></div>
+      <p class="note">Any WAV (8 to 32 bit, float, mono or stereo, any rate) becomes mono, 22050 Hz, IMA ADPCM, as
+        tools/fm1_sample_upload.py makes it; a slot holds 6.64 s (longer: cut, with a short fade). The root note is C4
+        unless the file name has one ("drone_A2.wav"). A name is 8 characters (the slot's, what the FM-1 shows): a longer
+        one keeps its number ("Sample-002": SAMP-002). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
+        NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot that holds
+        nothing.</p>
+    </section>
+
+    <section id="s-backup">
+      <h2>BACKUP</h2>
+      <div class="row">
+        <button id="b-backup" class="go">MAKE A BACKUP</button>
+        <button id="b-restore">RESTORE FROM A FILE…</button>
+        <input type="file" id="f-restore" accept=".json" hidden>
+      </div>
+      <p class="note">A backup holds all 64 user sounds, slots A–D and the settings (the same file as
+        tools/fm1_editor_test.py makes). Restoring first makes a backup of what the FM-1 has now (downloaded), then
+        writes everything, then reads it back to check. Samples are not in it: the FM-1 cannot send them back yet; keep
+        their WAV files.</p>
+    </section>
+    <footer class="note">
+      <p><b><a class="lnk" href="index.html">Try the GR!MM demo</a></b>: the FM-1's panel in your browser, the same firmware.</p>
+      <p>GR!MM · <a class="lnk" href="LICENSE">GPL-3.0-only</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm">source</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a class="lnk" href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a class="lnk" href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a class="lnk" href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a class="lnk" href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · built with Emscripten (<a class="lnk" href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a class="lnk" href="LICENSES/MIT-musl.txt">MIT</a>)</p>
+      <p>Built on Dinghy (zvenson), Felucca (Leo Kuroshita, Hügelton Instruments) and SLOOP (isod89); the editor's
+        sections and live editing follow SLOOP's editor. M-VAVE and FM-1 are trademarks of their owners; GR!MM is not
+        affiliated with or endorsed by them.</p>
+    </footer>
+  </main>
+</div>
+<script type="module" src="editor.js"></script>
+</body>
+</html>
