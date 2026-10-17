@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Sequencer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 48px; display: flex; gap: 6px; padding: 6px; box-sizing: border-box">
+<div style="background: {{accent}}; color: #0b0b0a; font-size: 16px; display: flex; align-items: center; padding: 0 10px">SEQ</div>
+<div style="background: #26251f; flex-grow: 1; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px"><span>T1 VA</span><span style="color: #5e5b54">48 ST</span></div>
+</div>
+<div style="position: absolute; left: 24px; top: 64px; display: grid; grid-template-columns: repeat(8, 25px); gap: 7px">
+<sc-for list="{{dots}}" as="dt" hint-placeholder-count="64">
+<div style="width: 25px; height: 25px; outline: {{dt.ring}}; outline-offset: 2px; display: grid; grid-template-columns: repeat(5, 5px)">
+<sc-for list="{{dt.cells}}" as="c" hint-placeholder-count="25">
+<div style="width: 5px; height: 5px; background: {{c.c}}"></div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 296px; top: 64px; width: 166px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 8px; color: #5e5b54">STEP</div>
+<div style="font-size: 32px">06</div>
+<div style="font-size: 8px; color: #5e5b54; margin-top: 8px">CHORD</div>
+<div style="font-size: 16px; color: {{accent}}">Cm7</div>
+<div style="font-size: 8px; color: #5e5b54; margin-top: 8px">PLAYING</div>
+<div style="font-size: 16px">13/48</div>
+</div>
+<div style="position: absolute; left: 296px; top: 230px; width: 166px; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{legend}}" as="lg" hint-placeholder-count="5">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 8px; color: #5e5b54">
+<div style="width: 10px; height: 10px; background: {{lg.c}}"></div>
+<span>{{lg.t}}</span>
+</div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 6px; top: 330px; width: 468px; height: 144px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{slabs}}" as="s" hint-placeholder-count="4">
+<div style="background: #26251f; padding: 10px 8px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box">
+<div style="font-size: 12px">{{s.label}}</div>
+<div style="display: flex; gap: 2px">
+<sc-for list="{{s.segs}}" as="g" hint-placeholder-count="8">
+<div style="flex-grow: 1; height: 28px; background: {{g.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 20px">{{s.val}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9', w: '#e8e4d8' };
+    const dot = ['.XXX.', 'XXXXX', 'XXXXX', 'XXXXX', '.XXX.'].join('');
+    const bar = ['.....', 'XXXXX', 'XXXXX', 'XXXXX', '.....'].join('');
+    const pat = ('ntt..c.r' + '..n.?.n.' + 'n...ntt.' + '?.c...r.' + 'ntt..n.?' + 'c.....n.' + 'xxxxxxxx' + 'xxxxxxxx').split('');
+    const dots = pat.map((t, i) => {
+      const mask = t === 't' ? bar : dot;
+      const cells = mask.split('').map((on, j) => {
+        if (on !== 'X') return { c: 'transparent' };
+        const x = j % 5, y = Math.floor(j / 5);
+        if (i === 13) return { c: P.w };
+        if (t === 'x') return { c: P.d };
+        if (t === '.') return { c: P.m };
+        if (t === 'c') return { c: A };
+        if (t === '?') return { c: (x + y) % 2 ? P.l : P.m };
+        if (t === 'r') return { c: x === 2 ? P.k : P.l };
+        return { c: P.l };
+      });
+      return { cells, ring: i === 5 ? '2px solid ' + P.w : 'none' };
+    });
+    const legend = [
+      { t: 'NOTE', c: P.l }, { t: 'CHORD', c: A }, { t: 'CHANCE', c: P.m },
+      { t: 'NOW', c: P.w }, { t: 'OFF (>48)', c: P.d }
+    ];
+    const vals = [['NOTE', 'C3', 3], ['CHNC', '100', 8], ['RATCH', '1', 1], ['LEN', '1', 1]];
+    const slabs = vals.map((v) => ({ label: v[0], val: v[1], segs: Array.from({ length: 8 }, (_, j) => ({ col: j < v[2] ? P.l : P.k })) }));
+    return { accent: A, dots, legend, slabs };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Boot</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<div style="position: absolute; left: 160px; top: 96px; width: 160px; display: grid; grid-template-columns: repeat(16, 10px)">
+<sc-for list="{{eye}}" as="c" hint-placeholder-count="128">
+<div style="width: 10px; height: 10px; background: {{c.c}}"></div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 0; top: 200px; width: 480px; text-align: center; font-size: 48px; color: #b8b4a9">GR!MM</div>
+<div style="position: absolute; left: 120px; top: 256px; width: 240px; display: grid; grid-template-columns: repeat(30, 8px)">
+<sc-for list="{{drips}}" as="c" hint-placeholder-count="300">
+<div style="width: 8px; height: 8px; background: {{c.c}}"></div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 0; top: 420px; width: 480px; text-align: center; font-size: 8px; color: #5e5b54">FM-1 / DEATHDREAM FIRMWARE / V0.1</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9', w: '#e8e4d8', a: A };
+    const sp = (rows) => rows.join('').split('').map((ch) => ({ c: ch === '.' ? 'transparent' : P[ch] }));
+    const eye = sp(['....llllllll....', '..llmmmmmmmmll..', '.lmmmmaaaammmml.', 'lmmmmaawkaammmml', 'lmmmmaakkaammmml', '.lmmmmaaaammmml.', '..llmmmmmmmmll..', '....llllllll....']);
+    const dl = [0, 3, 0, 0, 6, 0, 2, 0, 0, 0, 8, 0, 0, 1, 0, 0, 4, 0, 0, 0, 7, 0, 0, 2, 0, 0, 5, 0, 0, 0];
+    const drips = [];
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 30; x++) drips.push({ c: y === 0 ? P.m : (y <= dl[x] ? A : 'transparent') });
+    return { accent: A, eye, drips };
+  }
+}
+</script>
+</body>
+</html>

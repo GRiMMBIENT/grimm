@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<sc-for list="{{fog}}" as="f" hint-placeholder-count="20">
+<div style="position: absolute; left: {{f.x}}px; top: {{f.y}}px; width: 6px; height: 6px; background: {{f.c}}"></div>
+</sc-for>
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 48px; display: flex; gap: 6px; padding: 6px; box-sizing: border-box">
+<div style="background: {{accent}}; color: #0b0b0a; font-size: 16px; display: flex; align-items: center; padding: 0 10px">HOME</div>
+<div style="background: #26251f; flex-grow: 1; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px"><span>T1 VA</span><span>&gt; 072</span></div>
+</div>
+<div style="position: absolute; left: 160px; top: 78px; width: 160px; display: grid; grid-template-columns: repeat(16, 10px)">
+<sc-for list="{{eye}}" as="c" hint-placeholder-count="128">
+<div style="width: 10px; height: 10px; background: {{c.col}}"></div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 0; top: 184px; width: 480px; display: flex; justify-content: center; gap: 54px">
+<sc-for list="{{candles}}" as="cd" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 8px">
+<div style="display: grid; grid-template-columns: repeat(6, 6px)">
+<sc-for list="{{cd.cells}}" as="c" hint-placeholder-count="78">
+<div style="width: 6px; height: 6px; background: {{c.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 8px; color: #5e5b54">{{cd.label}}</div>
+</div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 6px; top: 330px; width: 468px; height: 144px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{slabs}}" as="s" hint-placeholder-count="4">
+<div style="background: #26251f; padding: 10px 8px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box">
+<div style="font-size: 12px">{{s.label}}</div>
+<div style="display: flex; gap: 2px">
+<sc-for list="{{s.segs}}" as="g" hint-placeholder-count="8">
+<div style="flex-grow: 1; height: 28px; background: {{g.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 20px; color: {{s.vcol}}">{{s.val}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9', w: '#e8e4d8', a: A };
+    const sp = (rows) => rows.join('').split('').map((ch) => ({ col: ch === '.' ? 'transparent' : P[ch] }));
+    const eye = sp([
+      '....llllllll....',
+      '..llmmmmmmmmll..',
+      '.lmmmmaaaammmml.',
+      'lmmmmaawkaammmml',
+      'lmmmmaakkaammmml',
+      '.lmmmmaaaammmml.',
+      '..llmmmmmmmmll..',
+      '....llllllll....'
+    ]);
+    const flame = ['..aa..', '.aaaa.', '.alla.', '..la..'];
+    const candle = (h) => {
+      const f = [];
+      for (let i = 0; i < 4; i++) f.push(i >= 4 - h ? flame[i] : '......');
+      if (h === 0) { f[1] = '..m...'; f[2] = '...m..'; }
+      return sp([...f, '...m..', '.wlll.', '.wlll.', '.llll.', '.llll.', 'lllll.', '.llll.', '.llll.', 'dddddd']);
+    };
+    const tracks = [
+      { n: 'T1 VA', v: 80 }, { n: 'T2 FM', v: 55 }, { n: 'T3 GR', v: 95 }, { n: 'T4 TP', v: 0, mute: true }
+    ];
+    const candles = tracks.map((t, i) => ({ label: String(i + 1), cells: candle(t.v === 0 ? 0 : Math.ceil(t.v / 25)) }));
+    const slabs = tracks.map((t, i) => ({
+      label: t.n,
+      val: t.mute ? 'MUTE' : String(t.v).padStart(3, '0'),
+      vcol: t.mute ? P.m : (i === 0 ? A : P.l),
+      segs: Array.from({ length: 8 }, (_, j) => ({ col: j < Math.round(t.v / 12.5) ? (i === 0 ? A : P.l) : P.k }))
+    }));
+    let s = 7;
+    const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    const fog = Array.from({ length: 46 }, () => ({ x: Math.floor(rnd() * 79) * 6, y: 54 + Math.floor(rnd() * 44) * 6, c: rnd() < 0.65 ? P.d : P.m }));
+    return { accent: A, eye, candles, slabs, fog };
+  }
+}
+</script>
+</body>
+</html>

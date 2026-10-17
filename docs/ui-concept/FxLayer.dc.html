@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Perform Layer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 48px; display: flex; gap: 6px; padding: 6px; box-sizing: border-box">
+<div style="background: {{accent}}; color: #0b0b0a; font-size: 16px; display: flex; align-items: center; padding: 0 10px">FX</div>
+<div style="background: #26251f; flex-grow: 1; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px"><span>PERFORM</span><span style="color: #5e5b54">HOLD</span></div>
+</div>
+<div style="position: absolute; left: 24px; top: 62px; width: 432px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{fx}}" as="f" hint-placeholder-count="8">
+<div style="height: 76px; background: {{f.bg}}; color: {{f.fg}}; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between">
+<div style="font-size: 8px; opacity: 0.7">{{f.key}}</div>
+<div style="font-size: 8px; line-height: 14px; white-space: pre-line">{{f.name}}</div>
+</div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 24px; top: 238px; font-size: 8px; color: #5e5b54">MUTE (BLACK KEYS)</div>
+<div style="position: absolute; left: 24px; top: 256px; width: 432px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{mutes}}" as="mu" hint-placeholder-count="4">
+<div style="height: 48px; box-sizing: border-box; background: {{mu.bg}}; border: {{mu.border}}; color: {{mu.fg}}; font-size: 12px; display: flex; align-items: center; justify-content: center">{{mu.t}}</div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 6px; top: 330px; width: 468px; height: 144px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{slabs}}" as="s" hint-placeholder-count="4">
+<div style="background: #26251f; padding: 10px 8px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box">
+<div style="font-size: 12px">{{s.label}}</div>
+<div style="display: flex; gap: 2px">
+<sc-for list="{{s.segs}}" as="g" hint-placeholder-count="8">
+<div style="flex-grow: 1; height: 28px; background: {{g.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 20px">{{s.val}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9' };
+    const list = [
+      ['F3', 'FREEZE'], ['G3', 'REV\nTHROW'], ['A3', 'ECHO\nTHROW'], ['B3', 'TAPE\nSTOP'],
+      ['C4', 'REVERSE'], ['D4', 'FILTER\nDOWN'], ['E4', 'FILTER\nUP'], ['F4', 'STUTTER']
+    ];
+    const fx = list.map(([key, name], i) => ({ key, name, bg: i === 0 ? A : P.d, fg: i === 0 ? P.k : P.l }));
+    const mutes = ['T1', 'T2', 'T3', 'T4 X'].map((t, i) => ({
+      t, bg: i === 3 ? P.k : P.d, fg: i === 3 ? P.m : P.l, border: i === 3 ? '2px solid ' + P.m : 'none'
+    }));
+    const vals = [['FILT', '064', 4], ['REV', '080', 6], ['ECHO', '040', 3], ['PITCH', '+00', 4]];
+    const slabs = vals.map((v) => ({ label: v[0], val: v[1], segs: Array.from({ length: 8 }, (_, j) => ({ col: j < v[2] ? P.l : P.k })) }));
+    return { accent: A, fx, mutes, slabs };
+  }
+}
+</script>
+</body>
+</html>

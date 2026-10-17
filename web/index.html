@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Copyright (C) 2026 GR!MM
+     After Felucca's browser page, web/emu/index.html of hugelton/Felucca (Copyright (C) 2026 Leo Kuroshita
+     (@kurogedelic), Hügelton Instruments), which follows X0X's, web/emu/index.html of charlesvestal/fm1-x0x; both
+     GPL-3.0. GR!MM in the browser: firmware/src/grimm.c, the code the FM-1 runs, on a fake FM-1 (web/fm1_web.c). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GR!MM</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%231b1b1d%22/%3E%3Crect x=%224%22 y=%224%22 width=%228%22 height=%228%22 fill=%22%23d6d6d8%22/%3E%3C/svg%3E">
+<meta name="description" content="GR!MM, a firmware for the M-VAVE FM-1, running in your browser: the same code the instrument runs.">
+<style>
+:root { --bg: #111112; --body: #1d1d1f; --bed: #141415; --part: #2a2a2d; --edge: #3a3a3e; --fg: #d6d6d8;
+        --dim: #8a8a8e; --lit: #fff4d6; --latch: #79b8ff;
+        --key: #e7e4dc; --key-edge: #bdb8ad; --groove: #a7a299; --key-held: #f7d58a; --groove-lit: #ff9a1f;
+        color-scheme: dark; }
+html, body { background: var(--bg); }
+body { margin: 0; color: var(--fg); font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+main { padding: 16px; }
+a { color: inherit; }
+/* the FM-1: 161.5 x 96.5 mm; everything on it is placed in mm by panel.js (percentages of this box). At its widest,
+ * 1000 px, the 240 x 240 screen is 240 px: one CSS pixel per LCD pixel */
+.fm1 { position: relative; width: min(100%, 1000px); aspect-ratio: 161.5 / 96.5; margin: 0 auto;
+       background: var(--body); border-radius: 3.7cqw; container-type: inline-size; user-select: none;
+       -webkit-user-select: none; -webkit-touch-callout: none; }
+.fm1 > * { position: absolute; box-sizing: border-box; }
+.label { display: flex; align-items: flex-end; justify-content: center; font-size: 1.5cqw; font-weight: 600;
+         letter-spacing: .04em; color: var(--dim); white-space: nowrap; pointer-events: none; }
+.dial { border-radius: 50%; background: var(--part); border: .5cqw solid var(--bed); cursor: ns-resize; touch-action: none; }
+.dial::after { content: ""; position: absolute; left: 50%; top: 10%; width: 9%; height: 30%; margin-left: -4.5%;
+               border-radius: 1cqw; background: var(--fg); transform-origin: 50% 133%; transform: rotate(var(--a, 0deg)); }
+.btn { padding: 0; background: var(--part); color: var(--fg); border: 1px solid var(--edge); border-radius: .8cqw;
+       font: 600 1.2cqw/1.15 system-ui, sans-serif; letter-spacing: .04em; cursor: pointer; touch-action: none; }
+.btn.lit { background: var(--lit); color: #111; }
+.btn.held { outline: .25cqw solid var(--fg); outline-offset: .1cqw; }
+.btn.latched { outline: .25cqw solid var(--latch); outline-offset: .1cqw; }
+.btn .sc { position: absolute; right: .35cqw; top: .15cqw; font: 600 .95cqw/1 ui-monospace, Menlo, Consolas, monospace; opacity: .55; }
+.bezel { background: #0b0b0c; border-radius: 1.8cqw; }
+.bed { background: var(--bed); border-radius: 1.4cqw; }
+/* the keys: off-white with the groove down the middle; the groove lights (the key's LED), the key goes warm while pressed */
+.key { border-radius: 99cqw; background: var(--key); border: .12cqw solid var(--key-edge); cursor: pointer; touch-action: none; }
+.key::after { content: ""; position: absolute; left: 43%; width: 14%; top: 16%; bottom: 16%; border-radius: 1cqw;
+              background: var(--groove); box-shadow: inset 0 .1cqw .2cqw rgba(0, 0, 0, .35); }
+.key.held { background: var(--key-held); }
+.key.lit::after { background: var(--groove-lit); box-shadow: 0 0 .6cqw var(--groove-lit); }
+.dial:focus-visible, .btn:focus-visible, .key:focus-visible { outline: .25cqw solid var(--lit); outline-offset: .2cqw; }
+canvas { display: block; z-index: 2; background: #000; image-rendering: crisp-edges; image-rendering: pixelated; pointer-events: none; }
+canvas.big { z-index: 5; outline: 1px solid var(--edge); }
+.start { inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; z-index: 6;
+         background: rgba(0, 0, 0, .55); border-radius: 3.7cqw; }
+.start[hidden] { display: none; }
+.start button { font: inherit; font-size: 16px; padding: 10px 24px; background: var(--fg); color: #111; border: 0;
+                border-radius: 6px; cursor: pointer; }
+.start button:disabled { opacity: .5; cursor: progress; }
+.start p { margin: 0; max-width: 30em; text-align: center; }
+.under { width: min(100%, 1000px); margin: 10px auto 0; display: flex; flex-wrap: wrap; align-items: center;
+         justify-content: center; gap: 6px 16px; color: var(--dim); }
+.toggle { font: 600 11px system-ui, sans-serif; letter-spacing: .04em; background: var(--part); color: var(--dim);
+          border: 1px solid var(--edge); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.toggle b { font-weight: 600; }
+.toggle b.on { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+.keys { width: min(100%, 1000px); margin: 8px auto 0; text-align: center; color: var(--dim); line-height: 1.9; }
+.keys span { display: inline-block; max-width: calc(100% - 14px); margin: 0 7px; }   /* (a long one wraps inside the page) */
+.keys kbd { white-space: nowrap; }
+.keys.short { color: var(--fg); }
+kbd { font: 600 11px ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--edge); border-radius: 3px;
+      padding: 0 4px; color: var(--fg); }
+footer { max-width: 1000px; margin: 18px auto 0; text-align: center; color: var(--dim); font-size: 12px; }
+footer p { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+<section class="fm1" id="fm1" aria-label="The FM-1">
+  <canvas id="screen" width="240" height="240" role="img" aria-label="The screen"></canvas>
+  <div class="start" id="start"><button id="go" type="button">Switch on</button><p id="error" hidden></p></div>
+</section>
+
+<div class="under">
+  <button class="toggle" id="zoom" type="button" aria-pressed="false" title="Enlarge only the screen, to see its pixels">SCREEN <b data-s="1" class="on">1x</b> / <b data-s="2">2x</b></button>
+  <span id="status"></span>
+</div>
+
+<p class="keys short" aria-label="The keys, in short">
+  <b>Keys:</b>
+  <span><kbd>Z</kbd>–<kbd>/</kbd> <kbd>S</kbd>–<kbd>'</kbd> <kbd>Q</kbd>–<kbd>O</kbd> the keys</span>
+  <span><kbd>1</kbd>–<kbd>6</kbd> FX SCL ENV LFO EDIT GLO</span>
+  <span><kbd>7</kbd>–<kbd>=</kbd> HOME SAVE ARP SEQ PLAY REC</span>
+  <span><kbd>[</kbd> <kbd>]</kbd> OCT− OCT+</span>
+  <span><kbd>↑</kbd> <kbd>↓</kbd> SELECT · <kbd>←</kbd> <kbd>→</kbd> ALGORITHM</span>
+  <span>hold a button's key + other keys: its combos (SAVE + <kbd>Z</kbd>…)</span>
+  <span>right-click or <kbd>Shift</kbd>-click a button: held until clicked again</span>
+</p>
+<p class="keys" aria-label="What the buttons do">
+  <span><kbd>Z</kbd>–<kbd>/</kbd> <kbd>S</kbd>–<kbd>'</kbd> keys F3–A♯4, <kbd>Q</kbd>–<kbd>O</kbd> B4–G5 · ALGORITHM (<kbd>←</kbd> <kbd>→</kbd>): the track</span>
+  <span>EDIT (<kbd>5</kbd>): SOUND, (FM: FM ALGO, FM OP,) again SOURCE (VA, FM, SAMPLE: the factory samples URCHIN, LEAVE, NIKOLAI, M-SOFT, VOICE, WHEEL, PHYS, PHASE; LATCH)</span>
+  <span>ENV (<kbd>3</kbd>): ATTACK DECAY SUSTAIN RELEASE · FX (<kbd>1</kbd>): TAPE, GRAIN, DELAY, SPACE; hold FX + <kbd>Z</kbd> (F3): FREEZE, + G3 … F4: REV THROW, ECHO THROW, TAPE STOP, REVERSE, FILTER DOWN, FILTER UP, STUTTER (while held)</span>
+  <span>SEL (<kbd>2</kbd>): SCALE (the keys snap to it), again CHORD (TYPE, VOICING); hold SEL: the track's chord mode on / off</span>
+  <span>ARP (<kbd>9</kbd>): MODE, RATE, OCTAVES, GATE; hold ARP: the track's arp on / off (it plays the keys held; LATCH: they stay)</span>
+  <span>LFO (<kbd>4</kbd>): RATE, DEPTH, DESTINATION (PITCH, VOLUME, PAN, the source's knobs, REV, GRAIN), SHAPE</span>
+  <span>GLO (<kbd>6</kbd>): SONG (SECTION, PATTERN, REPEATS, MODE; REC there: song record); hold GLO + white keys 1–4: mute T1–T4, 5–8: solo</span>
+  <span>HOME (<kbd>7</kbd>): HOME (VOLUME, CUTOFF, RESONANCE, FX), MIXER 1, MIXER 2; hold: SYSTEM (COLOUR, MIDI CHANNEL, TUNE, SCREEN OFF), HOME again: SYSTEM 2 (MIDI LEARN, SEQ MIDI OUT, SAMPLES: RESTORE then OCT+ writes the four factory samples again)</span>
+  <span>SEQ (<kbd>0</kbd>): GRID, PATTERN SETTINGS · PLAY (<kbd>-</kbd>): start / stop · REC (<kbd>=</kbd>): record · SELECT (<kbd>↑</kbd> <kbd>↓</kbd>): SEQ the step (SEQ held: STEPS), HOME the tempo · PRESETS: SEQ the tempo</span>
+  <span>hold SEQ + white keys: CLEAR, RANDOM, SHIFT ←, SHIFT →, COPY, PASTE, DOUBLE, MUTATE · on SEQ's pages hold SEL + knobs: lock the step's sound (+ OCT−: clear)</span>
+  <span>SAVE (<kbd>8</kbd>): SOUNDS, PROJECTS; OCT+ (<kbd>]</kbd>) does the ACTION, OCT− backs out; hold + white keys 1–4: recall slots A–D, 5–8: save A–D · EDIT held + OCT−/OCT+: undo/redo · PRESETS: the sounds by category (SEQ: the tempo) · the work saves itself when stopped</span>
+  <span>drag or scroll a knob · right-click or <kbd>Shift</kbd>-click holds a button · MIDI in via Web MIDI</span>
+</p>
+
+<footer>
+  <p><b><a href="editor.html">Open the GR!MM editor</a></b>: edit sounds live, load samples, back up your FM-1 (Chrome or Edge)</p>
+  <p>GR!MM · the same <code>firmware/src/grimm.c</code> the FM-1 runs, compiled to WebAssembly · <a href="LICENSE">GPL-3.0-only</a> · <a href="https://github.com/GRiMMBIENT/grimm">source</a> · <a href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · built with Emscripten (<a href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a href="LICENSES/MIT-musl.txt">MIT</a>)</p>
+  <p>Built on <a href="https://github.com/zvenson/dinghy">Dinghy</a> by zvenson, on the platform of <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita, Hügelton Instruments, and <a href="https://github.com/isod89/sloop-fm1">SLOOP</a> by isod89 · the browser build and the panel's layout follow Felucca's and charlesvestal's <a href="https://github.com/charlesvestal/fm1-x0x">X0X</a> (GPL-3.0) · </p>
+  <p>M-VAVE and FM-1 are trademarks of their respective owners. GR!MM is not affiliated with or endorsed by them.</p>
+</footer>
+</main>
+<script type="module" src="panel.js"></script>
+</body>
+</html>

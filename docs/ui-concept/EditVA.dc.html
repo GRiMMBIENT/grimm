@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Edit VA</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 48px; display: flex; gap: 6px; padding: 6px; box-sizing: border-box">
+<div style="background: {{accent}}; color: #0b0b0a; font-size: 16px; display: flex; align-items: center; padding: 0 10px">EDIT</div>
+<div style="background: #26251f; flex-grow: 1; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px"><span>T1 VA</span><span style="color: #5e5b54">1/3</span></div>
+</div>
+<div style="position: absolute; left: 24px; top: 62px; font-size: 8px; color: #5e5b54">SUPERSAW X3 + SUB</div>
+<div style="position: absolute; left: 24px; top: 80px; display: grid; grid-template-columns: repeat(54, 8px)">
+<sc-for list="{{px}}" as="p" hint-placeholder-count="200">
+<div style="width: 8px; height: 8px; background: {{p.c}}"></div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 6px; top: 330px; width: 468px; height: 144px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{slabs}}" as="s" hint-placeholder-count="4">
+<div style="background: #26251f; padding: 10px 8px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box">
+<div style="font-size: 12px">{{s.label}}</div>
+<div style="display: flex; gap: 2px">
+<sc-for list="{{s.segs}}" as="g" hint-placeholder-count="8">
+<div style="flex-grow: 1; height: 28px; background: {{g.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 20px">{{s.val}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9' };
+    const saw = (x, y, p, o) => { const ph = (x + o) % p; const v = 26 - Math.floor(ph / p * 23); return y === v || (ph === 0 && y >= 3 && y <= 26); };
+    const px = [];
+    for (let y = 0; y < 30; y++) for (let x = 0; x < 54; x++) {
+      let c = 'transparent';
+      if (y === 29 && x % 2 === 0) c = P.d;
+      if (saw(x, y, 19, 11)) c = P.d;
+      if (saw(x, y, 17, 5)) c = P.m;
+      if (saw(x, y, 18, 0)) c = P.l;
+      px.push({ c });
+    }
+    const vals = [['WAVE', 'SAW', 3], ['DTUNE', '042', 4], ['CUTOFF', '064', 4], ['RES', '020', 2]];
+    const slabs = vals.map((v) => ({ label: v[0], val: v[1], segs: Array.from({ length: 8 }, (_, j) => ({ col: j < v[2] ? P.l : P.k })) }));
+    return { accent: A, px, slabs };
+  }
+}
+</script>
+</body>
+</html>

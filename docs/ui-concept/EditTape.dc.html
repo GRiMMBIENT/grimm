@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Edit Tape</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 48px; display: flex; gap: 6px; padding: 6px; box-sizing: border-box">
+<div style="background: {{accent}}; color: #0b0b0a; font-size: 16px; display: flex; align-items: center; padding: 0 10px">EDIT</div>
+<div style="background: #26251f; flex-grow: 1; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px"><span>T4 TP</span><span style="color: #5e5b54">1/2</span></div>
+</div>
+<div style="position: absolute; left: 24px; top: 62px; width: 432px; display: flex; justify-content: space-between; font-size: 8px; color: #5e5b54"><span>SLOT 1 / CHOIR LOOP</span><span>LOOP</span></div>
+<div style="position: absolute; left: 24px; top: 80px; display: grid; grid-template-columns: repeat(54, 8px)">
+<sc-for list="{{px}}" as="p" hint-placeholder-count="200">
+<div style="width: 8px; height: 8px; background: {{p.c}}"></div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 6px; top: 330px; width: 468px; height: 144px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{slabs}}" as="s" hint-placeholder-count="4">
+<div style="background: #26251f; padding: 10px 8px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box">
+<div style="font-size: 12px">{{s.label}}</div>
+<div style="display: flex; gap: 2px">
+<sc-for list="{{s.segs}}" as="g" hint-placeholder-count="8">
+<div style="flex-grow: 1; height: 28px; background: {{g.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 20px">{{s.val}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9' };
+    const reels = [[14, 11, 0.3], [40, 11, 1.4]];
+    const px = [];
+    for (let y = 0; y < 30; y++) for (let x = 0; x < 54; x++) {
+      let c = 'transparent';
+      for (const [cx, cy, rot] of reels) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < 7.6) c = P.d;
+        if (d >= 7.6 && d < 9.4) c = P.l;
+        if (d < 1.8) c = P.l;
+        for (let k = 0; k < 3; k++) {
+          const ang = rot + k * 2.094;
+          if (Math.hypot(x - (cx + 4.5 * Math.cos(ang)), y - (cy + 4.5 * Math.sin(ang))) < 1.6) c = P.m;
+        }
+      }
+      if (y === 21 && x >= 14 && x <= 40) c = P.l;
+      if (x >= 6 && x <= 48 && y === 26 + Math.round(1.5 * Math.sin(x * 0.5))) c = P.m;
+      if (x >= 25 && x <= 29 && y >= 22 && y <= 24) c = A;
+      px.push({ c });
+    }
+    const vals = [['SPEED', '0.5X', 2], ['WOW', '030', 2], ['SAT', '055', 4], ['HISS', '012', 1]];
+    const slabs = vals.map((v) => ({ label: v[0], val: v[1], segs: Array.from({ length: 8 }, (_, j) => ({ col: j < v[2] ? P.l : P.k })) }));
+    return { accent: A, px, slabs };
+  }
+}
+</script>
+</body>
+</html>

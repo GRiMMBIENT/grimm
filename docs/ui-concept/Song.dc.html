@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GR!MM Song</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 480px; height: 480px; background: #0b0b0a; font-family: 'Press Start 2P', monospace; color: #b8b4a9; position: relative; overflow: hidden; box-sizing: border-box">
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 48px; display: flex; gap: 6px; padding: 6px; box-sizing: border-box">
+<div style="background: {{accent}}; color: #0b0b0a; font-size: 16px; display: flex; align-items: center; padding: 0 10px">GLO</div>
+<div style="background: #26251f; flex-grow: 1; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px"><span>SONG</span><span style="color: #5e5b54">3/5</span></div>
+</div>
+<div style="position: absolute; left: 24px; top: 62px; width: 432px; display: grid; grid-template-columns: 40px repeat(5, minmax(0, 1fr)); grid-auto-rows: 36px; gap: 6px">
+<sc-for list="{{cells}}" as="c" hint-placeholder-count="36">
+<div style="background: {{c.bg}}; color: {{c.fg}}; font-size: {{c.fs}}px; display: flex; align-items: center; justify-content: center">{{c.t}}</div>
+</sc-for>
+</div>
+<div style="position: absolute; left: 6px; top: 330px; width: 468px; height: 144px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{slabs}}" as="s" hint-placeholder-count="4">
+<div style="background: #26251f; padding: 10px 8px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box">
+<div style="font-size: 12px">{{s.label}}</div>
+<div style="display: flex; gap: 2px">
+<sc-for list="{{s.segs}}" as="g" hint-placeholder-count="8">
+<div style="flex-grow: 1; height: 28px; background: {{g.col}}"></div>
+</sc-for>
+</div>
+<div style="font-size: 20px">{{s.val}}</div>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#c8321e","options":["#c8321e","#d08a1c","#2f8f8a","#7a4fb0"]},"$preview":{"width":480,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = this.props.accent ?? '#c8321e';
+    const P = { k: '#0b0b0a', d: '#26251f', m: '#5e5b54', l: '#b8b4a9' };
+    const cur = 2;
+    const lanes = [['T1', 'AABBC'], ['T2', '-AABC'], ['T3', 'A-B-C'], ['T4', '--AA-']];
+    const reps = ['X2', 'X1', 'X4', 'X2', 'X1'];
+    const cells = [{ t: '', bg: 'transparent', fg: P.m, fs: 8 }];
+    for (let i = 0; i < 5; i++) cells.push({ t: String(i + 1), bg: 'transparent', fg: i === cur ? A : P.m, fs: 8 });
+    lanes.forEach(([name, row]) => {
+      cells.push({ t: name, bg: 'transparent', fg: P.m, fs: 8 });
+      row.split('').forEach((ch, i) => {
+        const rest = ch === '-';
+        cells.push({ t: rest ? '-' : ch, bg: rest ? P.k : (i === cur ? A : P.d), fg: rest ? P.m : (i === cur ? P.k : P.l), fs: 16 });
+      });
+    });
+    cells.push({ t: 'REP', bg: 'transparent', fg: P.m, fs: 8 });
+    reps.forEach((r, i) => cells.push({ t: r, bg: 'transparent', fg: i === cur ? A : P.m, fs: 8 }));
+    const vals = [['SECT', '03', 3], ['PAT', 'B', 2], ['REPS', '04', 4], ['LOOP', 'ON', 8]];
+    const slabs = vals.map((v) => ({ label: v[0], val: v[1], segs: Array.from({ length: 8 }, (_, j) => ({ col: j < v[2] ? P.l : P.k })) }));
+    return { accent: A, cells, slabs };
+  }
+}
+</script>
+</body>
+</html>
