@@ -273,26 +273,41 @@ function saveSettings(u8) {
   try { localStorage.setItem(STORE, JSON.stringify([...u8])); return true; } catch { return false; }
 }
 
-// ------------------------------------------------------------------ Web MIDI in (channel messages)
-const status = $("status");
+// ------------------------------------------------------------------ Web MIDI in (channel messages), from the input chosen
+// under the panel: ALL INPUTS, one of them (kept by its name: ids change between sessions), or OFF
+const status = $("status"), midiSel = $("midi-in"), MIDI_KEY = "grimm.midiIn";
+let midiWant = "ALL";                                      // "ALL", "OFF" or an input's name (as chosen and kept)
+try { midiWant = localStorage.getItem(MIDI_KEY) || "ALL"; } catch { /* (no storage: all inputs) */ }
+function onMidi(e) {
+  const d = e.data;
+  if (d.length >= 2 && d[0] >= 0x80 && d[0] < 0xF0) send({ type: "midi", data: [d[0], d[1], d[2] || 0] });
+}
 async function midiOn() {
-  if (!navigator.requestMIDIAccess) { status.textContent = "MIDI in: this browser has no Web MIDI."; return; }
+  if (!navigator.requestMIDIAccess) { status.textContent = "MIDI IN: this browser has no Web MIDI."; return; }
   try {
     const access = await navigator.requestMIDIAccess();
-    const bind = () => {
-      const names = [];
-      for (const input of access.inputs.values()) {
-        names.push(input.name);
-        input.onmidimessage = (e) => {
-          const d = e.data;
-          if (d.length >= 2 && d[0] >= 0x80 && d[0] < 0xF0) send({ type: "midi", data: [d[0], d[1], d[2] || 0] });
-        };
-      }
-      status.textContent = names.length ? `MIDI in: ${names.join(", ")}` : "MIDI in: no inputs connected.";
+    const bind = () => {                                   // the list again, and only the chosen input listened to
+      const ins = [...access.inputs.values()].filter((i) => i.state !== "disconnected");
+      const one = midiWant !== "ALL" && midiWant !== "OFF", here = one && ins.some((i) => i.name === midiWant);
+      const use = one && !here ? "ALL" : midiWant;         // (the chosen one gone: all, until it is back)
+      midiSel.replaceChildren(new Option("ALL INPUTS", "ALL"), ...ins.map((i) => new Option(i.name, i.id)), new Option("OFF", "OFF"));
+      midiSel.value = use === "ALL" || use === "OFF" ? use : ins.find((i) => i.name === use).id;
+      for (const i of access.inputs.values())
+        i.onmidimessage = i.state !== "disconnected" && (use === "ALL" || i.name === use) ? onMidi : null;
+      const names = ins.map((i) => i.name).join(", ");
+      status.textContent = use === "OFF" ? "MIDI IN: OFF" : use !== "ALL" ? `MIDI IN: ${use}` :
+        (names ? `MIDI IN: ALL (${names})` : "MIDI IN: no inputs connected") + (one ? ` · ${midiWant} is not connected` : "");
+    };
+    midiSel.onchange = () => {
+      const v = midiSel.value, i = access.inputs.get(v);
+      midiWant = v === "ALL" || v === "OFF" ? v : i ? i.name : "ALL";
+      try { localStorage.setItem(MIDI_KEY, midiWant); } catch { /* (kept until the page closes) */ }
+      bind();
     };
     access.onstatechange = bind;
     bind();
-  } catch { status.textContent = "MIDI in: not allowed (the panel and the computer keyboard still play)."; }
+    midiSel.parentElement.hidden = false;
+  } catch { status.textContent = "MIDI IN: not allowed (the panel and the computer keyboard still play)."; }
 }
 
 // ------------------------------------------------------------------ switching on
