@@ -60,6 +60,10 @@ canvas.big { z-index: 5; outline: 1px solid var(--edge); }
 .toggle { font: 600 11px system-ui, sans-serif; letter-spacing: .04em; background: var(--part); color: var(--dim);
           border: 1px solid var(--edge); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
 .toggle b { font-weight: 600; }
+.midiin { font: 600 11px system-ui, sans-serif; letter-spacing: .04em; color: var(--dim); }
+.midiin[hidden] { display: none; }
+.midiin select { font: inherit; letter-spacing: inherit; background: var(--part); color: var(--fg); border: 1px solid var(--edge);
+                 border-radius: 4px; padding: 2px 4px; margin-left: 4px; max-width: 16em; }
 .toggle b.on { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
 .keys { width: min(100%, 1000px); margin: 8px auto 0; text-align: center; color: var(--dim); line-height: 1.9; }
 .keys span { display: inline-block; max-width: calc(100% - 14px); margin: 0 7px; }   /* (a long one wraps inside the page) */
@@ -80,6 +84,7 @@ footer p { margin: 4px 0; }
 
 <div class="under">
   <button class="toggle" id="zoom" type="button" aria-pressed="false" title="Enlarge only the screen, to see its pixels">SCREEN <b data-s="1" class="on">1x</b> / <b data-s="2">2x</b></button>
+  <label class="midiin" hidden>MIDI IN <select id="midi-in" aria-label="The MIDI input the demo listens to"></select></label>
   <span id="status"></span>
 </div>
 
@@ -105,7 +110,7 @@ footer p { margin: 4px 0; }
   <span>SEQ (<kbd>0</kbd>): GRID, PATTERN SETTINGS · PLAY (<kbd>-</kbd>): start / stop · REC (<kbd>=</kbd>): record · SELECT (<kbd>↑</kbd> <kbd>↓</kbd>): SEQ the step (SEQ held: STEPS), HOME the tempo · PRESETS: SEQ the tempo</span>
   <span>hold SEQ + white keys: CLEAR, RANDOM, SHIFT ←, SHIFT →, COPY, PASTE, DOUBLE, MUTATE · on SEQ's pages hold SEL + knobs: lock the step's sound (+ OCT−: clear)</span>
   <span>SAVE (<kbd>8</kbd>): SOUNDS, PROJECTS; OCT+ (<kbd>]</kbd>) does the ACTION, OCT− backs out; hold + white keys 1–4: recall slots A–D, 5–8: save A–D · EDIT held + OCT−/OCT+: undo/redo · PRESETS: the sounds by category (SEQ: the tempo) · the work saves itself when stopped</span>
-  <span>drag or scroll a knob · right-click or <kbd>Shift</kbd>-click holds a button · MIDI in via Web MIDI</span>
+  <span>drag or scroll a knob · right-click or <kbd>Shift</kbd>-click holds a button · MIDI in via Web MIDI (pick the input above; the channel is set on the FM-1: hold HOME &gt; SYSTEM &gt; MIDI CHANNEL)</span>
 </p>
 
 <footer>
