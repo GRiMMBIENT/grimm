@@ -68,8 +68,8 @@ def slot_name(s):
     return s or "SAMPLE"
 
 
-def build(path, name, root):
-    """a WAV -> (header, ADPCM data, seconds, cut?) as a GR!MM slot holds it"""
+def build(path, name, root, look=True):
+    """a WAV -> (header, ADPCM data, seconds, cut?) as a GR!MM slot holds it (look: sampleio.ima_encode's)"""
     sr, x = sio.read_any_wav(path)
     x = sio.resample(x, sr, RATE)
     if not x or sio.peak(x) <= 1e-6:
@@ -81,7 +81,7 @@ def build(path, name, root):
         for i in range(f):
             x[MAX_N - f + i] *= (f - i) / f
     s = sio.to_int16(x)
-    hdr, data = sio.user_slot(name, [(s, root, 0, 127)])   # Felucca's slot header (one zone), then GR!MM's magic
+    hdr, data = sio.user_slot(name, [(s, root, 0, 127)], look)   # Felucca's slot header (one zone), then GR!MM's magic
     hdr = struct.pack("<I", MAGIC) + hdr[4:]
     assert len(hdr) == HDR_LEN and len(data) <= MAX_DATA
     return hdr, data, len(s) / RATE, cut

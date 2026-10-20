@@ -30,7 +30,7 @@ def main():
            " * (samples.c): the 480-byte header, then the IMA ADPCM data written at 512. */",
            "#define SMP_FACT_N 4u"]
     for k, (wav, name) in enumerate(SAMPLES):
-        hdr, data, secs, cut = up.build(ROOT / "assets" / "samples" / wav, name, ROOT_NOTE)
+        hdr, data, secs, cut = up.build(ROOT / "assets" / "samples" / wav, name, ROOT_NOTE, look=False)   # (as made)
         print(f"slot {k + 1}: {wav} -> {name}, {secs:.2f} s{' (cut)' if cut else ''}, {len(data)} B")
         out.append(f"/* slot {k + 1}: {name}, {wav}, {secs:.2f} s */")
         out.append(carray(f"SMP_FH{k}", hdr) + carray(f"SMP_FD{k}", data))
