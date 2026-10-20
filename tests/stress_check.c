@@ -89,7 +89,7 @@ static void stress_system(uint32_t kind)        /* "settings", "dark", "woken", 
 }
 
 /* the version 5 forms (steps of 3 B, no chord steps, no locks) of the working project, of a slot */
-#define ST_W5 WORK_LEN(52u, 20u, SEQ_PK5, 0u, 0u)
+#define ST_W5 WORK_LEN(52u, 20u, SEQ_PK5, 0u, 0u, 0u)
 #define ST_S5 SLOT_LEN(52u, SEQ_PK5, 0u)
 static uint8_t st_w[ST_W5], st_s[4u * ST_S5], st_x[ST_W5 > 4u * ST_S5 ? ST_W5 : 4u * ST_S5];
 static const uint8_t *st_seq5(uint8_t *o, const uint8_t *n)   /* a sequence (260 B) as 196 B: o; the next of n */

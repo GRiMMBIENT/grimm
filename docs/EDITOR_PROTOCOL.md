@@ -214,10 +214,11 @@ learned).
 Where the audio time goes, as SYSTEM 2's CPU row measures it; `tools/fm1_cpu.py` prints it. It has no protocol number
 of its own (INFO stays 2); a GR!MM before V2 does not answer it.
 
-Request: none. Reply: `n` (the stages, 8), then u35 values in the FM-1's timer ticks (24 a microsecond): the budget of a
+Request: none. Reply: `n` (the stages, 10), then u35 values in the FM-1's timer ticks (24 a microsecond): the budget of a
 256-frame block (139320, 5.8 ms), NOW, PEAK, then NOW's split over the same ~0.5 s: the sources (VOICES), the tracks'
-filters, levels and sends (MIX), GRAIN, DELAY, SPACE, TAPE, PERFORM, and SCAN (the key scan's timer interrupts that land
-inside the audio, taken out of the stages they interrupt). NOW minus the eight is the rest of the audio callback.
+filters, levels and sends (MIX), GRAIN, DELAY, SPACE, TAPE, PERFORM, MASTER, DRIVE, and SCAN (the key scan's timer
+interrupts that land inside the audio, taken out of the stages they interrupt). NOW minus them all is the rest of the
+audio callback.
 
 ## Samples (11–16)
 

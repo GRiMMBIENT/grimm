@@ -7,9 +7,9 @@
   py tools\\fm1_cpu.py --once       one reading
 
 Each line: NOW and PEAK as SYSTEM 2 shows them (percent of the 5.8 ms a 256-frame block has), then NOW split:
-VOICES (the sources), MIX (the tracks' filters, levels and sends), GRAIN, DELAY, SPACE, TAPE, PERFORM, SCAN (the key
-scan's timer interrupts that land inside the audio) and REST (the rest of the audio callback). Each is the average of
-the same ~0.5 s as NOW. Needs mido and python-rtmidi (py -m pip install mido python-rtmidi), as tools\\fm1_install.py.
+VOICES (the sources), MIX (the tracks' filters, levels and sends), GRAIN, DELAY, SPACE, TAPE, PERFORM, MASTER (its
+filter), DRIVE (its distortion and limiter), SCAN (the key scan's timer interrupts that land inside the audio) and REST
+(the rest of the audio callback). Each is the average of the same ~0.5 s as NOW. Needs mido and python-rtmidi (py -m pip install mido python-rtmidi), as tools\\fm1_install.py.
 """
 import argparse
 import sys
@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fm1_sample_upload import Link  # noqa: E402  (the FM-1's MIDI ports, GR!MM's identity checked)
 
 CPU = 24
-NAMES = ["VOICES", "MIX", "GRAIN", "DELAY", "SPACE", "TAPE", "PERFORM", "SCAN"]
+NAMES = ["VOICES", "MIX", "GRAIN", "DELAY", "SPACE", "TAPE", "PERFORM", "MASTER", "DRIVE", "SCAN"]
 
 
 def rd35(b):

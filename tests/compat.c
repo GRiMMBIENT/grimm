@@ -66,7 +66,11 @@ static void compat_exit(void)                   /* tests/host.c: at the end of t
             }
         }
         pk_work(st_img);
+#ifdef FX2_PK
+        compat_hex(f, "work", st_img, WORK_PK - FX2_PK);   /* (V1.0's part: V2's MASTER and DRIVE after it, not 1.0's) */
+#else
         compat_hex(f, "work", st_img, WORK_PK);
+#endif
         for (k = 0; k < 4u; k++) compat_hex(f, "slot", slots[k], SLOT_ALL);
         compat_hex(f, "settings", (const uint8_t *)&set, 167u);   /* (V1.0's and later's alike: all but the version,
                                                  * then what comes after it: V2's CLOCK, 0 INT; 1.0: none, 0) */

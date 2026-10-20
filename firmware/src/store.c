@@ -12,7 +12,7 @@
  *     WORK  (sectors 1, 2): the four tracks (their source, every source's settings, ENV, LATCH, CHORD, ARP, LFO, LEVEL,
  *           the sends, PAN, the track filter's TYPE and POS), the effects, the tempo, the SCALE, the four sequences,
  *           the slot in use, the song (its chain, MODE) and the mutes and solos, the tracks' FM patches (version 7;
- *           before: the PATCH as built)
+ *           before: the PATCH as built), MASTER and DRIVE (version 8, V2; before: MASTER open, DRIVE off)
  *   the slots A..D (each the four tracks, their sequences and step locks, their FM patches; tempo and effects are
  *   global): one copy, a stream over sectors 3, 4 and 5 (each its own header and CRC; the FM patches after the four
  *   slots, where it was zeros before step 24: zeros, the PATCH as built). Saving a slot rewrites the sectors it lives in
@@ -47,22 +47,26 @@
 #define LOCK_PK 288u                            /* a track's step locks: 64 x the four values, 64 x 4 bits which */
 #define SLOT_LEN(tn, sq, lk) (4u + NT * ((tn) + (sq) + (lk)))   /* a slot: [0] used, its tracks, sequences, locks */
 #define SONG_PK 20u                             /* the song: its chain (16), MODE, the mutes and solos, 2 spare */
-#define WORK_LEN(tn, sg, sq, lk, fm) (NT * ((tn) + (sq) + (lk)) + 16u + 4u + (sg) + (fm))   /* the working project:
-                                                 * tracks, effects, tempo, slot, .., sequences, locks, the song, the FM
-                                                 * patches (an older version's sizes: sg 0 before the song, lk 0 before
-                                                 * locks, fm 0 before the FM patches) */
+#define FX2_PK 8u                               /* (V2, version 8) MASTER's four, DRIVE's four */
+#define WORK_LEN(tn, sg, sq, lk, fm, fx) (NT * ((tn) + (sq) + (lk)) + 16u + 4u + (sg) + (fm) + (fx))   /* the working
+                                                 * project: tracks, effects, tempo, slot, .., sequences, locks, the
+                                                 * song, the FM patches, MASTER and DRIVE (an older version's sizes: sg
+                                                 * 0 before the song, lk 0 before locks, fm 0 before the FM patches, fx
+                                                 * 0 before V2) */
 #define SLOT_PK SLOT_LEN(TRK_PK, SEQ_PK, LOCK_PK)
 #define SLOT_ALL (SLOT_PK + FM_ALL)             /* a slot in RAM: SLOT_PK, its FM patches after (the stream's tail) */
-#define WORK_PK WORK_LEN(TRK_PK, SONG_PK, SEQ_PK, LOCK_PK, FM_ALL)
+#define WORK_PK WORK_LEN(TRK_PK, SONG_PK, SEQ_PK, LOCK_PK, FM_ALL, FX2_PK)
 #define OBJ_HDR 12u                             /* magic, the save count, type, version, length */
 #define OBJ_MAGIC 0x4B4D5247u                   /* "GRMK" */
-#define OBJ_VER 7u
+#define OBJ_VER 8u
 #define SLS_VER 6u                              /* the slots' stream (its layout as version 6's) */
-#define NOBJV 6u
-static const uint16_t OBJ_VERS[NOBJV][6] = {{7, 52, 20, 260, 288, FM_ALL}, {6, 52, 20, 260, 288, 0},
-                                            {5, 52, 20, 196, 0, 0}, {4, 52, 0, 196, 0, 0}, {3, 48, 0, 196, 0, 0},
-                                            {2, 44, 0, 196, 0, 0}};   /* the versions loaded, newest first: a track's,
-                                                 * the song's, a sequence's, the locks', the FM patches' size (6: before
+#define NOBJV 7u
+static const uint16_t OBJ_VERS[NOBJV][7] = {{8, 52, 20, 260, 288, FM_ALL, FX2_PK}, {7, 52, 20, 260, 288, FM_ALL, 0},
+                                            {6, 52, 20, 260, 288, 0, 0}, {5, 52, 20, 196, 0, 0, 0},
+                                            {4, 52, 0, 196, 0, 0, 0}, {3, 48, 0, 196, 0, 0, 0},
+                                            {2, 44, 0, 196, 0, 0, 0}};   /* the versions loaded, newest first: a
+                                                 * track's, the song's, a sequence's, the locks', the FM patches', MASTER
+                                                 * and DRIVE's size (7, GR!MM 1.0's: before MASTER and DRIVE; 6: before
                                                  * the FM patches; 5: before chord steps and locks; 4: before the song;
                                                  * 3: before the LFO; 2: before ARP) */
 #define SLS_MAGIC 0x534C5247u                   /* "GRLS": a sector of the slots' stream */
@@ -492,13 +496,18 @@ static void pk_work(uint8_t *q)
     q[16] = (uint8_t)clamp(song_mode, 0, NSONGMODE - 1);   /* MODE, */
     q[17] = (uint8_t)((trk_mute & 15u) | (trk_solo & 15u) << 4), q[18] = q[19] = 0;   /* the mutes and solos */
     for (t = 0; t < NT; t++) pk_fm(q + SONG_PK + t * FM_PK, t);   /* the FM patches */
+    q += SONG_PK + FM_ALL;                      /* (V2) MASTER, DRIVE */
+    q[0] = (uint8_t)clamp(mf_cut, 0, 127), q[1] = (uint8_t)clamp(mf_res, 0, 127);
+    q[2] = (uint8_t)clamp(mf_type, 0, NFTYPE - 1), q[3] = (uint8_t)clamp(mf_pos, 0, NMPOS - 1);
+    q[4] = (uint8_t)clamp(dr_amt, 0, 127), q[5] = (uint8_t)clamp(dr_type, 0, NDTYPE - 1);
+    q[6] = (uint8_t)clamp(dr_tone, 0, 127), q[7] = (uint8_t)clamp(dr_mix, 0, 127);
 }
 enum { UW_GLOBALS = 1, UW_CHAIN = 2 };
 static void uk_work(const uint8_t *q, uint32_t f, const uint16_t *vs)   /* (f: UW_GLOBALS, the effects, tempo, slot,
                                                  * SCALE, MODE, mutes too; UW_CHAIN, the song's chain too; vs: its
                                                  * version's row of OBJ_VERS, the sizes) */
 {
-    uint32_t t, k, tn = vs[1], sg = vs[2], sq = vs[3], lk = vs[4], fm = vs[5];
+    uint32_t t, k, tn = vs[1], sg = vs[2], sq = vs[3], lk = vs[4], fm = vs[5], fx = vs[6];
     int globals = (f & UW_GLOBALS) != 0;
     for (t = 0; t < NT; t++) q = uk_track(q, t, 0, tn);
     if (globals) {
@@ -512,6 +521,13 @@ static void uk_work(const uint8_t *q, uint32_t f, const uint16_t *vs)   /* (f: U
     for (t = 0; t < NT; t++) q = uk_seq(q, t, sq);
     for (t = 0; t < NT; t++) q = uk_lock(q, t, lk);
     for (t = 0; t < NT; t++) uk_fm(fm ? q + sg + t * FM_PK : 0, t);   /* (saved before them: the PATCH as built) */
+    if (globals) {                              /* (V2) MASTER, DRIVE; saved before them: MASTER open, DRIVE off */
+        const uint8_t *x = q + sg + fm;
+        mf_cut = fx ? clamp(x[0], 0, 127) : 127, mf_res = fx ? clamp(x[1], 0, 127) : 0;
+        mf_type = fx ? clamp(x[2], 0, NFTYPE - 1) : FT_LP, mf_pos = fx ? clamp(x[3], 0, NMPOS - 1) : MP_END;
+        dr_amt = fx ? clamp(x[4], 0, 127) : 0, dr_type = fx ? clamp(x[5], 0, NDTYPE - 1) : DT_SOFT;
+        dr_tone = fx ? clamp(x[6], 0, 127) : 127, dr_mix = fx ? clamp(x[7], 0, 127) : 127;
+    }
     if (!sg) return;                            /* (saved before the song: as it is) */
     if (f & UW_CHAIN)
         for (k = 0; k < SONG_N; k++) song_pat[k] = clamp(q[k] & 7u, 0, SONG_END), song_rep[k] = (q[k] >> 3 & 15u) + 1u;
@@ -562,7 +578,7 @@ static const uint8_t *obj_find(uint32_t type, const uint16_t **vs, uint32_t *s_o
     uint32_t v;
     for (v = type == OBJ_SLOTS ? 2u : 0u; v < NOBJV; v++) {
         const uint16_t *r = OBJ_VERS[v];
-        uint32_t len = type == OBJ_WORK ? WORK_LEN(r[1], r[2], r[3], r[4], r[5]) : 4u * SLOT_LEN(r[1], r[3], r[4]);
+        uint32_t len = type == OBJ_WORK ? WORK_LEN(r[1], r[2], r[3], r[4], r[5], r[6]) : 4u * SLOT_LEN(r[1], r[3], r[4]);
         const uint8_t *f = obj_newest(type, len, r[0], s_out);
         if (f) { *vs = r; return f; }
     }

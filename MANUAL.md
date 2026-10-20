@@ -259,7 +259,7 @@ A saved sound is called by its category and number (`PAD 03`), or by the name yo
 
 ![FX > TAPE](docs/screens/tape.png)
 
-**FX** steps through **TAPE → GRAIN → DELAY → SPACE**. Tracks feed GRAIN, DELAY and SPACE through their sends (MIXER 1, or FX on HOME). TAPE colours everything at the end.
+**FX** steps through **TAPE → GRAIN → DELAY → SPACE → MASTER → DRIVE**. Tracks feed GRAIN, DELAY and SPACE through their sends (MIXER 1, or FX on HOME). TAPE colours everything near the end.
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
@@ -267,8 +267,14 @@ A saved sound is called by its category and number (`PAD 03`), or by the name yo
 | GRAIN | SIZE | DENSITY | SCATTER | MIX |
 | DELAY | TIME | FEEDBACK | WEAR | MIX |
 | SPACE | SIZE (to ~32 s, then INF) | DAMP | MIX | PRE-DELAY |
+| MASTER | CUTOFF | RESONANCE | TYPE (LP / HP / BP) | POSITION (PRE FX / POST REVERB / END) |
+| DRIVE | AMOUNT | TYPE (SOFT / FUZZ / CLIP / FOLD) | TONE | MIX |
 
 GRAIN and DELAY both pour into SPACE. All four TAPE knobs at 0 switches TAPE off completely.
+
+- **MASTER** filters everything, in stereo. **POSITION** says where: `PRE FX` filters the tracks' dry mix before the effects return (the reverb and echoes stay bright), `POST REVERB` filters the tracks and the effects together (before DRIVE and TAPE), `END` filters the very end, after TAPE and the PERFORM tricks. `LP` with CUTOFF at the top or `HP` at the bottom switches it off completely.
+- **DRIVE** distorts everything after SPACE, before TAPE. **AMOUNT** is how hard (0 = off completely), **TYPE** the character: `SOFT` (warm saturation), `FUZZ` (lopsided, buzzy), `CLIP` (hard), `FOLD` (a wavefolder: the harder you drive it, the more it folds back into new overtones). **TONE** darkens it (`OPEN` at the top), **MIX** blends it with the clean sound. A limiter after it keeps even the loudest settings from blowing up the output.
+- MASTER and DRIVE belong to the project (saved with it, like the other effects); TYPE and POS belong to each track.
 
 ---
 

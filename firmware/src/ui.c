@@ -186,7 +186,8 @@ static void ui_head_draw(void)
 typedef struct { char lab[12], val[12]; uint8_t fill, acc, dim; } slab_t;
 static slab_t ui_sl[4], ui_slab_shown[4];
 static const char *const LONG_LAB[][2] = {
-    {"RESONANCE", "RES"}, {"DETUNE", "DTUNE"}, {"DRAWBARS", "BARS"}, {"STRUCTURE", "STRUCT"}, {"SATURATION", "SAT"},
+    {"RESONANCE", "RES"}, {"POSITION", "POS"}, {"AMOUNT", "AMT"}, {"DETUNE", "DTUNE"}, {"DRAWBARS", "BARS"},
+    {"STRUCTURE", "STRUCT"}, {"SATURATION", "SAT"},
     {"DESTINATION", "DEST"}, {"PRE-DELAY", "PREDLY"}, {"FEEDBACK", "FDBK"}, {"CHORD TYPE", "CHORD"},
     {"MIDI CHANNEL", "MIDI"}, {"SCREEN OFF", "SCREEN"}, {"CATEGORY", "CAT"}, {"DIVISION", "DIV"},
     {"PLAY MODE", "PLAY"}, {"DLY SEND", "DLY"}, {"REV SEND", "REV"}, {"GRAIN SEND", "GRAIN"}, {"ATTACK", "ATK"},
@@ -398,6 +399,16 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         else if (v == 64) put_s(S->val, "C");
         else put_u(put_s(S->val, v < 64 ? "L" : "R"), (uint32_t)(v < 64 ? 64 - v : v - 64));
         return;
+    case PG_MASTER:                             /* (V2) CUTOFF ("2.4K", "OPEN"), RESONANCE, TYPE, POSITION */
+        if (k == 0u) { hz_text(S->val, v, mf_type); return; }
+        if (k == 2u) { put_s(S->val, FT_NAME[clamp(v, 0, NFTYPE - 1)]); return; }
+        if (k == 3u) { put_s(S->val, MP_SHORT[clamp(v, 0, NMPOS - 1)]); return; }
+        break;
+    case PG_DRIVE:                              /* (V2) AMOUNT ("OFF": 0), TYPE, TONE ("OPEN"), MIX */
+        if (k == 0u && !v) { put_s(S->val, "OFF"); return; }
+        if (k == 1u) { put_s(S->val, DT_NAME[clamp(v, 0, NDTYPE - 1)]); return; }
+        if (k == 2u && v >= 127) { put_s(S->val, "OPEN"); return; }
+        break;
     case PG_GRAIN:
         if (k == 0u) { put_s(put_u(S->val, (pow2_q16(clamp(v, 0, 127) * 8) * 10u + 32768u) >> 16), "MS"); return; }
         if (k == 1u) { uint32_t i = gr_iv(v); put_s(put_u(S->val, (44100u + i / 2u) / (i ? i : 1u)), "/S"); return; }
@@ -1129,6 +1140,45 @@ static void pic_space(void)                     /* Space: the reverb's tail, as 
         ui_text(184, 31, "FREEZE", 1, UI_K);
     }
 }
+static void pic_master(void)                    /* (V2) Master: the filter's curve, as SPACE's bars: the cutoff where it
+                                                 * bends, RESONANCE its peak there; open: flat, "OPEN" */
+{
+    int32_t c = clamp(mf_cut, 0, 127), r = clamp(mf_res, 0, 127), ty = clamp(mf_type, 0, NFTYPE - 1), i, j;
+    int open = ty == FT_LP ? c >= 127 : ty == FT_HP && c <= 0;
+    ui_caption(FT_NAME[ty], MP_NAME[clamp(mf_pos, 0, NMPOS - 1)]);
+    for (i = 0; i < 37; i++) {
+        int32_t f = i * 127 / 36, d = ty == FT_HP ? c - f : f - c, h;
+        if (ty == FT_BP) d = d < 0 ? -d : d;
+        h = open ? 14 : d <= 0 ? 14 : 14 - d * 3 / 8;   /* (~-12 dB an octave past the cutoff) */
+        if (!open && d > -5 && d < 5) h += r * 5 / 127 * (5 - (d < 0 ? -d : d)) / 5;   /* (the peak) */
+        h = h < 1 ? 1 : h > 18 ? 18 : h;
+        for (j = 0; j < h; j++)
+            ui_rect(9 + i * 6, 156 - (h - j) * 4, 3, 3, j == 0 ? UI_L : j < h / 2 ? UI_M : UI_D);
+    }
+    if (open) {
+        ui_rect(196, 44, 40, 12, ui_acc);
+        ui_text(200, 46, "OPEN", 1, UI_K);
+    }
+}
+static void pic_drive(void)                     /* (V2) Drive: a sine through it (AMOUNT, TYPE, TONE left out), the clean
+                                                 * one dim behind it; AMOUNT 0: "OFF" */
+{
+    static const int16_t SIN37[37] = {0, 5690, 11207, 16384, 21063, 25102, 28378, 30792, 32270, 32767, 32270, 30792,
+                                      28378, 25102, 21063, 16384, 11207, 5690, 0, -5690, -11207, -16384, -21063, -25102,
+                                      -28378, -30792, -32270, -32767, -32270, -30792, -28378, -25102, -21063, -16384,
+                                      -11207, -5690, 0};
+    int32_t a = clamp(dr_amt, 0, 127), g = (int32_t)pow2_q16(a * 9), i;
+    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1);
+    char r[8];
+    ui_3(r, ui_pc(a));
+    ui_caption(DT_NAME[ty], a ? r : "OFF");
+    for (i = 0; i < 37; i++) {
+        int32_t x = SIN37[i] * 3 / 4, y = a ? dr_shape(ty, (int32_t)(((int64_t)x * g) >> 16)) : x;
+        ui_rect(9 + i * 6, 98 - x * 40 / 32768, 3, 3, UI_D);
+        ui_rect(9 + i * 6, 98 - y * 40 / 32768, 3, 3, a ? UI_L : UI_M);
+    }
+    ui_rect(9, 99, 219, 1, UI_D);
+}
 
 static void pic_grid(void)                      /* Seq: the 64 steps of the track's pattern, 8 rows of 8 */
 {
@@ -1543,6 +1593,8 @@ static void ui_pic_draw(void)
     case PG_GRAIN: pic_grain(); return;
     case PG_DELAY: pic_delay(); return;
     case PG_SPACE: pic_space(); return;
+    case PG_MASTER: pic_master(); return;
+    case PG_DRIVE: pic_drive(); return;
     case PG_GRID: pic_grid(); return;
     case PG_PATTERN: pic_pattern(); return;
     case PG_SCALE: case PG_CHORD: pic_sel(); return;

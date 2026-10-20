@@ -36,7 +36,7 @@ def run(name, ev, end, env=None):
             d = {w[i]: w[i + 1] for i in range(2, len(w) - 1, 2) if w[i] != "notes"}
             p = {k: (int(v) if re.fullmatch(r"-?\d+", v) else v) for k, v in d.items()}
             p["pos"] = [int(x) for x in d["pos"].split(",")]
-            p["notes"] = ln.split(" notes", 1)[1].split()
+            p["notes"] = ln.split(" notes", 1)[1].split(" fx ", 1)[0].split()
             probes[int(w[1])] = p
     return probes, out
 

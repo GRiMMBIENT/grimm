@@ -30,3 +30,5 @@ fi
 cc -O2 -Wall -Wno-unused-function -Ifirmware/hal -o build/host/midi_uart_test tests/midi_uart_test.c
 build/host/midi_uart_test
 python3 tests/clock_test.py build/host/grimm
+# GR!MM V2: the effects (tests/fx_test.py): the track filter's TYPE and POS, MASTER, DRIVE, their saves
+python3 tests/fx_test.py build/host/grimm
