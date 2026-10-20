@@ -22,7 +22,8 @@ bad = 0
 
 
 def run(name, ev, end=4200, env=None):
-    ev = [(1000, f"keys {CHORD:#x}")] + ev + [(end - 100, "probe")]
+    ev = [e for e in ev if not (e[1].startswith("enc ") and e[1].endswith(" 0"))]   # (an encoder turned 0 steps:
+    ev = [(1000, f"keys {CHORD:#x}")] + ev + [(end - 100, "probe")]                 # no event: the host reads keys)
     path = OUT / f"{name}.txt"
     path.write_text("".join(f"{t} {s}\n" for t, s in sorted(ev, key=lambda e: e[0])) + f"{end} end\n")
     out = subprocess.run([EXE, str(OUT / name), str(path)], capture_output=True, text=True, check=True,
@@ -99,6 +100,36 @@ check("DRIVE: the four TYPEs sound different", len(set(outs)) == 4)
 loud, _, _ = run("d_loud", [(1000, "keys 0x1f0ff")] + FX(6) + [(1200, "enc 2 127"), (1300, "enc 4 -127")])
 _, _, _, pk = measure(loud)
 check("DRIVE full on a big chord, TONE closed: the limiter holds it (no clipping)", pk <= 30200, f"peak {pk}")
+# DRIVE's levels: at one AMOUNT the four TYPEs within ~1.5 dB of each other; SOFT the gentlest (its highs the least)
+lv = []
+for ty in range(4):
+    d, _, _ = run(f"dl_{ty}", FX(6) + [(1200, "enc 2 80"), (1300, f"enc 3 {ty}")])
+    lv.append(measure(d)[:2])
+rs = [r for r, _ in lv]
+check("DRIVE at AMOUNT 80: SOFT, FUZZ, CLIP, FOLD about as loud (within 1.5 dB)", max(rs) / min(rs) < 1.19,
+      " ".join(f"{r:.0f}" for r in rs))
+check("DRIVE: SOFT the gentlest (the least highs of the four)", lv[0][1] == min(h for _, h in lv),
+      " ".join(f"{h:.0f}" for _, h in lv))
+
+
+def onset(a, b):                                # how suddenly render b leaves render a: the largest difference in
+    d = [abs(p - q) for p, q in zip(a[::2], b[::2])]   # its first 5 ms against 40..80 ms on (a switch at once: a step,
+    i = next((k for k, v in enumerate(d) if v), 0)     # POS: 0.15, MASTER: 0.68; their crossfades 0.02, ~0.1)
+    return max(d[i:i + 220]) / max(1, max(d[i + 1764:i + 3528]))
+
+
+# POS switched while it plays (REV SEND full, CUTOFF low): the reverb hears the change come in, not at once
+SETP = [(300, "btn 8"), (320, "enc 4 127")] + HOME + [(800, "enc 3 -100"), (2300, "btn 8"), (2350, "btn 8")]
+p0, _, _ = run("pos_steady", SETP, 3200)
+p1, _, _ = run("pos_switch", SETP + [(2500, "enc 4 1")], 3200)
+o = onset(p0, p1)
+check("track POS PRE -> POST while playing: no click (the change comes in over ~46 ms)", o < 0.06, f"{o:.2f}")
+# MASTER's POSITION switched while it plays (REV SEND full, LP at 50): PRE FX -> END comes in over ~46 ms
+SETM = [(300, "btn 8"), (320, "enc 4 127")] + FX(5) + [(1200, "enc 2 -77"), (1250, "enc 5 -2")]
+m0, _, _ = run("mpos_steady", SETM, 3200)
+m1, _, _ = run("mpos_switch", SETM + [(2500, "enc 5 2")], 3200)
+o = onset(m0, m1)
+check("MASTER POSITION PRE FX -> END while playing: no click (the change comes in over ~46 ms)", o < 0.2, f"{o:.2f}")
 # saves: V2's as set (autosaved, loaded again), V1.0's project: the defaults
 SAVE = MIX2 + [(400, "enc 3 2"), (420, "enc 4 1")] + FX(5) + [(1200, "enc 2 -60"), (1250, "enc 3 40"), (1300, "enc 4 1"),
                                                              (1350, "enc 5 -2"), (1400, "btn 2"), (1500, "enc 2 50"),
