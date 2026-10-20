@@ -206,6 +206,9 @@ static void mix_add5(int32_t *out, const int32_t *x, const int32_t *g0, const in
 static int32_t tf_cs[NT] = {127 << 8, 127 << 8, 127 << 8, 127 << 8}, tf_ic[NT][2];   /* audio: the cutoff now (<< 8),
                                                  * the states */
 static uint8_t tf_on[NT];
+static int32_t tf_px[NT];                       /* audio: POS's share of the sends taken before the filter, 0 (PRE) ..
+                                                 * TF_PX1 (POST): a switch crosses over in 8 blocks (~46 ms), no click */
+#define TF_PX1 256
 static int tf_open(uint32_t t)                   /* the track filter bypassed now (its cutoff where its TYPE opens) */
 {
     int32_t tgt = lfo_move(t, LD_CUT, clamp(trk[t].cut, 0, 127), 127) << 8, cs = tf_cs[t];
@@ -268,11 +271,22 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
                                                  * after LEVEL (ECHO THROW, REV THROW held: full) */
         g[3] = mulq15(lv, pf_held >> PF_REV & 1u ? 127 * 258 : fx_send(t, lfo_move(t, LD_REV, clamp(trk[t].rev, 0, 127), 127)));
         g[4] = mulq15(lv, fx_send(t, lfo_move(t, LD_GRAIN, clamp(trk[t].grn, 0, 127), 127)));
-        if ((used >> t & 1u) && trk[t].fpos && !tf_open(t)) {   /* (V2: POS POST: the sends before the filter) */
-            mix_add(dbus, 1u, x, mix_g[t][2], g[2], n);
-            mix_add(rbus, 1u, x, mix_g[t][3], g[3], n);
-            mix_add(gbus, 1u, x, mix_g[t][4], g[4], n);
-            trk_filter(t, x, n);
+        int32_t px0 = tf_px[t], pw = trk[t].fpos ? TF_PX1 : 0;
+        int32_t px1 = !(used >> t & 1u) ? pw : px0 < pw ? (px0 + 32 < pw ? px0 + 32 : pw) : (px0 - 32 > pw ? px0 - 32 : pw);
+        tf_px[t] = px1;                         /* (V2: POS; silent: at once) */
+        if ((used >> t & 1u) && (px0 | px1) && !tf_open(t)) {   /* (POST, or crossing over: the sends' share
+                                                 * before the filter, the rest after it) */
+            int32_t *bus[3] = {dbus, rbus, gbus};
+            if (px0 == TF_PX1 && px1 == TF_PX1) {
+                for (k = 0; k < 3u; k++) mix_add(bus[k], 1u, x, mix_g[t][2u + k], g[2u + k], n);
+                trk_filter(t, x, n);
+            } else {
+                for (k = 0; k < 3u; k++)
+                    mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * px0) >> 8, (g[2u + k] * px1) >> 8, n);
+                trk_filter(t, x, n);
+                for (k = 0; k < 3u; k++)
+                    mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * (TF_PX1 - px0)) >> 8, (g[2u + k] * (TF_PX1 - px1)) >> 8, n);
+            }
             mix_add(out, 2u, x, mix_g[t][0], g[0], n);
             mix_add(out + 1, 2u, x, mix_g[t][1], g[1], n);
             trk_peak(t, x, n);
