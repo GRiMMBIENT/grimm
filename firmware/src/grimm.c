@@ -365,12 +365,34 @@ static int note_find(uint32_t t, uint32_t id, uint32_t src)   /* the place in th
         if (lat_id[i] == id && lat_trk[i] == t && lat_src[i] == src) return (int)i;
     return -1;
 }
-static uint32_t drop_oldest(void)               /* the oldest note out of the list (its track forgets it): its voice */
+static uint32_t drop_at(uint32_t i)             /* note i out of the list (its track forgets it): its voice */
 {
-    uint32_t t0 = lat_trk[0], r0 = lat_root[0], i0 = lat_id[0], s0 = lat_src[0], v = lat_voice[0];
-    drop(0);
+    uint32_t t0 = lat_trk[i], r0 = lat_root[i], i0 = lat_id[i], s0 = lat_src[i], v = lat_voice[i];
+    drop(i);
     if (s0 == SRC_KEY && note_find(t0, i0, SRC_KEY) < 0) ec_put(0x80, t0, r0);   /* (its chord's last) */
     return v;
+}
+static uint32_t drop_oldest(void) { return drop_at(0); }   /* the oldest note out of the list: its voice */
+/* PHYS at most PHYS_MAX voices at once (V2.0: six of them, with every effect, came to ~90 % of the FM-1's audio time):
+ * a new PHYS note past it takes the oldest PHYS note's voice (it fades, as the 7th note's does), or a PHYS release's */
+#define PHYS_MAX 4u
+static uint32_t phys_count(void)                /* PHYS voices sounding: its notes on, its releases (a fade: going) */
+{
+    uint32_t i, v, n = 0;
+    for (i = 0; i < nlat; i++) n += trk[lat_trk[i]].eng == ENG_PHYS;
+    for (v = 0; v < NV; v++)
+        if (vc[v].stage == ST_REL && vc[v].eng == ENG_PHYS && !voice_latched(v)) n++;
+    return n;
+}
+static int phys_steal(uint32_t *v)              /* PHYS_MAX sound: the voice a new PHYS note takes; 0 none needed */
+{
+    uint32_t i, w;
+    if (phys_count() < PHYS_MAX) return 0;
+    for (i = 0; i < nlat; i++)                  /* the oldest PHYS note */
+        if (trk[lat_trk[i]].eng == ENG_PHYS) { *v = drop_at(i); return 1; }
+    for (w = 0; w < NV; w++)                    /* (all of them releases: one of those) */
+        if (vc[w].stage == ST_REL && vc[w].eng == ENG_PHYS && !voice_latched(w)) { *v = w; return 1; }
+    return 0;
 }
 static void note_off(uint32_t t, uint32_t id, uint32_t src, int echo)   /* origin id's voices released (its chord) */
 {
@@ -403,6 +425,8 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
     for (i = 0; i < n; i++) {
         if (i < no)                             /* its own voice again */
             v = own[i];
+        else if (trk[t].eng == ENG_PHYS && phys_steal(&v))
+            ;                                   /* (PHYS_MAX PHYS voices: the oldest's) */
         else if (nlat == NV)                    /* all voices on: the oldest note goes, its voice fades and takes
                                                  * the new one */
             v = drop_oldest();
@@ -471,6 +495,12 @@ static void restart_track(uint32_t t)           /* audio: a new source: the trac
     uint32_t i;
     for (i = 0; i < nlat; i++)
         if (lat_trk[i] == t) voice_start(lat_voice[i], t, lat_note[i]);
+    while (trk[t].eng == ENG_PHYS && phys_count() > PHYS_MAX) {   /* (now PHYS, past PHYS_MAX: the oldest PHYS notes go) */
+        for (i = 0; i < nlat && trk[lat_trk[i]].eng != ENG_PHYS; i++)
+            ;
+        if (i == nlat) break;
+        voice_fade(drop_at(i));
+    }
 }
 
 #include "arp.c"                                /* the arpeggiator (its notes: note_on, note_off, SRC_ARP) */
