@@ -397,10 +397,9 @@ static uint32_t drop_at(uint32_t i)             /* note i out of the list (its t
     return v;
 }
 static uint32_t drop_oldest(void) { return drop_at(0); }   /* the oldest note out of the list: its voice */
-/* PHYS at most PHYS_MAX voices at once (V2.0: four of them and two VOICE, with every effect, came to ~85 % of the FM-1's
- * audio time at its peak; six, more still):
+/* PHYS at most PHYS_MAX voices at once (V2.0: six of them, with every effect, came to ~90 % of the FM-1's audio time):
  * a new PHYS note past it takes the oldest PHYS note's voice (it fades, as the 7th note's does), or a PHYS release's */
-#define PHYS_MAX 3u
+#define PHYS_MAX 4u
 static uint32_t phys_count(void)                /* PHYS voices sounding: its notes on, its releases (a fade: going) */
 {
     uint32_t i, v, n = 0;
