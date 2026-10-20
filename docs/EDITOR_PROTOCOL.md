@@ -2,7 +2,7 @@
 
 How an editor (a web page, `tools/fm1_editor_test.py`) talks to GR!MM on the FM-1 over USB-MIDI SysEx: read and
 write the user's sounds, the slots A–D and the settings, read the factory sounds, set the tracks' sounds live, and
-upload samples. The device side is `firmware/src/editor.c` (commands 20–23) and `firmware/src/samples.c` (11–15). The
+upload samples. The device side is `firmware/src/editor.c` (commands 20–24) and `firmware/src/samples.c` (11–15). The
 read/write scheme follows SLOOP's editor backup ([sloop-fm1](https://github.com/isod89/sloop-fm1)
 `web/EDITOR_PROTOCOL.md`, commands 34–36, GPL-3.0): objects by id, read by offset and count, written as BEGIN → DATA →
 COMMIT. The live one (23 TRACK) follows SLOOP's live SET: values at once, while playing, never saved.
@@ -204,6 +204,16 @@ step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd
 Pages (a link's page): 0 SOUND, 1 SOURCE, 2 ENV, 3 LFO, 4 SCALE, 5 CHORD, 6 SONG, 7 HOME, 8 MIXER 1, 9 MIXER 2,
 14 ARP, 15 GRID, 16 PATTERN SETTINGS, 17 TAPE, 18 GRAIN, 19 DELAY, 20 SPACE, 23 FM ALGO, 24 FM OP (the others can't be
 learned).
+
+## 24 CPU (GR!MM V2, a diagnostic)
+
+Where the audio time goes, as SYSTEM 2's CPU row measures it; `tools/fm1_cpu.py` prints it. It has no protocol number
+of its own (INFO stays 2); a GR!MM before V2 does not answer it.
+
+Request: none. Reply: `n` (the stages, 8), then u35 values in the FM-1's timer ticks (24 a microsecond): the budget of a
+256-frame block (139320, 5.8 ms), NOW, PEAK, then NOW's split over the same ~0.5 s: the sources (VOICES), the tracks'
+filters, levels and sends (MIX), GRAIN, DELAY, SPACE, TAPE, PERFORM, and SCAN (the key scan's timer interrupts that land
+inside the audio, taken out of the stages they interrupt). NOW minus the eight is the rest of the audio callback.
 
 ## Samples (11–16)
 

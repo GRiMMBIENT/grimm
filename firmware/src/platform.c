@@ -25,6 +25,9 @@ enum { BTN_OCT_DOWN = 0, BTN_OCT_UP = 1, BTN_FX = 2, BTN_SEL = 3, BTN_ENV = 4, B
        BTN_GLO = 7, BTN_HOME = 8, BTN_SAVE = 9, BTN_ARP = 10, BTN_SEQ = 11, BTN_PLAY = 12, BTN_REC = 13 };
 enum { ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB3 = 4, ENC_KNOB4 = 5, ENC_PRESETS = 6 };
 #define KEY_LED(k) (14u + (k))
+#include <stdint.h>
+static volatile uint32_t isr_in_audio;          /* the timer ISR's fm1_ticks inside the audio ISR, summed (GR!MM V2:
+                                                 * the CPU meter's SCAN; on a computer 0) */
 
 #if defined GRIMM_WEB
 #include "../../web/fm1_web.c"                 /* in a browser: a fake FM-1 (web/fm1_web.c) */
@@ -274,6 +277,7 @@ void fm1_timer5_irq(void)
     if (in_audio) {
         if (usb_due)
             uac_service();
+        isr_in_audio += fm1_ticks() - t0;
         return;
     }
     if (owed)

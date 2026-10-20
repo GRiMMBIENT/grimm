@@ -449,6 +449,10 @@ static void stress_editor(void)                 /* "x_editor" */
     uint32_t i, rc = 0;
     st_fhead(ED_INFO), st_ed(1);
     if (st_sxn < 20u || st_sxr[5] != ED_PROTO || st_sxr[6] != ED_FMT) stress_fail("x_editor: no INFO (length)", st_sxn);
+    st_fhead(ED_CPU), st_ed(1);                 /* (24 CPU: the stages, the budget, NOW, PEAK, the split) */
+    if (st_sxn != 7u + 5u * (3u + CS_N) || st_sxr[5] != CS_N || ed_rd35(st_sxr + 6) != BUDGET_TICKS ||
+        ed_rd35(st_sxr + 11) != cpu_now || st_sxr[st_sxn - 1u] != 0xF7u)
+        stress_fail("x_editor: CPU not as it should be (length)", st_sxn);
     if (st_get(EO_SLOT, a, SLOT_ALL) || memcmp(a, slots[0], SLOT_ALL)) stress_fail("x_editor: slot A not read back", 0);
     if (st_get(EO_SET, a, sizeof set) || memcmp(a, &set, sizeof set)) stress_fail("x_editor: the settings not read back", 0);
     if (st_get(EO_FACT, a, SND_SIZE) || (rc = st_edput(EO_SND + 63u, a, SND_SIZE, st_crc(a, SND_SIZE), ED_FMT, 1, 1)) != 0)

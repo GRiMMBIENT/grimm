@@ -12,6 +12,8 @@
  *   23 TRACK op 0 READ t / 1 SET t, pack7 sound (64 B) [, its name] / 2 SELECT t
  *                              -> op, t, the selected track, rc (READ: then pack7 track t's sound now, then its name
  *                                 as HOME shows it, if it has one)
+ *   24 CPU                     -> the budget, NOW, PEAK, then NOW split by stage (grimm.c cpu_stage), u35 fm1_ticks
+ *                              each (GR!MM V2: a diagnostic, tools/fm1_cpu.py; no protocol number of its own)
  * TRACK is live (protocol 2): a track's sound as it plays, read or set at once, as PRESETS loads one (snd_apply), never
  * saved; at any time, also while playing (the editor page's sliders, SLOOP's live SET). The page sends one at a time.
  * Objects: 0 the settings; 1..4 slots A..D; 16..79 the user's sounds 1..64; 80..119 the factory sounds (GET only).
@@ -23,7 +25,7 @@
 #define ED_PROTO 2u                             /* this protocol's version (INFO; 2: TRACK) */
 #define ED_FMT 1u                               /* the objects' format: sounds of 64 B, slots of SLOT_ALL, settings
                                                  * as set (SET_VER 1) */
-enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23 };
+enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24 };
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
 enum { EO_SET = 0, EO_SLOT = 1, EO_SND = 16, EO_FACT = 80 };
 enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: arguments, the object (CRC, size, format,
@@ -132,7 +134,7 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
 {
     uint8_t r[16];
     uint32_t cmd, o, rc = ER_OK;
-    if (n < 4u || f[1] != 0x47 || f[2] != 0x52 || f[3] < ED_INFO || f[3] > ED_TRACK) return 0;
+    if (n < 4u || f[1] != 0x47 || f[2] != 0x52 || f[3] < ED_INFO || f[3] > ED_CPU) return 0;
     cmd = f[3], f += 4, n -= 4;
     if (cmd == ED_INFO) {                       /* proto, fmt, the version (0-ended), sounds, a sound's size, the
                                                  * factory's, a slot's size, the settings' size, sample slots, used */
@@ -147,6 +149,15 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         ed_wr35(a + i, sizeof set), i += 5;
         a[i++] = SMP_SLOTS, a[i++] = used;
         ed_send(cmd, a, i, 0, 0, 0);
+        return 1;
+    }
+    if (cmd == ED_CPU) {                        /* -> the stages' count, then u35: the budget, NOW, PEAK, each stage */
+        uint8_t a[1 + 5u * (3u + CS_N)], *w = a + 1;
+        uint32_t k;
+        a[0] = CS_N;
+        w = ed_wr35(w, BUDGET_TICKS), w = ed_wr35(w, cpu_now), w = ed_wr35(w, cpu_peak);
+        for (k = 0; k < CS_N; k++) w = ed_wr35(w, cpu_stage[k]);
+        ed_send(cmd, a, (uint32_t)(w - a), 0, 0, 0);
         return 1;
     }
     if (cmd == ED_GET) {                        /* obj, off (5), count (2) -> obj, rc, off, count, the bytes */

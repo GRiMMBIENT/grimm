@@ -127,6 +127,10 @@
 #define PEAK_AFTER_MS 2000u                     /* PEAK leaves out the first 2 s (boot: cold caches, USB coming up) */
 static volatile uint32_t cpu_now, cpu_peak;     /* audio: ticks a block, the last ~0.5 s's average; the longest since the reset */
 static volatile uint32_t cpu_reset;             /* main loop: + 1 sets PEAK back to 0 */
+enum { CS_VOICES, CS_MIX, CS_GRAIN, CS_DELAY, CS_SPACE, CS_TAPE, CS_PERFORM, CS_SCAN, CS_N };
+static volatile uint32_t cpu_stage[CS_N];       /* audio: NOW split (GR!MM V2, the editor's 24 CPU): each stage's ticks
+                                                 * a block over NOW's blocks, the key scan's (SCAN: the timer ISR inside
+                                                 * the audio ISR) taken out of them and counted on its own */
 static uint32_t cpu_over;                       /* audio: blocks in a row over the budget (the overload guard) */
 static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB];   /* the tracks (mono); the DLY, REV and GRAIN buses */
 static volatile uint32_t trk_mute, trk_solo;    /* main loop: GLO held + white keys 1..4, 5..8 (bit t: track t) */
@@ -251,18 +255,27 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
 
 static void app_audio(int32_t *out, uint32_t n)
 {
-    static uint32_t sum, cnt, reset_seen;
-    uint32_t t0 = fm1_ticks(), dt, used, i;
+    static uint32_t sum, cnt, reset_seen, cs_sum[CS_N];
+    uint32_t t0 = fm1_ticks(), dt, used, i, tp = t0, s0 = isr_in_audio, sp = s0, t, s;
+#define CS_MARK(k) (t = fm1_ticks(), s = isr_in_audio, cs_sum[k] += t - tp - (s - sp), tp = t, sp = s)
     if (n > VB) n = VB;
     used = voices_render(tbuf, n);
+    CS_MARK(CS_VOICES);
     for (i = 0; i < n; i++)
         dbus[i] = rbus[i] = gbus[i] = 0;
     mix_tracks(out, used, n);
+    CS_MARK(CS_MIX);
     grain_render(gbus, out, rbus, n);           /* GRAIN: the GRAIN bus in; the cloud out, and into the REV bus */
+    CS_MARK(CS_GRAIN);
     tape_render(dbus, out, rbus, n);            /* DELAY: the DLY bus in; the echoes out, and into the REV bus */
+    CS_MARK(CS_DELAY);
     hall_render(rbus, out, n);                  /* SPACE: the REV bus in, the reverb out */
+    CS_MARK(CS_SPACE);
     tapefx_render(out, n);                      /* TAPE: all of it, */
+    CS_MARK(CS_TAPE);
     perform_render(out, n);                     /* then the FX layer's tricks, the last stage before MASTER */
+    CS_MARK(CS_PERFORM);
+#undef CS_MARK
     for (i = 0; i < 2u * n; i += 32u) {         /* (the output's peaks, left and right, roughly: HOME's eye) */
         uint32_t l = (uint32_t)(out[i] < 0 ? -out[i] : out[i]), r = (uint32_t)(out[i + 1u] < 0 ? -out[i + 1u] : out[i + 1u]);
         if (l > vis_lr[0]) vis_lr[0] = l;
@@ -270,8 +283,11 @@ static void app_audio(int32_t *out, uint32_t n)
     }
     dt = fm1_ticks() - t0;
     sum += dt;
+    cs_sum[CS_SCAN] += isr_in_audio - s0;
     if (++cnt == NOW_BLOCKS) {
         cpu_now = sum / NOW_BLOCKS;
+        for (i = 0; i < CS_N; i++)
+            cpu_stage[i] = cs_sum[i] / NOW_BLOCKS, cs_sum[i] = 0;
         sum = cnt = 0;
     }
     if (reset_seen != cpu_reset) {
