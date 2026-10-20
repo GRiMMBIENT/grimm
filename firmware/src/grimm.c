@@ -162,6 +162,34 @@ static void mix_add(int32_t *o, uint32_t st, const int32_t *x, int32_t g0, int32
         o[i * st] += mulq15w(x[i], g >> 8);
     }
 }
+static void mix_add5(int32_t *out, const int32_t *x, const int32_t *g0, const int32_t *g1, uint32_t n)
+{                                               /* x into out (L, R), the DLY, REV and GRAIN buses, each its gain from g0
+                                                 * to g1: GR!MM V2, the five in one pass when all five sound (each sum as
+                                                 * mix_add makes it: the same), else mix_add each */
+    int32_t g[5], dg[5];
+    uint32_t i, k;
+    for (k = 0; k < 5u; k++)
+        if (!g0[k] && !g1[k]) break;
+    if (k < 5u) {
+        mix_add(out, 2u, x, g0[0], g1[0], n);
+        mix_add(out + 1, 2u, x, g0[1], g1[1], n);
+        mix_add(dbus, 1u, x, g0[2], g1[2], n);
+        mix_add(rbus, 1u, x, g0[3], g1[3], n);
+        mix_add(gbus, 1u, x, g0[4], g1[4], n);
+        return;
+    }
+    for (k = 0; k < 5u; k++)                    /* (as mix_add: constant, g >> 8 is g1; a ramp, its steps) */
+        g[k] = g0[k] << 8, dg[k] = g0[k] == g1[k] ? 0 : ((g1[k] - g0[k]) << 8) / (int32_t)n;
+    for (i = 0; i < n; i++) {
+        int32_t v = x[i];
+        g[0] += dg[0], g[1] += dg[1], g[2] += dg[2], g[3] += dg[3], g[4] += dg[4];
+        out[2u * i] += mulq15w(v, g[0] >> 8);
+        out[2u * i + 1u] += mulq15w(v, g[1] >> 8);
+        dbus[i] += mulq15w(v, g[2] >> 8);
+        rbus[i] += mulq15w(v, g[3] >> 8);
+        gbus[i] += mulq15w(v, g[4] >> 8);
+    }
+}
 /* the track filter (TRACK: CUTOFF, RESONANCE; the LFO's TRK CUTOFF): a low-pass after the track's voices and ENV, before
  * LEVEL, PAN and the sends. dsp.c's SVF (as VA's) at a quarter of the track's scale (a chord's sum: up to ~2^20), the
  * cutoff gliding to where it is turned (~6 ms) with its coefficients every CTL frames, RESONANCE up to a Q of ~2.5, a
@@ -215,11 +243,7 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             for (k = 0; k < n; k += 16u)        /* (its peak, roughly: HOME's candle) */
                 if ((a = (uint32_t)(x[k] < 0 ? -x[k] : x[k])) > pk) pk = a;
             if (pk > vis_pk[t]) vis_pk[t] = pk;
-            mix_add(out, 2u, x, mix_g[t][0], g[0], n);
-            mix_add(out + 1, 2u, x, mix_g[t][1], g[1], n);
-            mix_add(dbus, 1u, x, mix_g[t][2], g[2], n);
-            mix_add(rbus, 1u, x, mix_g[t][3], g[3], n);
-            mix_add(gbus, 1u, x, mix_g[t][4], g[4], n);
+            mix_add5(out, x, mix_g[t], g, n);
         }
         for (k = 0; k < 5u; k++) mix_g[t][k] = g[k];
     }
