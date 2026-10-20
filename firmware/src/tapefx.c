@@ -19,10 +19,12 @@
 #define TF_BASE (96 << 8)                       /* the read, ~2.2 ms back (Q8 samples): the wow moves it around that */
 #define TF_FILL 112u                            /* turning on: the dry alone this long, then the cross-over */
 #define TF_NC 768u                              /* SATURATION's curve: x -98304 .. 98304 in steps of 256 */
+#define TF_CQ 2                                 /* its values kept >> TF_CQ (int16: |y| <= |x| <= 98304, so <= 24576;
+                                                 * the rounding: at most 2 in 98304, under one bit of the output) */
 
 static int32_t tf_line[2][TF_LEN];
 static int32_t tf_dry[2u * VB];                 /* (a block turning on or off: the mix as it came) */
-static int32_t tf_curve[2][TF_NC + 1u];         /* SATURATION as one curve: drive, tanh, make-up, blend (tf_make): the
+static int16_t tf_curve[2][TF_NC + 1u];         /* SATURATION as one curve: drive, tanh, make-up, blend (tf_make): the
                                                  * one in use (tf.ci) and the next / the last */
 static struct {
     uint32_t w, p1, p2, p3, rng, on;            /* the write index; the wow's phases; the hiss; on (the last block) */
@@ -37,14 +39,15 @@ static volatile uint32_t tf_pub, tf_ack;        /* main loop: + 1, the other cur
 static volatile int32_t tf_psat;
 
 /* a SATURATION curve into c: DELAY's tanh (wear.c), driven 1x .. 4x, made up, blended in with the knob (0: x itself) */
-static void tf_make(int32_t *c, int32_t sat)
+static void tf_make(int16_t *c, int32_t sat)
 {
-    int32_t g = 4096 + sat * 97, ig = (int32_t)(134217728u / (uint32_t)g), sw = sat * 129, x;   /* sw: Q14 */
+    int32_t g = 4096 + sat * 97, ig = (int32_t)(134217728u / (uint32_t)g), sw = sat * 129, x, y;   /* sw: Q14 */
     uint32_t j;
     for (j = 0; j <= TF_NC / 2u; j++) {         /* (odd: one half, mirrored) */
         x = (int32_t)(j << 8);
-        c[TF_NC / 2u + j] = x + (((wear_sat(x, g, ig) - x) * sw) >> 14);
-        c[TF_NC / 2u - j] = -c[TF_NC / 2u + j];
+        y = x + (((wear_sat(x, g, ig) - x) * sw) >> 14);
+        c[TF_NC / 2u + j] = (int16_t)clamp((y + (1 << (TF_CQ - 1))) >> TF_CQ, -32767, 32767);
+        c[TF_NC / 2u - j] = (int16_t)-c[TF_NC / 2u + j];
     }
 }
 /* main loop: the curve for SATURATION as it is now, into the one not in use, once the last has been taken (first call:
@@ -63,10 +66,11 @@ static void tapefx_poll(void)
     tf_psat = sat;
     tf_pub++;
 }
-static inline int32_t tf_shape(const int32_t *c, int32_t x)   /* x through curve c, between its points */
+static inline int32_t tf_shape(const int16_t *c, int32_t x)   /* x through curve c, between its points */
 {
     int32_t a = clamp(x + (int32_t)(TF_NC << 7), 0, (int32_t)(TF_NC << 8) - 1), i = a >> 8;
-    return c[i] + (((c[i + 1] - c[i]) * (a & 255)) >> 8);
+    int32_t y0 = (int32_t)c[i] * (1 << TF_CQ), y1 = (int32_t)c[i + 1] * (1 << TF_CQ);
+    return y0 + (((y1 - y0) * (a & 255)) >> 8);
 }
 
 /* the audio ISR: the mix (n frames, L R) in place */
@@ -77,7 +81,7 @@ static void tapefx_render(int32_t *out, uint32_t n)
     uint32_t on = (wow | sat | tone | hiss) != 0, i, w = tf.w, rng = tf.rng ? tf.rng : 0x9E3779B9u;
     int32_t glide, m1, D0, dD, hl = (hiss * hiss) >> 5, tc = 32767 - ((tone * tone * 1606) >> 10), l, r, shape;
     uint32_t fade = tf_pub != tf_ack, pub = tf_pub;
-    const int32_t *c0, *c1;
+    const int16_t *c0, *c1;
     if (!on && !tf.on)
         return;                                 /* bypassed */
     if (n > VB)
