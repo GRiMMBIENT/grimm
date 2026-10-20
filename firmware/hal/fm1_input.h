@@ -113,12 +113,22 @@ static void fm1__sr_latch(void)                 /* the outputs change here only 
     FM1_PR(FM1_PA, FM1_OUT) |= 1u << 1;
     FM1_PR(FM1_PA, FM1_OUT) &= ~(1u << 1);
 }
+/* GR!MM: what the 595s hold. Shifted msb first, bit k of a word ends at output k; one bit b more moves each output up
+ * one: (held << 1 | b). The columns' words are a walking zero (fm1_input_tick), so going on to the next column is that
+ * one bit in all but one step of eleven (column 1 to 2: bit 13 must stay 1), and the latch shows the same word as
+ * sixteen bits would: the 595s' outputs as before, the 48 read-modify-writes of the port down to 3 */
+static uint32_t fm1__sr_held = 0x10000u;        /* (0x10000: not known yet) */
+static uint32_t fm1__sr_from(uint32_t w)        /* the first bit (fm1__sr_bit's i) to shift for w: 15, or 0 all */
+{
+    return fm1__sr_held <= 0xFFFFu && ((fm1__sr_held << 1 | (w & 1u)) & 0xFFFFu) == w ? 15u : 0u;
+}
 static void fm1__sr_word(uint32_t w)
 {
     uint32_t i;
-    for (i = 0; i < 16u; i++)
+    for (i = fm1__sr_from(w); i < 16u; i++)
         fm1__sr_bit(w, i);
     fm1__sr_latch();
+    fm1__sr_held = w;
 }
 
 static uint32_t fm1__rows(void)
@@ -296,7 +306,7 @@ static void fm1_input_tick(void)
     if (tmax) {
         uint32_t t0 = fm1_ticks(), cur = lit | a | (tb ? b : 0u), on, d;
         fm1__led_lines(cur);                       /* (the 595 still drives column p) */
-        for (i = 0; i < 16u || cur; i++) {         /* the shift; then wait if the pulse is longer */
+        for (i = fm1__sr_from(w); i < 16u || cur; i++) {   /* the shift; then wait if the pulse is longer */
             if (i < 16u)
                 fm1__sr_bit(w, i);
             d = fm1_ticks() - t0;
@@ -307,6 +317,7 @@ static void fm1_input_tick(void)
             }
         }
         fm1__sr_latch();                           /* column n, the lines dark */
+        fm1__sr_held = w;
     } else {
         fm1__sr_word(w);
     }
