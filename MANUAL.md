@@ -296,7 +296,7 @@ FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
 | SYSTEM | COLOUR (red, amber, teal, violet) | MIDI CHANNEL | TUNE (±50 cents) | SCREEN OFF |
 | SYSTEM 2 | MIDI LEARN | SEQ MIDI OUT | SAMPLES | |
 
-- **MIDI CHANNEL:** `1-4` puts T1–T4 on channels 1–4 (or start higher, up to `13-16`); `ALL > SEL` sends every channel to the selected track.
+- **MIDI CHANNEL:** `1-4` puts T1–T4 on channels 1–4 (or start higher, up to `13-16`); `ALL > SEL` sends every channel to the selected track; `CH 1 > SEL` … `CH 16 > SEL` sends only that channel to the selected track and ignores the others (notes and CCs). The same for USB and the TRS jack.
 - **SCREEN OFF:** the screen goes dark after the chosen time; the music keeps going. Your first touch only wakes it.
 - **MIDI LEARN:** set LEARN, turn any knob on the FM-1, then move a knob on your controller. Up to 32 links. CLEAR ALL removes them (confirm with OCT+).
 - **SEQ MIDI OUT:** sends the sequencer's and arp's notes out over USB on each track's channel.

@@ -194,7 +194,7 @@ step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd
 | 0 | the octave, signed, −2..2 |
 | 1 | TUNE, signed, −50..50 cents |
 | 2 | COLOUR: 0 RED, 1 AMBER, 2 TEAL, 3 VIOLET |
-| 3 | MIDI CHANNEL: 0 "1-4" .. 12 "13-16", 13 ALL > SEL |
+| 3 | MIDI CHANNEL: 0 "1-4" .. 12 "13-16", 13 ALL > SEL, 14 .. 29 "CH 1 > SEL" .. "CH 16 > SEL" (V2) |
 | 4 | SCREEN OFF: 0 NEVER, 1, 5, 15, 30 MIN |
 | 5 | SEQ MIDI OUT (0 / 1) |
 | 6 | MIDI LEARN's links in use (0–32) |

@@ -310,9 +310,14 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         ui_3(S->val, ui_pc(v));
         return;
     case PG_SOURCE: put_s(S->val, k ? (v ? "ON" : "OFF") : ENGINES[clamp(v, 0, NENG - 1)]->name); return;
-    case PG_SYSTEM:                             /* COLOUR, MIDI ("ALL": ALL > SEL), TUNE, SCREEN OFF ("NVR": full) */
+    case PG_SYSTEM:                             /* COLOUR, MIDI ("ALL": ALL > SEL; "CH5>S": CH 5 > SEL), TUNE, SCREEN
+                                                 * OFF ("NVR": full) */
         if (k == 0u) S->fill = (uint8_t)(2 * v + 2), put_s(S->val, COL_NAME[clamp(v, 0, 3)]);
-        else if (k == 1u) { if (v >= MCH_ALL) put_s(S->val, "ALL"); else mch_text(S->val, v); }
+        else if (k == 1u) {
+            if (v > MCH_ALL) put_s(put_u(put_s(S->val, "CH"), (uint32_t)(v - MCH_ALL)), ">S");
+            else if (v == MCH_ALL) put_s(S->val, "ALL");
+            else mch_text(S->val, v);
+        }
         else if (k == 2u) S->fill = (uint8_t)((clamp(v, -50, 50) + 50) * 8 / 100), tune_text(S->val, v);
         else if (v) S->fill = (uint8_t)(2 * v), put_s(put_u(S->val, SCR_S[clamp(v, 0, 4)] / 60u), "M");
         else S->fill = 8, put_s(S->val, "NVR");

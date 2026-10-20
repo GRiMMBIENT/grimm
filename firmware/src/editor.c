@@ -93,7 +93,7 @@ static uint32_t ed_commit(uint32_t o)
         uint32_t i;
         memcpy(&s, ED_RX, sizeof s);
         if (s.ver != SET_VER || s.oct < -2 || s.oct > 2 || s.tune < -50 || s.tune > 50 || s.col > 3u ||
-            s.mch > MCH_ALL || s.scr > 4u || s.out > 1u || s.nlk > NLINK)
+            s.mch > MCH_MAX || s.scr > 4u || s.out > 1u || s.nlk > NLINK)
             return ER_BAD;
         for (i = 0; i < s.nlk; i++)
             if (s.lk[i][1] >= NPAGE || s.lk[i][2] > 3u || s.lk[i][3] > 3u) return ER_BAD;

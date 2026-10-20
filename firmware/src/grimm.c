@@ -636,7 +636,9 @@ static uint32_t sel_held;                       /* SEL held (SEQ's pages: the kn
  * octave, loaded at power-on, never touched by a project or slot load, NEW or undo; saved 2 s after a change, when
  * silent and stopped (an erase stops the sound ~50 ms) */
 #define NLINK 32u                               /* MIDI LEARN: links at most */
-#define MCH_ALL 13                              /* MIDI CHANNEL: 0 "1-4" (T1 on channel 1) .. 12 "13-16", 13 ALL > SEL */
+#define MCH_ALL 13                              /* MIDI CHANNEL: 0 "1-4" (T1 on channel 1) .. 12 "13-16", 13 ALL > SEL, */
+#define MCH_MAX (MCH_ALL + 16)                  /* 14 .. 29 "CH 1 > SEL" .. "CH 16 > SEL" (V2: that channel alone, to the
+                                                 * selected track; the others ignored) */
 enum { LEARN_OFF, LEARN_ON, LEARN_CLEAR };
 static struct {
     int8_t oct, tune;                           /* the octave; TUNE, cents */
@@ -833,7 +835,7 @@ static int32_t knob_max(uint32_t pg, uint32_t k)
            pg == PG_ARP ? (k == 0u ? NARPMODE - 1 : k == 1u ? NARPRATE - 1 : k == 2u ? 4 : 100) :
            pg == PG_LFO ? (k == 0u ? 127 : k == 1u ? 100 : k == 2u ? NLFODEST - 1 : NLFOSHAPE - 1) :
            pg == PG_SONG ? (k == 0u ? SONG_N - 1 : k == 1u ? SONG_END : k == 2u ? 16 : NSONGMODE - 1) :
-           pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_ALL : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k ? 1 : 2) :
+           pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k ? 1 : 2) :
            pg == PG_HOME && k == 3u ? 200 : pg == PG_FMALGO ? (k == 0u ? 31 : k == 1u ? 7 : k == 2u ? 5 : 99) :
            pg == PG_FMOP ? (k ? 99 : 31) : 127;
 }
@@ -860,9 +862,10 @@ static const char *lfo_dest_name(int32_t d)     /* DESTINATION: its name (a knob
 static const char *const COL_NAME[4] = {"RED", "AMBER", "TEAL", "VIOLET"};   /* SYSTEM: COLOUR */
 static const char *const SCR_NAME[5] = {"NEVER", "1 MIN", "5 MIN", "15 MIN", "30 MIN"};   /* SCREEN OFF */
 static const char *const LEARN_NAME[3] = {"OFF", "LEARN", "CLEAR ALL"};   /* SYSTEM 2: MIDI LEARN */
-static char *mch_text(char *s, int32_t v)       /* MIDI CHANNEL: "1-4" .. "13-16", "ALL > SEL" */
+static char *mch_text(char *s, int32_t v)       /* MIDI CHANNEL: "1-4" .. "13-16", "ALL > SEL", "CH 1 > SEL" .. */
 {
-    if (v >= MCH_ALL) return put_s(s, "ALL > SEL");
+    if (v > MCH_ALL) return put_s(put_u(put_s(s, "CH "), (uint32_t)(v - MCH_ALL)), " > SEL");
+    if (v == MCH_ALL) return put_s(s, "ALL > SEL");
     return put_u(put_s(put_u(s, (uint32_t)v + 1u), "-"), (uint32_t)v + 4u);
 }
 static char *tune_text(char *s, int32_t v)      /* TUNE: "+00", "-12" */
@@ -1280,7 +1283,7 @@ static void midi_out(void)
 static void sys_sync(void)
 {
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
-    uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_ALL), scr = (uint8_t)clamp(sy_scr, 0, 4);
+    uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
     uint8_t out = (uint8_t)clamp(sy_out, 0, 1);
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
@@ -1771,12 +1774,15 @@ static void app_main(void)
         sys_sync();
         if ((page == PG_FMALGO || page == PG_FMOP) && sel_eng() != ENG_FM) page = PG_SOUND;   /* (not FM now: SOUND) */
 
-        while (midi_get(&st, &d1, &d2)) {       /* USB-MIDI in: a note on MIDI CHANNEL's T1 .. T4 channels plays that
-                                                 * track as its keys (ALL > SEL: any channel, the selected track); a CC:
-                                                 * its link (MIDI LEARN) */
+        while (midi_get(&st, &d1, &d2)) {       /* MIDI in (USB, the TRS jack): a note on MIDI CHANNEL's T1 .. T4
+                                                 * channels plays that track as its keys (ALL > SEL: any channel, the
+                                                 * selected track; CH n > SEL: channel n alone, the selected track); a
+                                                 * CC: its link (MIDI LEARN) */
             uint32_t ty = st & 0xF0u, c = st & 15u, on = ty == 0x90u && d2, off = ty == 0x80u || (ty == 0x90u && !d2), t, m;
             t_touch = fm1_ms;
             d1 &= 0x7Fu;
+            if (set.mch > MCH_ALL && c != (uint32_t)(set.mch - MCH_ALL - 1)) continue;   /* (CH n > SEL: another
+                                                 * channel's, nothing; its CCs too) */
             if (ty == 0xB0u) { midi_cc(d1, d2 & 0x7Fu); continue; }
             if (!(on || off) || (echo_on[d1] >> c & 1u)) continue;   /* (our own notes come back: a computer's MIDI
                                                  * thru; never played again) */
