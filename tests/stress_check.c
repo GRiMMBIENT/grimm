@@ -452,6 +452,15 @@ static void stress_editor(void)                 /* "x_editor" */
     if (st_sxn != 7u + 5u * (3u + CS_N) || st_sxr[5] != CS_N || ed_rd35(st_sxr + 6) != BUDGET_TICKS ||
         ed_rd35(st_sxr + 11) != cpu_now || st_sxr[st_sxn - 1u] != 0xF7u)
         stress_fail("x_editor: CPU not as it should be (length)", st_sxn);
+    {                                           /* (25 FX: READ, a SET read back, the value as it was again) */
+        int32_t was = mf_res;
+        st_fhead(ED_EFFECTS), st_fb(0), st_ed(1);
+        if (st_sxn != 6u + 2u + 28u || st_sxr[6] != ER_OK || st_sxr[7 + 17] != (uint8_t)mf_res)
+            stress_fail("x_editor: FX READ not as it should be (length)", st_sxn);
+        st_fhead(ED_EFFECTS), st_fb(1), st_fb(17), st_fb(99), st_ed(1);
+        if (st_sxn != 8u || st_sxr[6] != ER_OK || mf_res != 99) stress_fail("x_editor: FX SET not taken (MASTER RES)", (uint32_t)mf_res);
+        mf_res = was;
+    }
     if (st_get(EO_SLOT, a, SLOT_ALL) || memcmp(a, slots[0], SLOT_ALL)) stress_fail("x_editor: slot A not read back", 0);
     if (st_get(EO_SET, a, sizeof set) || memcmp(a, &set, sizeof set)) stress_fail("x_editor: the settings not read back", 0);
     if (st_get(EO_FACT, a, SND_SIZE) || (rc = st_edput(EO_SND + 63u, a, SND_SIZE, st_crc(a, SND_SIZE), ED_FMT, 1, 1)) != 0)

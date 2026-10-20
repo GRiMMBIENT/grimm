@@ -2,7 +2,7 @@
 
 How an editor (a web page, `tools/fm1_editor_test.py`) talks to GR!MM on the FM-1 over USB-MIDI SysEx: read and
 write the user's sounds, the slots A–D and the settings, read the factory sounds, set the tracks' sounds live, and
-upload samples. The device side is `firmware/src/editor.c` (commands 20–24) and `firmware/src/samples.c` (11–15). The
+upload samples. The device side is `firmware/src/editor.c` (commands 20–25) and `firmware/src/samples.c` (11–15). The
 read/write scheme follows SLOOP's editor backup ([sloop-fm1](https://github.com/isod89/sloop-fm1)
 `web/EDITOR_PROTOCOL.md`, commands 34–36, GPL-3.0): objects by id, read by offset and count, written as BEGIN → DATA →
 COMMIT. The live one (23 TRACK) follows SLOOP's live SET: values at once, while playing, never saved.
@@ -219,6 +219,24 @@ Request: none. Reply: `n` (the stages, 10), then u35 values in the FM-1's timer 
 filters, levels and sends (MIX), GRAIN, DELAY, SPACE, TAPE, PERFORM, MASTER, DRIVE, and SCAN (the key scan's timer
 interrupts that land inside the audio, taken out of the stages they interrupt). NOW minus them all is the rest of the
 audio callback.
+
+## 25 FX (GR!MM V2)
+
+The project's effects, live, for the editor page's FX section (no protocol number of its own; a GR!MM before V2 does
+not answer it). A value set here acts at once and is kept by the project (the FM-1's autosave), as a knob's turn.
+
+Request: `op`, then for SET `i`, `v`.
+
+| op | | Reply |
+| --- | --- | --- |
+| 0 | READ | `op`, `rc`, then 28 values |
+| 1 | SET `i` to `v` | `op`, `rc` |
+
+The values, in order: TAPE (WOW, SATURATION, TONE, HISS), GRAIN (SIZE, DENSITY, SCATTER, MIX), DELAY (TIME, FEEDBACK,
+WEAR, MIX), SPACE (SIZE, DAMP, MIX, PRE-DELAY), MASTER (CUTOFF, RESONANCE, TYPE 0 LP / 1 HP / 2 BP, POSITION 0 PRE FX /
+1 POST REVERB / 2 END), DRIVE (AMOUNT, TYPE 0 SOFT / 1 FUZZ / 2 CLIP / 3 FOLD, TONE, MIX): each 0..127 (or its list),
+as the FM-1's knobs; then T1..T4's filter (MIXER 2): TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST). A value out
+of its range is set to the nearest end.
 
 ## Samples (11–16)
 

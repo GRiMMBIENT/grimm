@@ -179,6 +179,14 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
     const s2 = await cl.get(OBJ.SET, info.setSize);
     check(sameSettings(old, s2) && settingsOf(s2).clk === 0, "editor: a GR!MM 1.0 backup's settings restored on V2 (CLOCK INT)");
   }
+  {                                                          // GR!MM V2: FX (25): read, set live (MASTER, DRIVE, T2's filter)
+    const f0 = await cl.fx();
+    await cl.fxSet(16, 60), await cl.fxSet(20, 90), await cl.fxSet(21, 9), await cl.fxSet(25, 2 | 4);
+    const f1 = await cl.fx();
+    check(f0.length === 28 && f0[16] === 127 && f0[20] === 0 && f1[16] === 60 && f1[20] === 90 && f1[21] === 3 && f1[25] === 6,
+          `editor: FX read and set live (MASTER, DRIVE FOLD, T2's filter BP POST; a value past its range: its end)`);
+    await cl.fxSet(16, 127), await cl.fxSet(20, 0), await cl.fxSet(21, 0), await cl.fxSet(25, 0);
+  }
   const fr = 48000, n = 38400, wav = new Uint8Array(44 + n * 4), dv = new DataView(wav.buffer);   // 0.8 s, 16 bit stereo
   [..."RIFF"].forEach((c, i) => { wav[i] = c.charCodeAt(0); }), dv.setUint32(4, 36 + n * 4, true);
   [..."WAVEfmt "].forEach((c, i) => { wav[8 + i] = c.charCodeAt(0); });

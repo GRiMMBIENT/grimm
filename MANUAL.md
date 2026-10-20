@@ -371,6 +371,7 @@ Turn **PRESETS** to step through them by category, then your own.
 - **SOUND EDITOR:** the four tracks' sounds (T1–T4), every setting on screen with the FM-1's names. Every move plays on the FM-1 at once, like turning its knobs, and in the page's own GR!MM, whose screen and keys are beside the sliders (play them with the mouse or the computer keyboard: `Z`–`/`, `S`–`'`, `Q`–`O`). **STORE IN SLOT** saves the sound into one of your 64 slots, with the name you give it.
 - **SOUNDS:** your 64 slots and the 40 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
 - **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**.
+- **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE) and each track's filter TYPE and POS, live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
 - **SETTINGS:** MIDI CHANNEL and CLOCK, read from the FM-1 and written back (the rest of the settings stay as they are).
 - **BACKUP:** one file with all your sounds, slots A–D and settings, and a restore that makes a backup of what's there first. (Samples aren't in it: keep their WAV files.) Backups from GR!MM 1.0 restore too.
 

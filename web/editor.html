@@ -109,6 +109,7 @@ a.lnk { color: var(--l); }
     <a data-s="sounds">SOUNDS</a>
     <a data-s="editor">SOUND EDITOR</a>
     <a data-s="samples">SAMPLES</a>
+    <a data-s="fx">FX</a>
     <a data-s="settings">SETTINGS</a>
     <a data-s="backup">BACKUP</a>
   </nav>
@@ -203,6 +204,16 @@ a.lnk { color: var(--l); }
         one keeps its number ("Sample-002": SAMP-002). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
         NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot that holds
         nothing.</p>
+    </section>
+
+    <section id="s-fx">
+      <h2>FX</h2>
+      <div class="row"><button id="b-fxread" class="go">READ FROM FM-1</button></div>
+      <div class="grid" id="fx"></div>
+      <p class="note">The project's effects, as the FX pages on the FM-1 (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE), and
+        each track's filter TYPE and POS (MIXER 2). READ first; then every move reaches the FM-1 at once, as its knobs
+        (kept with the project: its autosave). The FM-1's own knobs and this page don't follow each other: READ again
+        after turning them. MASTER, DRIVE and the filter's TYPE and POS are GR!MM V2's.</p>
     </section>
 
     <section id="s-settings">

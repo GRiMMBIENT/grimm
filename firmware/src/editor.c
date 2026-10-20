@@ -14,6 +14,10 @@
  *                                 as HOME shows it, if it has one)
  *   24 CPU                     -> the budget, NOW, PEAK, then NOW split by stage (grimm.c cpu_stage), u35 fm1_ticks
  *                              each (GR!MM V2: a diagnostic, tools/fm1_cpu.py; no protocol number of its own)
+ *   25 FX   op 0 READ          -> op, rc, the project's effects as their pages' knobs (TAPE, GRAIN, DELAY, SPACE, MASTER,
+ *                                 DRIVE: four each, 24), the tracks' filter TYPE | POS << 2 (4)
+ *           op 1 SET i, v      -> op, rc: value i (0..27, as READ's) to v, live (the project's: the autosave keeps it)
+ *                              (GR!MM V2, the editor page's FX; no protocol number of its own either)
  * TRACK is live (protocol 2): a track's sound as it plays, read or set at once, as PRESETS loads one (snd_apply), never
  * saved; at any time, also while playing (the editor page's sliders, SLOOP's live SET). The page sends one at a time.
  * Objects: 0 the settings; 1..4 slots A..D; 16..79 the user's sounds 1..64; 80..119 the factory sounds (GET only).
@@ -25,7 +29,8 @@
 #define ED_PROTO 2u                             /* this protocol's version (INFO; 2: TRACK) */
 #define ED_FMT 1u                               /* the objects' format: sounds of 64 B, slots of SLOT_ALL, settings
                                                  * as set (SET_VER 2; a PUT of V1.0's, 1, too) */
-enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24 };
+enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24, ED_EFFECTS = 25 };
+static const uint8_t ED_FXPG[6] = {PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_MASTER, PG_DRIVE};   /* (FX's i / 4) */
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
 enum { EO_SET = 0, EO_SLOT = 1, EO_SND = 16, EO_FACT = 80 };
 enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: arguments, the object (CRC, size, format,
@@ -138,7 +143,7 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
 {
     uint8_t r[16];
     uint32_t cmd, o, rc = ER_OK;
-    if (n < 4u || f[1] != 0x47 || f[2] != 0x52 || f[3] < ED_INFO || f[3] > ED_CPU) return 0;
+    if (n < 4u || f[1] != 0x47 || f[2] != 0x52 || f[3] < ED_INFO || f[3] > ED_EFFECTS) return 0;
     cmd = f[3], f += 4, n -= 4;
     if (cmd == ED_INFO) {                       /* proto, fmt, the version (0-ended), sounds, a sound's size, the
                                                  * factory's, a slot's size, the settings' size, sample slots, used */
@@ -162,6 +167,34 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         w = ed_wr35(w, BUDGET_TICKS), w = ed_wr35(w, cpu_now), w = ed_wr35(w, cpu_peak);
         for (k = 0; k < CS_N; k++) w = ed_wr35(w, cpu_stage[k]);
         ed_send(cmd, a, (uint32_t)(w - a), 0, 0, 0);
+        return 1;
+    }
+    if (cmd == ED_EFFECTS) {                    /* op [, i, v] -> op, rc [, the 28 values] */
+        uint8_t a[2u + 28u];
+        uint32_t op = n ? f[0] : 2u, i, t;
+        a[0] = (uint8_t)op, a[1] = ER_OK;
+        if (op == 1u && n >= 3u && f[1] < 28u) {
+            i = f[1];
+            if (i >= 24u) t = i - 24u, trk[t].ftype = clamp(f[2] & 3u, 0, NFTYPE - 1), trk[t].fpos = f[2] >> 2 & 1u;
+            else {
+                uint32_t pg = ED_FXPG[i / 4u], k = i % 4u;
+                volatile int32_t *p = knob_param(pg, k);
+                if (p) *p = clamp(f[2], knob_min(pg, k), knob_max(pg, k));
+            }
+            ed_send(cmd, a, 2, 0, 0, 0);
+            return 1;
+        }
+        if (op != 0u) {
+            a[1] = ER_ARGS;
+            ed_send(cmd, a, 2, 0, 0, 0);
+            return 1;
+        }
+        for (i = 0; i < 24u; i++) {
+            volatile int32_t *p = knob_param(ED_FXPG[i / 4u], i % 4u);
+            a[2u + i] = (uint8_t)clamp(p ? *p : 0, 0, 127);
+        }
+        for (t = 0; t < NT; t++) a[26u + t] = (uint8_t)(clamp(trk[t].ftype, 0, NFTYPE - 1) | clamp(trk[t].fpos, 0, 1) << 2);
+        ed_send(cmd, a, 30, 0, 0, 0);
         return 1;
     }
     if (cmd == ED_GET) {                        /* obj, off (5), count (2) -> obj, rc, off, count, the bytes */

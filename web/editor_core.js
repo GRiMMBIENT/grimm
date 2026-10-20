@@ -8,7 +8,7 @@
 
 export const HEAD = [0x7d, 0x47, 0x52];
 export const CMD = { SMP_BEGIN: 11, SMP_WRITE: 12, SMP_END: 13, SMP_ERASE: 14, SMP_INFO: 15, SMP_FACTORY: 16, INFO: 20, GET: 21, PUT: 22,
-                     TRACK: 23 };
+                     TRACK: 23, FX: 25 };
 export const PROTOS = [1, 2];                              // the editor protocols this page knows (2: TRACK)
 export const OBJ = { SET: 0, SLOT: 1, SND: 16, FACT: 80 };
 const BEGIN = 0, DATA = 1, COMMIT = 2, ABORT = 3;
@@ -169,6 +169,15 @@ export class Client {
       await this.wait(50);
     }
     return this.smpInfo();
+  }
+  async fx() {                                             // GR!MM V2: the project's effects (28 values: FX_LIST's)
+    const r = await this.req(CMD.FX, [0], 1500);
+    if (r[1]) throw new EditorError(RC[r[1]] || `rc ${r[1]}`, r[1]);
+    return r.slice(2, 30);
+  }
+  async fxSet(i, v) {                                      // value i to v, live
+    const r = await this.req(CMD.FX, [1, i, v & 0x7f], 1500, true);
+    if (r[1]) throw new EditorError(RC[r[1]] || `rc ${r[1]}`, r[1]);
   }
   async smpErase(slot) {
     const r = await this.req(CMD.SMP_ERASE, [slot], 10000);
@@ -374,6 +383,16 @@ export async function makeBackup(client, info, progress) {
   return { format: "grimm-backup", version: 1, proto: info.proto, fmt: info.fmt, firmware: info.firmware,
            date: new Date().toISOString().replace("T", " ").slice(0, 19), objects };
 }
+// ------------------------------------------------------------------ FX (GR!MM V2, docs/EDITOR_PROTOCOL.md 25 FX): the six
+// pages' four knobs each (a list's names, else 0..127), then T1..T4's filter (TYPE + 4 x POS)
+export const FX_PAGES = [
+  ["TAPE", ["WOW", "SATURATION", "TONE", "HISS"]], ["GRAIN", ["SIZE", "DENSITY", "SCATTER", "MIX"]],
+  ["DELAY", ["TIME", "FEEDBACK", "WEAR", "MIX"]], ["SPACE", ["SIZE", "DAMP", "MIX", "PRE-DELAY"]],
+  ["MASTER", ["CUTOFF", "RESONANCE", ["TYPE", ["LP", "HP", "BP"]], ["POSITION", ["PRE FX", "POST REVERB", "END"]]]],
+  ["DRIVE", ["AMOUNT", ["TYPE", ["SOFT", "FUZZ", "CLIP", "FOLD"]], "TONE", "MIX"]],
+];
+export const FT_NAMES = ["LP", "HP", "BP"];
+
 // ------------------------------------------------------------------ the settings (docs/EDITOR_PROTOCOL.md): GR!MM V2's two
 // on the SETTINGS section; the rest (the octave, TUNE, COLOUR, SCREEN OFF, SEQ MIDI OUT, MIDI LEARN's links) as read
 export const SET_V1 = 168;                                   // V1.0's settings (version 1, no CLOCK); V2's: 169

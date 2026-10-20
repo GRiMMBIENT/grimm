@@ -10,7 +10,7 @@
 import { Client, MidiTransport, VirtualFM1, LiveSender, findFM1, HEAD, CMD, OBJ, PROTOS, EditorError, emptyRecord, isEmpty,
          recordOk, parseSound, buildRecord, soundTitle, makeBackup, checkBackup, restoreBackup, makeSlot, noteFromName,
          sampleName, noteName, pack7, hex, SET_V1, MCH_NAMES, CLOCK_NAMES, settingsOf, withSettings,
-         sameSettings } from "./editor_core.js";
+         sameSettings, FX_PAGES, FT_NAMES } from "./editor_core.js";
 
 const $ = (id) => document.getElementById(id);
 function el(tag, attrs, parent, text) {
@@ -29,6 +29,7 @@ let wasm = null, vf = null, vfc = null, meta = null;        // grimm.wasm; its i
 let conn = null;                                             // { client, info, kind: "fm1" | "virtual", transport, live }
 let busy = false;
 let setBytes = null;                                         // the settings as last read from the FM-1 (SETTINGS)
+let fxVals = null;                                           // the project's effects as last read (FX: 28 values)
 const user = Array.from({ length: 64 }, () => emptyRecord()), dirty = new Array(64).fill(false);
 let pick = { fact: true, i: 0 }, readAt = "";                // the sound chosen under SOUNDS
 const tracks = [null, null, null, null], loaded = ["", "", "", ""], from = ["", "", "", ""];   // T1..T4: the sound,
@@ -132,7 +133,8 @@ addEventListener("keydown", startEngine, true);
 function setConn(c) {
   if (conn && conn.transport.close) conn.transport.close();
   conn = c;
-  setBytes = null;                                           // (another FM-1, or none: read its settings again)
+  setBytes = null, fxVals = null;                            // (another FM-1, or none: read its settings, FX again)
+  if ($("fx").childElementCount) drawFx();
   if ($("set-mch").options.length) drawSettings();
   const s = $("conn");
   s.textContent = !c ? "NOT CONNECTED" : c.kind === "virtual" ? `VIRTUAL FM-1 · GR!MM ${c.info.firmware}` : `FM-1 · GR!MM ${c.info.firmware}`;
@@ -302,7 +304,8 @@ function drawSlots() {
 }
 function refreshButtons() {
   const c = !!conn && !busy, u = !pick.fact, empty = u && isEmpty(user[pick.i]);
-  ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory", "b-setread"].forEach((id) => { $(id).disabled = !c; });
+  ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory", "b-setread", "b-fxread"].forEach((id) => { $(id).disabled = !c; });
+  document.querySelectorAll("#fx input, #fx select").forEach((x) => { x.disabled = !c || !fxVals; });
   $("b-setwrite").disabled = !c || !setBytes;
   $("set-mch").disabled = $("set-clk").disabled = !setBytes;
   if (setBytes && setBytes.length <= SET_V1) $("set-clk").disabled = true;   // (GR!MM 1.0: no CLOCK)
@@ -395,24 +398,24 @@ function exportSound(r, name) {
 
 // ------------------------------------------------------------------ the sound editor
 const knobText = (s, k) => vf.text("web_knob_text", s.eng, s.k[0], s.k[1], s.k[2], s.k[3], k);
-function control(parent, label, min, max, get, set, text) {
+function control(parent, label, min, max, get, set, text, quiet = false) {   // (quiet: not the sound's: FX)
   const c = el("div", { cls: "ctl" }, parent), lab = el("div", { cls: "lab" }, c), v = el("span");
   el("label", {}, lab, label), lab.appendChild(v);
   const r = el("input", { type: "range", min, max, step: 1 }, c);
   r.value = get();
   const upd = () => { v.textContent = text ? text(+r.value) : String(r.value); };
-  r.addEventListener("input", () => { set(+r.value); upd(); changed(); });
+  r.addEventListener("input", () => { set(+r.value); upd(); if (!quiet) changed(); });
   upd();
   return r;
 }
-function choice(parent, label, names, get, set) {
+function choice(parent, label, names, get, set, quiet = false) {
   const c = el("div", { cls: "ctl" }, parent), lab = el("div", { cls: "lab" }, c);
   el("label", {}, lab, label);
   const s = el("select", {}, c);
   s.style.width = "100%";
   names.forEach((n, i) => el("option", { value: i }, s, n));
   s.value = get();
-  s.addEventListener("change", () => { set(+s.value); changed(); });
+  s.addEventListener("change", () => { set(+s.value); if (!quiet) changed(); });
   return s;
 }
 function toggle(parent, names, get, set) {
@@ -778,6 +781,53 @@ $("b-setwrite").onclick = () => job("SETTINGS", async () => {
   return `SETTINGS WRITTEN: MIDI CHANNEL ${MCH_NAMES[b[3]]}${b.length > SET_V1 ? ", CLOCK " + CLOCK_NAMES[b[SET_V1]] : ""}`;
 });
 drawSettings();
+
+// ------------------------------------------------------------------ FX (GR!MM V2): the six pages and the tracks' filters,
+// live: a move sends its value (the newest kept while one is on its way)
+const fxPend = new Map();
+let fxBusy = false;
+async function fxSend(i, v) {
+  fxPend.set(i, v);
+  if (fxBusy || !conn) return;
+  fxBusy = true;
+  try {
+    while (fxPend.size) {
+      const [k, x] = fxPend.entries().next().value;
+      fxPend.delete(k);
+      await conn.client.fxSet(k, x);
+    }
+  } catch (e) { say(`FX: ${errText(e)}`, "err"); } finally { fxBusy = false; }
+}
+function drawFx() {
+  const box = $("fx"), v = fxVals || new Array(28).fill(0);
+  box.textContent = "";
+  FX_PAGES.forEach(([page, knobs], p) => {
+    const g = el("div", { cls: "grp" }, box);
+    el("h3", {}, g, page);
+    knobs.forEach((kn, k) => {
+      const i = p * 4 + k, set = (x) => { v[i] = x; fxSend(i, x); };
+      if (Array.isArray(kn)) choice(g, kn[0], kn[1], () => v[i], set, true);
+      else control(g, kn, 0, 127, () => v[i], set, (x) => `${Math.round(x * 100 / 127)}%`, true);
+    });
+  });
+  const g = el("div", { cls: "grp" }, box);
+  el("h3", {}, g, "TRACK FILTER (MIXER 2)");
+  for (let t = 0; t < 4; t++) {
+    const i = 24 + t;
+    choice(g, `T${t + 1} TYPE`, FT_NAMES, () => v[i] & 3, (x) => { v[i] = (v[i] & 4) | x; fxSend(i, v[i]); }, true);
+    choice(g, `T${t + 1} POS`, ["PRE", "POST"], () => v[i] >> 2 & 1, (x) => { v[i] = (v[i] & 3) | x << 2; fxSend(i, v[i]); }, true);
+  }
+  refreshButtons();
+}
+$("b-fxread").onclick = () => job("FX", async () => {
+  try { fxVals = await conn.client.fx(); } catch (e) {
+    if (e instanceof EditorError) throw e;
+    throw new EditorError("NO ANSWER: FX NEEDS GR!MM V2 ON THE FM-1", 0);
+  }
+  drawFx();
+  return "FX READ FROM THE FM-1: EVERY MOVE NOW PLAYS ON IT AT ONCE";
+});
+drawFx();
 
 // ------------------------------------------------------------------ start: the four tracks as GR!MM starts
 (async () => {
