@@ -345,6 +345,7 @@ Turn **PRESETS** to step through them by category, then your own.
 
 - **Six voices** are shared by all tracks. A new note beyond six takes the oldest one, faded out.
 - **Your sounds, slots A–D, settings and samples survive firmware updates.**
+- **MIDI IN:** over USB, and on the **TRS jack** (3.5 mm, MIDI IN only) with a TRS-to-DIN adapter. Gear and adapters use two wirings, Type A and Type B: if nothing arrives, try the other adapter. Notes and CCs from the jack go exactly where USB's do (MIDI CHANNEL, MIDI LEARN); SysEx from the jack is ignored.
 - **Samples:** load your own WAV files into the four slots with the [editor](#15-the-editor) (or, optionally, `tools/fm1_sample_upload.py`, see the README). SYSTEM 2's SAMPLES brings the factory samples back.
 - **Stuck?** Use the Rescue page on the [FM-1 Firmware Hub](https://thefirmwarehub.com/).
 

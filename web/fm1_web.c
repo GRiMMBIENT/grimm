@@ -109,7 +109,8 @@ static int settings_save(const void *p, uint32_t n)
     return 0;
 }
 
-/* ---- MIDI: in from Web MIDI (web_midi), out nowhere */
+/* ---- MIDI: in from Web MIDI (web_midi), out nowhere; no MIDI clock here (GR!MM V2: platform.c's ring stays empty) */
+static uint32_t rt_now(void) { return 0; }
 static uint8_t mq[64][3];
 static uint32_t mq_w, mq_r;
 static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)

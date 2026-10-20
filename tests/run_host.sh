@@ -25,3 +25,6 @@ else
     echo "saves  FAILED: GR!MM 1.0's project loads otherwise (diff tests/data/v1.0-state.txt build/compat/v1.0-state.txt)"
     exit 1
 fi
+# GR!MM V2: MIDI. The TRS jack's parser (tests/midi_uart_test.c)
+cc -O2 -Wall -Wno-unused-function -Ifirmware/hal -o build/host/midi_uart_test tests/midi_uart_test.c
+build/host/midi_uart_test

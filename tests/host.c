@@ -103,6 +103,7 @@ static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
 static void stress_midi_out(uint32_t st, uint32_t d1);   /* (tests/stress_check.c: what is on out there) */
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { (void)d2; stress_midi_out(st, d1); }
 #else
+static uint32_t rt_now(void) { return (uint32_t)((uint64_t)fm1_ms * 24000u); }   /* (platform.c's realtime ring) */
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  MIDI out %02X %u %u\n", fm1_ms, st, d1, d2); }
 #endif
 static uint32_t midi_room(void) { return 64u; }

@@ -744,6 +744,10 @@ static void midi_in_event(uint32_t pkt)
 #endif
     }
     if (cin == 0xFu && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) {   /* clock, transport */
+#ifdef MIDI_RT_IN
+        MIDI_RT_IN(st);                                 /* (GR!MM: the app's realtime ring, timed) */
+        return;
+#endif
         if (mi_w - mi_r < MQ) {
             midi_in_q[mi_w % MQ] = 0xFu | st << 8;
             RING_PUBLISH();

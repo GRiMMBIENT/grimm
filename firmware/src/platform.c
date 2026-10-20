@@ -28,6 +28,34 @@ enum { ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB
 #include <stdint.h>
 static volatile uint32_t isr_in_audio;          /* the timer ISR's fm1_ticks inside the audio ISR, summed (GR!MM V2:
                                                  * the CPU meter's SCAN; on a computer 0) */
+/* GR!MM V2: MIDI realtime, the clock and START / CONTINUE / STOP. In from USB (usb.c) and the TRS jack (midi_uart.c),
+ * each with its time (rt_now: 24 a us) and its source: the timer ISR writes, the audio ISR reads (grimm.c clk_ctl, a
+ * control block at a time, at the messages' time). Out (USB): the audio ISR's clock (CLOCK INT+OUT), each with the
+ * time its sound plays; the timer ISR sends it then (rt_flush; on a computer: logged) */
+enum { RT_USB, RT_TRS };
+#define RTQ 32u                                 /* (a block's delay holds ~3 pulses at 300 BPM) */
+static volatile uint16_t rt_q[RTQ];             /* the byte, its source << 8 */
+static volatile uint8_t ro_q[RTQ];
+static volatile uint32_t rt_t[RTQ], rt_w, rt_r, ro_t[RTQ], ro_w, ro_r;
+static volatile uint8_t rt_usb_fast;            /* the app: USB's clock wanted (CLOCK USB): its MIDI read in a render too */
+static uint32_t rt_now(void);                   /* (the platform's time: fm1_ticks; a computer's: its script's) */
+static void rt_in_at(uint32_t st, uint32_t src, uint32_t t)   /* timer ISR: a realtime byte from src, at t */
+{
+    uint32_t w = rt_w;
+    if (w - rt_r >= RTQ) return;                /* (full: lost; the clock goes on from the next) */
+    rt_q[w % RTQ] = (uint16_t)(st | src << 8), rt_t[w % RTQ] = t;
+    __asm__ volatile("" ::: "memory");
+    rt_w = w + 1u;
+}
+static void rt_in(uint32_t st, uint32_t src) { rt_in_at(st, src, rt_now()); }
+static void rt_out(uint32_t st, uint32_t due)   /* audio ISR: a realtime byte out over USB at due */
+{
+    uint32_t w = ro_w;
+    if (w - ro_r >= RTQ) return;                /* (nobody takes them: lost) */
+    ro_q[w % RTQ] = (uint8_t)st, ro_t[w % RTQ] = due;
+    __asm__ volatile("" ::: "memory");
+    ro_w = w + 1u;
+}
 
 #if defined GRIMM_WEB
 #include "../../web/fm1_web.c"                 /* in a browser: a fake FM-1 (web/fm1_web.c) */
@@ -71,8 +99,39 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #define FELUCCA_OTA 1
 #define FELUCCA_CDC 0
 #define FELUCCA_UAC 1
-#define FELUCCA_UART 0
+#define FELUCCA_UART 1                          /* GR!MM V2: TRS MIDI IN (midi_uart.c) */
+#define MIDI_RT_IN(st) rt_in(st, RT_USB)        /* (usb.c: the clock and START / CONTINUE / STOP, timed) */
+static uint32_t rt_now(void) { return fm1_ticks(); }
 #include "usb.c"
+#if FELUCCA_UART
+#include "midi_uart.c"
+#endif
+/* the clock's messages due by now out over USB-MIDI (EP1) when it is free: the timer ISR, nested in the audio ISR too
+ * (as uac_service: the audio ISR never touches the SIE, usb_poll never runs then); each within ~0.1 ms of its time */
+static void rt_flush(void)
+{
+    uint32_t now = fm1_ticks(), n = 0, csr;
+    if (ro_r == ro_w || (int32_t)(now - ro_t[ro_r % RTQ]) < 0)
+        return;
+    if (!usb.config || usb.suspended) {         /* (nobody there: dropped) */
+        ro_r = ro_w;
+        return;
+    }
+    sie_wr(S_INDEX, 1);
+    csr = sie_rd(S_TXCSR1);
+    if (csr & 0x01u)
+        return;                                 /* (a packet still going: the next tick) */
+    if (csr & 0x80u)
+        sie_wr(S_TXCSR1, csr & ~0x80u);
+    while (ro_r != ro_w && n < 64u && (int32_t)(now - ro_t[ro_r % RTQ]) >= 0) {
+        ep1tx[n] = 0x0Fu, ep1tx[n + 1u] = (uint8_t)ro_q[ro_r % RTQ], ep1tx[n + 2u] = ep1tx[n + 3u] = 0;
+        n += 4u;
+        ro_r++;
+    }
+    fm1_usb_ep_send(1, ep1tx, n);
+    sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
+    usb.tx_pkts++;
+}
 
 /* ---- flash: read anywhere; erase / program only the update's staging area, the settings sector and (GR!MM) the
  * sample area: 0x97000..0xDF000, in what Felucca and its family keep their data in (0x97000..0xFBFFF: theirs, not
@@ -256,7 +315,8 @@ static uint32_t midi_room(void)                 /* messages midi_send can still 
 }
 
 /* ---- the timer: 10 kHz key scan, milliseconds, USB at 2 kHz. It outranks the audio ISR; nested in a
- * render it only scans, counts and feeds the USB audio stream (as sloopDX main.c) */
+ * render it only scans, counts and feeds the USB audio stream (as sloopDX main.c); GR!MM V2: and the MIDI clock's own
+ * out (rt_flush), the TRS jack (2 kHz) and, for CLOCK USB, USB's MIDI in (2 kHz): a pulse's time within 0.5 ms */
 static volatile uint8_t in_audio;
 void fm1_timer5_irq(void)
 {
@@ -271,17 +331,26 @@ void fm1_timer5_irq(void)
         fm1_ms++;
     }
     if (usb_due)
-        owed = 1;
+        owed |= 1u;
     if (++sub == 10u)
         sub = 0;
     if (in_audio) {
-        if (usb_due)
+        if (usb_due) {
             uac_service();
+            if (rt_usb_fast && usb.config)
+                ep1_rx();                       /* (one endpoint, its own SIE index: as uac_service) */
+        }
+        if (sub % 5u == 3u)
+            uart_midi_poll();
+        rt_flush();
         isr_in_audio += fm1_ticks() - t0;
         return;
     }
-    if (owed)
+    rt_flush();
+    if (owed & 1u)
         usb_poll();
+    if (sub % 5u == 3u)
+        uart_midi_poll();                       /* (2 kHz: ~7 bytes a call at most, 31250 baud) */
     owed = 0;
 }
 extern void isr_timer5(void);
@@ -419,6 +488,7 @@ void fm1_cstart(void)
     fm1_adc_init();
     fm1_audio_init(abuf, HALF_WORDS, isr_alnk0, 3);   /* (abuf is zero: .bss) */
     usb_start();
+    uart_midi_init();                           /* (GR!MM V2: the TRS jack; before TIMER5: port H's RMW) */
     fm1_timer5_start(isr_timer5, 4);
     fm1_guard_lock_top();
     fm1_irq_enable_all();
