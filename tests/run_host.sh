@@ -15,3 +15,13 @@ for p in sorted(Path("build/host").glob("grimm-*.ppm")):
     p.unlink()
     print("screen ->", p.with_suffix(".png"))
 PY
+# saves across versions (tests/compat.c): the project GR!MM 1.0 saved (tests/data/v1.0-saves.bin) loads as 1.0 loaded it
+mkdir -p build/compat
+GRIMM_SAVE_IN=tests/data/v1.0-saves.bin GRIMM_STATE_OUT=build/compat/v1.0-state.txt build/host/grimm build/compat/run \
+    tests/data/compat.txt > /dev/null
+if cmp -s tests/data/v1.0-state.txt build/compat/v1.0-state.txt; then
+    echo "saves  GR!MM 1.0's project loads as in 1.0"
+else
+    echo "saves  FAILED: GR!MM 1.0's project loads otherwise (diff tests/data/v1.0-state.txt build/compat/v1.0-state.txt)"
+    exit 1
+fi

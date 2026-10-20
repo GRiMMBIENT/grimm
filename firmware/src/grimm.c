@@ -701,6 +701,18 @@ static uint32_t next_page(uint32_t b)           /* button b tapped: its first pa
 
 static uint32_t sel_eng(void) { return (uint32_t)clamp(trk[sel].eng, 0, NENG - 1); }
 static const engine_t *sel_engine(void) { return ENGINES[sel_eng()]; }
+static volatile int32_t grid_v[4];              /* GRID's knobs: the selected step's NOTE, CHANCE, RATCHET, LENGTH as
+                                                 * int32 (the step holds bytes): read in by knob_param, out by grid_put */
+static seq_step_t *grid_step(void)              /* the selected step of the selected track's pattern */
+{
+    return &seq[sel].pat[clamp(seq[sel].cur, 0, SEQ_NPAT - 1)].st[clamp(seq[sel].cursor, 0, SEQ_N - 1)];
+}
+static void grid_put(void)                      /* grid_v into the step (main loop; each value in its range) */
+{
+    seq_step_t *st = grid_step();
+    st->note = (uint8_t)clamp(grid_v[0], 0, 127), st->chance = (uint8_t)clamp(grid_v[1], 0, 100);
+    st->ratchet = (uint8_t)clamp(grid_v[2], 1, 4), st->len = (uint8_t)clamp(grid_v[3], 1, SEQ_N);
+}
 static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 1 turns on page pg (0: nothing) */
 {
     static volatile int32_t *const FX[4][4] = {{&tf_wow, &tf_sat, &tf_tone, &tf_hiss},
@@ -727,9 +739,10 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
                            &trk[sel].fmo[clamp(fm_op, 0, 5)][FO_FINE];
     case PG_FMOP: return &trk[sel].fmo[clamp(fm_op, 0, 5)][k == 0u ? FO_RATIO : k == 1u ? FO_LEVEL : k == 2u ? FO_ATK : FO_DEC];
     case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: return FX[pg - PG_TAPE][k];
-    case PG_GRID: {                             /* the selected step of the track's pattern */
-        seq_step_t *st = &seq[sel].pat[clamp(seq[sel].cur, 0, SEQ_NPAT - 1)].st[clamp(seq[sel].cursor, 0, SEQ_N - 1)];
-        return k == 0u ? &st->note : k == 1u ? &st->chance : k == 2u ? &st->ratchet : &st->len;
+    case PG_GRID: {                             /* the selected step of the track's pattern (its copy: grid_put) */
+        seq_step_t *st = grid_step();
+        grid_v[0] = st->note, grid_v[1] = st->chance, grid_v[2] = st->ratchet, grid_v[3] = st->len;
+        return &grid_v[k & 3u];
     }
     case PG_PATTERN: return k == 0u ? &seq[sel].steps : k == 1u ? &seq[sel].div : k == 2u ? &seq[sel].swing : &seq[sel].mode;
     case PG_SOUNDS: return k == 0u ? &sv_slot : k == 1u ? &sv_cat : k == 2u ? &sv_type : &sv_act;
@@ -1053,12 +1066,13 @@ static void knob_step(uint32_t pg, uint32_t k, int32_t d)   /* KNOB k + 1 on pag
     else if (pg == PG_GRID && k == 0u && sc_scale > 0) *p = sc_walk(*p, d);   /* (a SCALE: its notes only) */
     else if (pg == PG_GRID && k == 0u && !*p && d > 0) *p = 60;   /* NOTE from OFF: C4, then on from there */
     else *p = clamp(*p + d, lo, hi);
+    if (pg == PG_GRID) grid_put();              /* (the step: its bytes) */
     if (pg == PG_SOUNDS && k == 2u) sv_step(0);   /* (a new TYPE: SLOT onto its list) */
     if (pg == PG_SOUND && k == 0u && sel_eng() == ENG_FM && *p != old) fm_builtin(sel, *p);   /* (PATCH: the built-in one
                                                  * the track's patch now, its edits gone) */
     if (pg == PG_FMALGO && k == 0u && *p != old) nq_put(NQ_RESTART, sel, 0);   /* (ALGO: its notes again, a fade) */
     if (pg == PG_GRID && k == 0u && !*p) {      /* (a step OFF: its locks and its chord gone) */
-        seq_step_t *st = &seq[sel].pat[clamp(seq[sel].cur, 0, SEQ_NPAT - 1)].st[clamp(seq[sel].cursor, 0, SEQ_N - 1)];
+        seq_step_t *st = grid_step();
         st->lmask = 0, st->chord = 0;
     }
 }
@@ -1135,9 +1149,10 @@ static void cc_apply(const uint8_t *L, uint32_t val)   /* a linked CC: its param
     if ((p = knob_param(pg, k)) != 0) {
         v = knob_min(pg, k) + ((int32_t)val * (knob_max(pg, k) - knob_min(pg, k)) + 63) / 127;
         if (pg == PG_GRID && k == 0u) {         /* NOTE: the note (a SCALE: its nearest), 0 OFF */
-            seq_step_t *st = &seq[sel].pat[clamp(seq[sel].cur, 0, SEQ_NPAT - 1)].st[clamp(seq[sel].cursor, 0, SEQ_N - 1)];
+            seq_step_t *st = grid_step();
             undo_take(UK_STEP | sel << 8 | (uint32_t)seq[sel].cursor, -1);
             *p = v ? (int32_t)sc_snap((uint32_t)v) : 0;
+            grid_put();
             if (!*p) st->lmask = 0, st->chord = 0;
         } else
             knob_step(pg, k, v - *p);
@@ -1380,6 +1395,9 @@ static void batt_poll(void)
 #include "editor.c"                             /* the editor's mailbox: sounds, slots, settings over SysEx */
 #ifdef GRIMM_STRESS
 #include "../../tests/stress_check.c"             /* (tests/stress.sh: the stress test's checks, host mode) */
+#endif
+#ifdef DINGHY_HOST
+#include "../../tests/compat.c"                   /* (host mode: saves across versions, tests/run_host.sh) */
 #endif
 static void app_main(void)
 {

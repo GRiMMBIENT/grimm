@@ -18,12 +18,13 @@
 #define SEQ_TICK_Q16 1806336000u                /* a tick at 1 BPM, in samples Q16: 60 x 44100 / 96 x 65536 */
 enum { SEQ_FWD, SEQ_BWD, SEQ_PONG, SEQ_RND, SEQ_NMODE };
 
-typedef struct {
-    volatile int32_t note, chance, ratchet, len;   /* note 0: OFF */
-    volatile int32_t chord;                     /* a chord step: 0x80 | VOICING << 4 | CHORD TYPE (recorded in chord
+typedef struct {                                /* (bytes: each value fits one; V1.0's were 32 bits, the saves the same) */
+    volatile uint8_t note, chance, ratchet, len;   /* note 0: OFF, else 1..127; CHANCE 0..100; RATCHET 1..4; LENGTH 1..64 */
+    volatile uint8_t chord;                     /* a chord step: 0x80 | VOICING << 4 | CHORD TYPE (recorded in chord
                                                  * mode: its chord, chord mode on or not); 0: a note */
     volatile uint8_t lmask, lv[4];              /* its locks: which of the source's four (bits), their values */
 } seq_step_t;
+_Static_assert(sizeof(seq_step_t) == 10u, "a step: 10 bytes");
 typedef struct { seq_step_t st[SEQ_N]; } seq_pat_t;
 typedef struct {
     volatile int32_t steps, div, swing, mode;   /* PATTERN SETTINGS: 1..64, SEQ_DIV_T's, 0..127, SEQ_ */
@@ -258,6 +259,6 @@ static void seq_write(uint32_t t, int32_t i, uint32_t note, uint32_t chord)
 {
     seq_step_t *s = &seq[t].pat[clamp(seq[t].cur, 0, SEQ_NPAT - 1)].st[clamp(i, 0, (int32_t)SEQ_N - 1)];
     if (!s->note) s->chance = 100, s->ratchet = 1, s->len = 1;
-    s->note = (int32_t)note;
-    s->chord = (int32_t)chord;
+    s->note = (uint8_t)note;
+    s->chord = (uint8_t)chord;
 }

@@ -442,8 +442,8 @@ static const uint8_t *uk_seq(const uint8_t *q, uint32_t t, uint32_t sq)   /* (sq
     for (k = 0; k < SEQ_N; k++) {
         const uint8_t *b = q + 4 + k * w;
         uint32_t v = b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16;
-        P->st[k].note = (int32_t)(v & 127u), P->st[k].chance = clamp((int32_t)(v >> 7 & 127u), 0, 100);
-        P->st[k].ratchet = (int32_t)(v >> 14 & 3u) + 1, P->st[k].len = (int32_t)(v >> 16 & 63u) + 1;
+        P->st[k].note = (uint8_t)(v & 127u), P->st[k].chance = (uint8_t)clamp((int32_t)(v >> 7 & 127u), 0, 100);
+        P->st[k].ratchet = (uint8_t)((v >> 14 & 3u) + 1u), P->st[k].len = (uint8_t)((v >> 16 & 63u) + 1u);
         P->st[k].chord = w == 4u && (b[3] & 0x80u) ? b[3] : 0;
     }
     return q + sq;

@@ -150,6 +150,7 @@ static int save_flash_erase(uint32_t i)
     memset(fake_save[i], 0xFF, 4096u);
     return 0;
 }
+static void compat_exit(void);                  /* (tests/compat.c) */
 static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)   /* NOR: a write only clears bits */
 {
     const uint8_t *s = p;
@@ -419,6 +420,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
     } else if (shot < sizeof SHOT / sizeof SHOT[0] && fm1_ms == SHOT[shot])
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
+        compat_exit();                          /* (tests/compat.c: saves out, the state as loaded) */
         write_wav();
         exit(0);
     }
@@ -430,6 +432,12 @@ int main(int argc, char **argv)
     if (argc > 2) read_script(argv[2]);
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);
     memset(fake_flash, 0xFF, sizeof fake_flash);   /* (erased: the factory samples go in at boot) */
+    if (getenv("GRIMM_SAVE_IN")) {              /* (tests/compat.c: the save sectors an older GR!MM wrote) */
+        FILE *f = fopen(getenv("GRIMM_SAVE_IN"), "rb");
+        (void)save_flash(0);
+        if (!f || fread(fake_save, 1, sizeof fake_save, f) != sizeof fake_save) { perror("GRIMM_SAVE_IN"); exit(1); }
+        fclose(f);
+    }
     app_main();
     return 0;
 }
