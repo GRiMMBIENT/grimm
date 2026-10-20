@@ -19,7 +19,8 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { Client, VirtualFM1, LiveSender, MidiTransport, findFM1, OBJ, parseSound, buildRecord, makeBackup, checkBackup,
-         restoreBackup, makeSlot, recordOk, unpack7, hex, sampleName } from "./editor_core.js";
+         restoreBackup, makeSlot, recordOk, unpack7, hex, sampleName, SET_V1, settingsOf, withSettings,
+         sameSettings, crc32 } from "./editor_core.js";
 
 let ex, data, size, started = false, rewinding = false;
 const { instance } = await WebAssembly.instantiate(readFileSync("web/dist/grimm.wasm"), {
@@ -165,6 +166,19 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   await restoreBackup(cl, checkBackup(JSON.parse(JSON.stringify(b1)), info), info);
   const b2 = await makeBackup(cl, info);
   check(b2.objects.every((o, i) => o.data === b1.objects[i].data), "editor: a backup restored reads back as it was");
+  {                                                          // GR!MM V2: SETTINGS (MIDI CHANNEL, CLOCK), V1.0's backups
+    const s0 = await cl.get(OBJ.SET, info.setSize), sw = withSettings(s0, { mch: 18, clk: 3 });
+    await cl.put(OBJ.SET, sw, info.fmt);
+    const s1 = await cl.get(OBJ.SET, info.setSize), v = settingsOf(s1);
+    check(sameSettings(sw, s1) && v.mch === 18 && v.clk === 3, "editor: SETTINGS: MIDI CHANNEL CH 5 > SEL, CLOCK TRS written, read back");
+    const old = Uint8Array.from([...s0.slice(0, SET_V1 - 1), 1]);   // (GR!MM 1.0's settings: 168 bytes, version 1)
+    const bk = JSON.parse(JSON.stringify(b1));
+    bk.objects[0] = { id: OBJ.SET, len: SET_V1, crc: crc32(old), data: Buffer.from(old).toString("base64") };
+    const objs = checkBackup(bk, info);
+    await restoreBackup(cl, objs.slice(0, 1), info);
+    const s2 = await cl.get(OBJ.SET, info.setSize);
+    check(sameSettings(old, s2) && settingsOf(s2).clk === 0, "editor: a GR!MM 1.0 backup's settings restored on V2 (CLOCK INT)");
+  }
   const fr = 48000, n = 38400, wav = new Uint8Array(44 + n * 4), dv = new DataView(wav.buffer);   // 0.8 s, 16 bit stereo
   [..."RIFF"].forEach((c, i) => { wav[i] = c.charCodeAt(0); }), dv.setUint32(4, 36 + n * 4, true);
   [..."WAVEfmt "].forEach((c, i) => { wav[8 + i] = c.charCodeAt(0); });

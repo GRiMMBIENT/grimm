@@ -109,6 +109,7 @@ a.lnk { color: var(--l); }
     <a data-s="sounds">SOUNDS</a>
     <a data-s="editor">SOUND EDITOR</a>
     <a data-s="samples">SAMPLES</a>
+    <a data-s="settings">SETTINGS</a>
     <a data-s="backup">BACKUP</a>
   </nav>
   <main>
@@ -202,6 +203,19 @@ a.lnk { color: var(--l); }
         one keeps its number ("Sample-002": SAMP-002). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
         NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot that holds
         nothing.</p>
+    </section>
+
+    <section id="s-settings">
+      <h2>SETTINGS</h2>
+      <div class="row"><button id="b-setread" class="go">READ FROM FM-1</button><button id="b-setwrite">WRITE TO FM-1</button></div>
+      <div class="row"><label class="px" for="set-mch">MIDI CHANNEL</label><select id="set-mch"></select></div>
+      <div class="row"><label class="px" for="set-clk">CLOCK</label><select id="set-clk"></select></div>
+      <p class="note">The FM-1's own settings (SYSTEM, SYSTEM 2), not the project's. MIDI CHANNEL: 1-4 puts T1–T4 on
+        channels 1–4 (up to 13-16); ALL &gt; SEL plays every channel on the selected track; CH n &gt; SEL plays only
+        channel n on the selected track and ignores the others. CLOCK: INT, the FM-1's own tempo; INT+OUT, the same
+        and its MIDI clock out over USB (START, STOP and 24 pulses a beat); USB or TRS, it follows the MIDI clock from
+        there (START, CONTINUE, STOP; the jack is MIDI IN only). The same on the FM-1: SYSTEM's KNOB 2, SYSTEM 2's KNOB 4.
+        READ first; WRITE changes only these two (the FM-1 stopped and silent). GR!MM 1.0 has no CLOCK.</p>
     </section>
 
     <section id="s-backup">

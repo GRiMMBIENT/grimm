@@ -374,13 +374,33 @@ export async function makeBackup(client, info, progress) {
   return { format: "grimm-backup", version: 1, proto: info.proto, fmt: info.fmt, firmware: info.firmware,
            date: new Date().toISOString().replace("T", " ").slice(0, 19), objects };
 }
+// ------------------------------------------------------------------ the settings (docs/EDITOR_PROTOCOL.md): GR!MM V2's two
+// on the SETTINGS section; the rest (the octave, TUNE, COLOUR, SCREEN OFF, SEQ MIDI OUT, MIDI LEARN's links) as read
+export const SET_V1 = 168;                                   // V1.0's settings (version 1, no CLOCK); V2's: 169
+export const MCH_NAMES = [...Array.from({ length: 13 }, (_, k) => `${k + 1}-${k + 4}`), "ALL > SEL",
+  ...Array.from({ length: 16 }, (_, k) => `CH ${k + 1} > SEL`)];
+export const CLOCK_NAMES = ["INT", "INT+OUT", "USB", "TRS"];
+export function settingsOf(b) {                              // -> { mch, clk } (V1.0's: CLOCK INT)
+  return { mch: b[3], clk: b.length > SET_V1 ? b[SET_V1] : 0 };
+}
+export function withSettings(b, s) {                         // a copy of b with MIDI CHANNEL and CLOCK s
+  const o = Uint8Array.from(b);
+  o[3] = s.mch;
+  if (o.length > SET_V1) o[SET_V1] = s.clk;
+  return o;
+}
+export function sameSettings(written, back) {                // read back as written (V1.0's into a V2: all but the version)
+  const n = written.length < back.length ? written.length - 1 : written.length;
+  return written.length <= back.length && Array.from(written.slice(0, n)).every((x, k) => x === back[k]);
+}
 export function checkBackup(b, info) {                       // -> [{id, data, what}] or throws (nothing written)
   if (!b || b.format !== "grimm-backup" || b.version !== 1) throw new EditorError("not a GR!MM backup file", 90);
   if (b.fmt !== info.fmt) throw new EditorError(`the backup's format is ${b.fmt}, the FM-1's is ${info.fmt}`, 90);
   const sizes = new Map(backupObjects(info).map(([id, size, what]) => [id, [size, what]]));
   return b.objects.map((o) => {
     const d = unb64(o.data), s = sizes.get(o.id);
-    if (!s || d.length !== s[0] || crc32(d) !== o.crc) throw new EditorError(`object ${o.id} is damaged or not this firmware's`, 90);
+    const v1set = o.id === OBJ.SET && d.length === SET_V1 && s && s[0] > SET_V1;   // (GR!MM 1.0's settings: a V2 takes them)
+    if (!s || (d.length !== s[0] && !v1set) || crc32(d) !== o.crc) throw new EditorError(`object ${o.id} is damaged or not this firmware's`, 90);
     return { id: o.id, data: d, what: s[1] };
   });
 }
