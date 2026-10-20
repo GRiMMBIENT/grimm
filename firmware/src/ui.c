@@ -1167,13 +1167,13 @@ static void pic_drive(void)                     /* (V2) Drive: a sine through it
                                       28378, 25102, 21063, 16384, 11207, 5690, 0, -5690, -11207, -16384, -21063, -25102,
                                       -28378, -30792, -32270, -32767, -32270, -30792, -28378, -25102, -21063, -16384,
                                       -11207, -5690, 0};
-    int32_t a = clamp(dr_amt, 0, 127), g = (int32_t)pow2_q16(a * 9), i;
     uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1);
+    int32_t a = clamp(dr_amt, 0, 127), g = dr_gain(ty, a), lv = dr_level(ty, a), i;
     char r[8];
     ui_3(r, ui_pc(a));
     ui_caption(DT_NAME[ty], a ? r : "OFF");
     for (i = 0; i < 37; i++) {
-        int32_t x = SIN37[i] * 3 / 4, y = a ? dr_shape(ty, (int32_t)(((int64_t)x * g) >> 16)) : x;
+        int32_t x = SIN37[i] * 3 / 4, y = a ? (dr_shape(ty, (x * g) >> 8) * lv) >> 12 : x;
         ui_rect(9 + i * 6, 98 - x * 40 / 32768, 3, 3, UI_D);
         ui_rect(9 + i * 6, 98 - y * 40 / 32768, 3, 3, a ? UI_L : UI_M);
     }
