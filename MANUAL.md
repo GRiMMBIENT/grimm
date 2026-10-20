@@ -92,6 +92,15 @@ Press **HOME** again for the mixer pages:
 
 On PHYS, STRUCTURE and BOW change meaning with the model; the screen shows the current name.
 
+| PHYS MODEL | What it is | STRUCTURE | DAMP | BOW |
+|---|---|---|---|---|
+| MODAL | a bar, bell or plate: a set of resonating modes | harmonic (bar) → inharmonic (bell, metal) | how long it rings: low = short, high = long | 0: struck; up: excited by a stream of tiny random strikes, so it keeps sounding |
+| STRING | a plucked string (Karplus-Strong) | a buzzy bridge → a stiff, bell-like string | as MODAL | 0: plucked; up: excited by noise, so it keeps sounding |
+| MEMBRANE | a struck drum head | HARM: an ideal head → a tuned (tabla-like) one | as MODAL | BEND: the pitch drop after the strike (no bowing) |
+| SYMPATH | a plucked string with three strings ringing along | CHORD of the sympathetic strings | as MODAL | BUZZ: a buzzing bridge (no bowing) |
+
+PHYS's "bow" is not a smooth violin bow: it keeps the model sounding with many tiny random hits (MODAL) or noise (STRING). With DAMP low each hit dies at once and you hear a stream of little plucks; turn **DAMP up** (long ring) for a smooth, sustained, swelling tone. MEMBRANE and SYMPATH can't be bowed: on them the fourth knob is BEND and BUZZ.
+
 The four sample slots come with GR!MM's factory samples: **1 URCHIN, 2 LEAVE, 3 NIKOLAI, 4 M-SOFT**. Replace them with your own from the [editor](#15-the-editor) (see also [Good to know](#14-good-to-know)).
 
 ### FM editor (FM tracks only)
