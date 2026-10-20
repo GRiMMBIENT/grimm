@@ -211,15 +211,18 @@ static inline void px_csvf_pass(const px_csvf_t *c, px_csvf_st_t *s, int32_t in)
 }
 
 /* ------------------------------------------------------------- Modal --- */
+typedef struct { int32_t g, rpg, gh, a; } px_mode_t;    /* px_svf_t + the mode's gain (Q28) */
 typedef struct {
     int32_t s[PX_NMODE][2];                              /* mode states (s1, s2), Q22 */
+    px_mode_t cm[PX_NMODE];                              /* GR!MM: the last block's modes, and what they were made of */
+    uint32_t cn, ck[5];                                  /* (f0, structure, brightness, damping, pos), cok: they are */
+    uint8_t cok;                                         /* there (a reset: not); in the union's room, no RAM */
     int32_t e1, e2;                                      /* exciter (ResonatorSvf<1>, low-pass), Q24 */
     uint32_t rng;
     int32_t benv;                                        /* MEMB: the pitch bend after a strike, Q16 (1 at it) */
     uint8_t trig;
 } px_modal_t;
 
-typedef struct { int32_t g, rpg, gh, a; } px_mode_t;    /* px_svf_t + the mode's gain (Q28) */
 typedef struct {                                         /* per block */
     px_mode_t m[PX_NMODE];
     uint32_t n;                                          /* modes below 0.499 */
@@ -302,6 +305,14 @@ static __attribute__((noinline)) void px_modal_block(px_modal_blk_t *B, px_modal
     /* the modes */
     f0 = (uint32_t)(((uint64_t)f0 * (uint32_t)(((uint64_t)1 << 32) /   /* NthHarmonicCompensation(3) */
                      (uint32_t)(65536 + stiff + px_m(stiff, stiff < 0 ? 60948 : 64225, 16)))) >> 16);
+    if (M->cok && M->ck[0] == f0 && M->ck[1] == (uint32_t)structure && M->ck[2] == (uint32_t)b &&
+        M->ck[3] == (uint32_t)d && M->ck[4] == (uint32_t)pos) {   /* GR!MM: as the last block: its modes (the same) */
+        memcpy(B->m, M->cm, sizeof B->m);
+        i = B->n = M->cn;
+        goto bound;
+    }
+    M->ck[0] = f0, M->ck[1] = (uint32_t)structure, M->ck[2] = (uint32_t)b, M->ck[3] = (uint32_t)d;
+    M->ck[4] = (uint32_t)pos;
     q8 = px_modal_q(structure, b, d, &ql);
     st2 = stiff;
     harm = f0;
@@ -328,6 +339,8 @@ static __attribute__((noinline)) void px_modal_block(px_modal_blk_t *B, px_modal
         phs += (uint32_t)pos << 16;
     }
     B->n = i;
+    memcpy(M->cm, B->m, sizeof M->cm), M->cn = i, M->cok = 1;
+bound:
     for (; i < PX_NMODE; i++)                            /* out of the band: silent */
         M->s[i][0] = M->s[i][1] = 0;
     for (i = 0; i < B->n; i++) {                         /* bound the states at +-64 (far beyond any real use): */
@@ -436,20 +449,27 @@ static void px_modal_run(const px_modal_blk_t *B, px_modal_t *M, int32_t *out, i
         M->e2 = px_clamp(e2, -(1 << 30), 1 << 30);
         M->rng = rs;
     }
-    for (i = 0; i < n; i++) {                            /* the modes, band-pass */
-        int64_t acc = 0;
+    {                                                    /* the modes, band-pass: GR!MM, a mode at a time over the n
+                                                          * samples (its state, its coefficients in registers); the
+                                                          * sums the same, in another order (integers: exactly) */
+        int64_t acc[32];
         const px_mode_t *c = B->m;
-        int32_t (*st)[2] = M->s, xi = x[i];
-        for (k = 0; k < nm; k++, c++, st++) {
-            int32_t s1 = st[0][0], s2 = st[0][1], t, v;
-            t = px_m(c->gh, xi - px_m(c->rpg, s1, 28) - s2, 30);
-            v = s1 + t;
-            st[0][0] = v + t;
-            t = px_m(c->g, v, 28);
-            st[0][1] = s2 + t + t;
-            acc += (int64_t)c->a * v;
+        for (i = 0; i < n; i++)
+            acc[i] = 0;
+        for (k = 0; k < nm; k++, c++) {
+            int32_t s1 = M->s[k][0], s2 = M->s[k][1], g = c->g, rpg = c->rpg, gh = c->gh, a = c->a, t, v;
+            for (i = 0; i < n; i++) {
+                t = px_m(gh, x[i] - px_m(rpg, s1, 28) - s2, 30);
+                v = s1 + t;
+                s1 = v + t;
+                t = px_m(g, v, 28);
+                s2 = s2 + t + t;
+                acc[i] += (int64_t)a * v;
+            }
+            M->s[k][0] = s1, M->s[k][1] = s2;
         }
-        out[i] = (int32_t)(acc >> 30);                   /* Q28 * Q22 -> Q20 */
+        for (i = 0; i < n; i++)
+            out[i] = (int32_t)(acc[i] >> 30);            /* Q28 * Q22 -> Q20 */
     }
 }
 
