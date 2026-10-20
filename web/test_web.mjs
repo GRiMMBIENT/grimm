@@ -145,7 +145,7 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const vf = await VirtualFM1.create(readFileSync("web/dist/grimm.wasm"));
   vf.warmUp();
   const cl = new Client(vf), info = await cl.info(), meta = vf.meta();
-  check(info.proto === 2 && info.sounds === 64 && info.slotSize === 2532 && info.setSize === 168 && info.factory === 40,
+  check(info.proto === 2 && info.sounds === 64 && info.slotSize === 2532 && info.setSize === 169 && info.factory === 40,
         `editor: INFO (GR!MM ${info.firmware}, protocol ${info.proto}, ${info.sounds} sounds, slots ${info.slotSize} B)`);
   check(meta.factory.length === 40 && meta.engines.length === 7 && meta.fmAlg.length === 32, "editor: the page's names and tables from the firmware");
   const f2 = await cl.get(OBJ.FACT + 2, 64);

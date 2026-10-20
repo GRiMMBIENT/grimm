@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: GPL-3.0-only
+ * Copyright (C) 2026 GR!MM */
+/* Host mode's "T probe" (tests/host.c): the MIDI clock's and the sequencer's state at that moment, one line, for
+ * tests/clock_test.py:
+ *   probe MS play P seq S ext E bpm B10 own BPM ticks T pulses N done D pos P1,P2,P3,P4 mch M clk C links L notes ..
+ * play: the main loop's PLAY; seq: the sequencer runs; ext: following a MIDI clock; bpm: its tempo x 10; own: the
+ * FM-1's tempo (SELECT on HOME); ticks: the sequencer's since PLAY; pulses, done: the clock's pulses since it came and
+ * the ticks played for them; pos: each track's step (-1 stopped); mch, clk, links: MIDI CHANNEL, CLOCK, MIDI LEARN's
+ * links (the settings); notes: the notes on, by track:note (1..4) */
+static void host_probe(void)
+{
+    uint32_t i;
+    printf("probe %u play %u seq %u ext %u bpm %u own %d ticks %u pulses %u done %u pos %d,%d,%d,%d mch %u clk %u links %u "
+           "notes", fm1_ms, playing, seq_on, ck_ext, ck_bpm10, (int)seq_bpm, seq_ticks, ck.p, ck.done, (int)seq[0].pos,
+           (int)seq[1].pos, (int)seq[2].pos, (int)seq[3].pos, set.mch, set.clk, set.nlk);
+    for (i = 0; i < nlat; i++) printf(" %u:%u", lat_trk[i] + 1u, lat_note[i]);
+    printf("\n");
+}

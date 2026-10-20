@@ -272,8 +272,7 @@ static void stress_hlinks(void)                 /* "h_links": settings as steps 
     set.nlk = 2;
     set.lk[0][0] = 21, set.lk[0][1] = PG_HOME, set.lk[0][2] = 2, set.lk[0][3] = 0, set.lk[0][4] = 0;   /* (T3 LEVEL) */
     set.lk[1][0] = 22, set.lk[1][1] = PG_TRACK, set.lk[1][2] = 1, set.lk[1][3] = 3, set.lk[1][4] = 0;  /* (T4 CUTOFF) */
-    settings_save(&set, sizeof set - 1u);
-    host_store[4 + sizeof set - 1u] = 0;        /* (no ver: as they were) */
+    settings_save(&set, (uint32_t)((uint8_t *)&set.ver - (uint8_t *)&set));   /* (no ver: as they were) */
     sys_load();
     if (set.lk[0][1] != PG_MIX1 || set.lk[0][2] != 0 || set.lk[0][3] != 2 || set.lk[1][1] != PG_HOME || set.lk[1][3] != 3)
         stress_fail("h_links: the old links not moved onto MIXER 1's LEVEL, HOME (page)", set.lk[0][1]);
@@ -473,7 +472,7 @@ static void stress_editor(void)                 /* "x_editor" */
     if (st_edput(EO_SLOT, a, SLOT_ALL, st_crc(a, SLOT_ALL), ED_FMT + 1u, 1, 1) != ER_ARGS) stress_fail("x_editor: a wrong format taken", 0);
     if (st_edput(EO_FACT, a, SND_SIZE, st_crc(a, SND_SIZE), ED_FMT, 1, 1) != ER_ARGS) stress_fail("x_editor: a factory sound written", 0);
     if (st_edput(EO_SLOT, a, SLOT_ALL, st_crc(a, SLOT_ALL), ED_FMT, 0, 1) != ER_STOP) stress_fail("x_editor: written while not silent", 0);
-    memcpy(b, &set, sizeof set), b[sizeof set - 1u] = 9u;   /* (ver 9) */
+    memcpy(b, &set, sizeof set), b[(uint8_t *)&set.ver - (uint8_t *)&set] = 9u;   /* (ver 9) */
     if (st_edput(EO_SET, b, sizeof set, st_crc(b, sizeof set), ED_FMT, 1, 1) != ER_BAD) stress_fail("x_editor: bad settings taken", 0);
     memset(b, 0x55, SND_SIZE);                  /* (not a sound) */
     if (st_edput(EO_SND, b, SND_SIZE, st_crc(b, SND_SIZE), ED_FMT, 1, 1) != ER_BAD) stress_fail("x_editor: a broken sound taken", 0);

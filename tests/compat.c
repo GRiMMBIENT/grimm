@@ -5,8 +5,9 @@
  *   GRIMM_FILL=1          a varied project into RAM (every step's values over their ranges, chord steps, locks, the
  *                         patterns' settings), into slots A..C, and saved (autosave), with two user sounds
  *   GRIMM_SAVE_OUT=file   the save sectors (6 x 4 KiB) into file
- *   GRIMM_STATE_OUT=file  what was loaded, as text: each step's values, the packed project, the slots, the settings and
- *                         the sounds (hex)
+ *   GRIMM_STATE_OUT=file  what was loaded, as text: each step's values, the packed project, the slots, the settings
+ *                         (all but their version, which a newer GR!MM raises; then the bytes it adds) and the sounds
+ *                         (hex)
  * and at the start, GRIMM_SAVE_IN=file: the save sectors from file (tests/host.c main).
  * tests/data/v1.0-saves.bin was made by GR!MM 1.0 (the v1.0 tag) with this file and GRIMM_FILL; v1.0-state.txt is what
  * 1.0 loaded from it. The same source works on both: the steps' fields are assigned, never pointed to. */
@@ -67,7 +68,9 @@ static void compat_exit(void)                   /* tests/host.c: at the end of t
         pk_work(st_img);
         compat_hex(f, "work", st_img, WORK_PK);
         for (k = 0; k < 4u; k++) compat_hex(f, "slot", slots[k], SLOT_ALL);
-        compat_hex(f, "settings", (const uint8_t *)&set, sizeof set);
+        compat_hex(f, "settings", (const uint8_t *)&set, 167u);   /* (V1.0's and later's alike: all but the version,
+                                                 * then what comes after it: V2's CLOCK, 0 INT; 1.0: none, 0) */
+        fprintf(f, "after %u\n", sizeof set > 168u ? (unsigned)((const uint8_t *)&set)[168] : 0u);
         compat_hex(f, "sounds", save_flash(0), 4096u);
         fclose(f);
     }

@@ -75,16 +75,17 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #define CV_MAX (240u * 64u)
 #include "gfx.c"
 
-static uint8_t host_store[256 + 4];
+static uint8_t host_store[256 + 4];             /* (valid, its size; then the bytes: as the FM-1's sector, a load of
+                                                 * another size fails) */
 static int settings_load(void *p, uint32_t n)
 {
-    if (host_store[0] != 1 || n > 256u) return -1;
+    if (host_store[0] != 1 || n > 256u || n != (host_store[1] | (uint32_t)host_store[2] << 8)) return -1;
     memcpy(p, host_store + 4, n);
     return 0;
 }
 static int settings_save(const void *p, uint32_t n)
 {
-    host_store[0] = 1;
+    host_store[0] = 1, host_store[1] = (uint8_t)n, host_store[2] = (uint8_t)(n >> 8);
     memcpy(host_store + 4, p, n);
     printf("%6u ms  settings saved (%u B)\n", fm1_ms, n);
     return 0;
@@ -103,7 +104,6 @@ static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
 static void stress_midi_out(uint32_t st, uint32_t d1);   /* (tests/stress_check.c: what is on out there) */
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { (void)d2; stress_midi_out(st, d1); }
 #else
-static uint32_t rt_now(void) { return (uint32_t)((uint64_t)fm1_ms * 24000u); }   /* (platform.c's realtime ring) */
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  MIDI out %02X %u %u\n", fm1_ms, st, d1, d2); }
 #endif
 static uint32_t midi_room(void) { return 64u; }
@@ -184,9 +184,13 @@ static void app_main(void);
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message, an encoder turned. A script
  * file (the second argument) replaces it, a line each: "T keys MASK" (hex or decimal), "T btn ID" (a tap: let go the
- * next millisecond), "T down ID" / "T up ID" (held, let go), "T midi ST D1 D2", "T enc ID STEPS" (ENC_ id, + =
- * clockwise), "T end" */
-typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps; } host_ev_t;
+ * next millisecond), "T down ID" / "T up ID" (held, let go), "T midi ST D1 D2" (USB), "T trs ST D1 D2" (the TRS jack),
+ * "T enc ID STEPS" (ENC_ id, + = clockwise), "T end"; GR!MM V2: "T clock usb|trs BPMx10 MS" (MIDI clock pulses from
+ * T for MS ms, each at its exact time; BPMx10 0: none from T), "T probe" (the clock's and the sequencer's state out:
+ * tests/probe.c) */
+typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps, kind, src; uint32_t a, b; } host_ev_t;
+enum { HK_PLAIN, HK_CLOCK, HK_PROBE };          /* (kind) */
+static void host_probe(void);                   /* (tests/probe.c) */
 #define CHORD1 (1u << 7 | 1u << 11 | 1u << 14)                  /* C E G (C4 .. G4 at OCTAVE +0) */
 #define CHORD2 (1u << 2 | 1u << 5 | 1u << 9)                   /* G Bb D (G3 .. D4) */
 #define DOWN 0x100                                              /* btn: held from now (a btn alone: a tap, 1 ms) */
@@ -250,7 +254,14 @@ static void read_script(const char *path)
         else if (!strcmp(what, "down")) { sscanf(line, "%*u %*s %d", &e.btn); e.btn |= 0x100; }
         else if (!strcmp(what, "up")) { sscanf(line, "%*u %*s %d", &e.btn); e.btn |= 0x200; }
         else if (!strcmp(what, "enc")) { sscanf(line, "%*u %*s %d %d", &e.enc, &e.steps); }
-        else if (!strcmp(what, "midi")) { sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
+        else if (!strcmp(what, "midi") || !strcmp(what, "trs")) {
+            sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c;
+            e.src = what[0] == 't';
+        } else if (!strcmp(what, "clock")) {
+            char s[8] = "";
+            sscanf(line, "%*u %*s %7s %u %u", s, &e.a, &e.b);
+            e.kind = HK_CLOCK, e.src = s[0] == 't';
+        } else if (!strcmp(what, "probe")) e.kind = HK_PROBE;
         else continue;
         ev[n++] = e;
     }
@@ -351,6 +362,35 @@ static void host_matrix(void)
 }
 #endif
 
+/* GR!MM V2: the MIDI clock. Time is the script's (24 a us, platform.c rt_now): pulses at their exact time (HK_CLOCK);
+ * what the FM-1 sends (CLOCK INT+OUT) taken when due and counted, START and STOP shown */
+static uint64_t host_frames;                    /* frames rendered: an audio block's time is its first frame's, as on the
+                                                 * FM-1 (its ISR comes on the DMA), not the millisecond it is made in */
+static int host_in_audio;
+static uint32_t rt_now(void)
+{
+    return (uint32_t)(host_in_audio ? host_frames * 24000000u / FS : (uint64_t)fm1_ms * 24000u);
+}
+static struct { uint64_t t0, k; uint32_t bpm10, end, src; } hg;   /* the pulses: from t0 (ticks), the next, the tempo */
+static struct { uint32_t n, last, lo, hi; } ho;   /* pulses out: how many; the last's time; their intervals (ticks) */
+static void host_clock(void)                    /* each millisecond: the pulses due in, the FM-1's out */
+{
+    uint64_t now = (uint64_t)fm1_ms * 24000u, t;
+    while (hg.bpm10 && (t = hg.t0 + hg.k * 600000000u / hg.bpm10) <= now && t < (uint64_t)hg.end * 24000u)
+        rt_in_at(0xF8u, hg.src, (uint32_t)t), hg.k++;
+    while (ro_r != ro_w && (int32_t)(ro_t[ro_r % RTQ] - (uint32_t)now) <= 0) {
+        uint32_t st = ro_q[ro_r % RTQ], due = ro_t[ro_r % RTQ];
+        ro_r++;
+        if (st != 0xF8u) { printf("%6u ms  clock out %02X\n", fm1_ms, st); continue; }
+        if (ho.n) {
+            uint32_t d = due - ho.last;
+            if (!ho.lo || d < ho.lo) ho.lo = d;
+            if (d > ho.hi) ho.hi = d;
+        }
+        ho.n++, ho.last = due;
+    }
+}
+
 static void platform_poll(void)                 /* one call = one millisecond */
 {
     static uint32_t step, shot, owed, frame;
@@ -366,7 +406,14 @@ static void platform_poll(void)                 /* one call = one millisecond */
         host_tap = 0;
     }
     while (step < script_n && script[step].t <= fm1_ms) {
-        if (script[step].st) {
+        if (script[step].kind == HK_CLOCK) {
+            hg.t0 = (uint64_t)script[step].t * 24000u, hg.k = 0, hg.bpm10 = script[step].a;
+            hg.end = script[step].t + script[step].b, hg.src = (uint32_t)script[step].src;
+        } else if (script[step].kind == HK_PROBE)
+            host_probe();
+        else if (script[step].st >= 0xF8u)      /* (realtime: the clock's ring, at its time) */
+            rt_in_at(script[step].st, (uint32_t)script[step].src, rt_now());
+        else if (script[step].st) {
             mq[mq_w % 64u][0] = script[step].st; mq[mq_w % 64u][1] = script[step].d1; mq[mq_w % 64u][2] = script[step].d2;
             mq_w++;
         } else if (script[step].btn >= 0) {
@@ -391,6 +438,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
     fm1_in.notes = acc_n, fm1_in.buttons = acc_b, host_edges = e0, host_rel = r0;
     host_matrix();
 #endif
+    host_clock();
     owed += FS;                                 /* the frames this millisecond is worth, in blocks as the ISR renders */
     while (owed >= 1000u * HALF_FRAMES) {
         uint32_t i;
@@ -398,7 +446,9 @@ static void platform_poll(void)                 /* one call = one millisecond */
         memset(blk, 0, sizeof blk);
         {
             uint32_t t0 = fm1_ticks(), dt;
+            host_in_audio = 1;
             app_audio(blk, HALF_FRAMES);
+            host_in_audio = 0, host_frames += HALF_FRAMES;
             dt = fm1_ticks() - t0;
             static uint32_t sum, cnt;
             if (dt > host_cpu_max) host_cpu_max = dt;
@@ -422,6 +472,9 @@ static void platform_poll(void)                 /* one call = one millisecond */
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
         compat_exit();                          /* (tests/compat.c: saves out, the state as loaded) */
+        if (ho.n)
+            printf("clock  out: %u pulses, %u.%03u .. %u.%03u ms apart\n", ho.n, ho.lo / 24000u, ho.lo / 24u % 1000u,
+                   ho.hi / 24000u, ho.hi / 24u % 1000u);
         write_wav();
         exit(0);
     }
@@ -433,6 +486,13 @@ int main(int argc, char **argv)
     if (argc > 2) read_script(argv[2]);
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);
     memset(fake_flash, 0xFF, sizeof fake_flash);   /* (erased: the factory samples go in at boot) */
+    if (getenv("GRIMM_SETTINGS_IN")) {          /* (tests/clock_test.py: the settings an older GR!MM saved, as stored) */
+        FILE *f = fopen(getenv("GRIMM_SETTINGS_IN"), "rb");
+        size_t n = f ? fread(host_store + 4, 1, 256, f) : 0;
+        if (!f || !n) { perror("GRIMM_SETTINGS_IN"); exit(1); }
+        fclose(f);
+        host_store[0] = 1, host_store[1] = (uint8_t)n, host_store[2] = (uint8_t)(n >> 8);
+    }
     if (getenv("GRIMM_SAVE_IN")) {              /* (tests/compat.c: the save sectors an older GR!MM wrote) */
         FILE *f = fopen(getenv("GRIMM_SAVE_IN"), "rb");
         (void)save_flash(0);

@@ -53,6 +53,9 @@ static const char *const SEQ_MODE_SHORT[SEQ_NMODE] = {"FWD", "BWD", "PONG", "RND
 static uint32_t seq_ticks;                      /* audio: ticks since PLAY (the bars) */
 static volatile int32_t seq_recall = -1;        /* main loop: a slot to come in at the next bar (-1: none); audio: -1 */
 static void slot_apply_isr(uint32_t s);         /* (store.c) */
+enum { CK_INT, CK_OUT, CK_USB, CK_TRS, CK_N };  /* (clock.c: CLOCK, INT .. TRS) */
+static volatile uint32_t ck_mode;               /* (clock.c) */
+static void ck_out(uint32_t st, uint32_t rem);  /* (clock.c: CLOCK INT+OUT, a message out at its time: STOP's) */
 static int slot_used(uint32_t s);
 static void arp_tick(uint32_t t, int locked);   /* (arp.c: the arps on the sequencer's clock while it plays) */
 
@@ -202,6 +205,7 @@ static void seq_start(uint32_t slot)            /* audio (NQ_PLAY, the slot in u
 static void seq_stop(void)                      /* audio (NQ_STOP): all four stopped, their notes released */
 {
     uint32_t t, i;
+    if (seq_on && ck_mode == CK_OUT) ck_out(0xFCu, (uint32_t)CTL << 16);   /* (STOP out) */
     seq_on = 0;
     song_stop();                                /* (song record: its last step written, then END) */
     for (t = 0; t < NT; t++) {
@@ -215,25 +219,32 @@ static void seq_stop(void)                      /* audio (NQ_STOP): all four sto
         lk_m[t] = 0;                            /* (the knobs' sound again) */
     }
 }
-static void seq_ctl(void)                       /* audio, a control block: the ticks due */
+static int seq_tick(void)                       /* audio: a tick while playing (the FM-1's tempo: seq_ctl; a MIDI
+                                                 * clock's: clock.c); 1: the song over, stopped */
 {
-    uint32_t tick = SEQ_TICK_Q16 / (uint32_t)clamp(seq_bpm, 20, 300), t;
+    uint32_t t;
+    if (song_tick()) return 1;                  /* (a pass's end: the song's next step; the song over: stopped) */
+    if (seq_recall >= 0 && song_rec != 2u && !(seq_ticks % SEQ_BAR)) {   /* a slot recalled: in at the bar, from
+                                                 * step 1 (song record: at the pass's end, song.c) */
+        uint32_t s = (uint32_t)seq_recall;
+        seq_recall = -1;
+        seq_jump(s);
+    }
+    seq_ticks++;
+    for (t = 0; t < NT; t++) {
+        seq_track_tick(t);
+        arp_tick(t, 1);
+    }
+    return 0;
+}
+static void seq_ctl(void)                       /* audio, a control block: the ticks due at the FM-1's tempo */
+{
+    uint32_t tick = SEQ_TICK_Q16 / (uint32_t)clamp(seq_bpm, 20, 300);
     if (!seq_on) return;
     seq_acc += (uint32_t)CTL << 16;
     while (seq_acc >= tick) {
         seq_acc -= tick;
-        if (song_tick()) return;                /* (a pass's end: the song's next step; the song over: stopped) */
-        if (seq_recall >= 0 && song_rec != 2u && !(seq_ticks % SEQ_BAR)) {   /* a slot recalled: in at the bar, from
-                                                 * step 1 (song record: at the pass's end, song.c) */
-            uint32_t s = (uint32_t)seq_recall;
-            seq_recall = -1;
-            seq_jump(s);
-        }
-        seq_ticks++;
-        for (t = 0; t < NT; t++) {
-            seq_track_tick(t);
-            arp_tick(t, 1);
-        }
+        if (seq_tick()) return;
     }
 }
 

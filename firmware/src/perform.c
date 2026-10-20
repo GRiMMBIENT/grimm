@@ -37,7 +37,10 @@ static int32_t pf_at(uint32_t i, uint32_t f)    /* history sample i (+ f / 65536
     int32_t a = pf_buf[i % PF_LEN], b = pf_buf[(i + 1u) % PF_LEN];
     return a + (int32_t)(((int64_t)(b - a) * (int32_t)f) >> 16);
 }
-static uint32_t pf_beat(void) { return 1323000u / (uint32_t)clamp(seq_bpm, 20, 300); }   /* a beat (history samples) */
+static uint32_t pf_beat(void)                   /* a beat (history samples): the tempo's, a MIDI clock's (V2) */
+{
+    return ck_ext && ck_bpm10 ? 13230000u / ck_bpm10 : 1323000u / (uint32_t)clamp(seq_bpm, 20, 300);
+}
 static void pf_begin(uint32_t r)                /* audio: the reader starts trick r (its loop from the history now) */
 {
     pf_cur = r, pf_rf = 0;

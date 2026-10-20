@@ -128,7 +128,7 @@ static void ui_head_text(void)
     else if (page == PG_PROJECTS) ui_hr[0] = (char)('A' + (slot_cur & 3)), ui_hr[1] = 0;   /* (the slot in use) */
     else if (ge_freeze && P->btn == BTN_FX) put_s(ui_hr, "FREEZE");
     else if (page == PG_GRID) put_s(put_u(ui_hr, (uint32_t)seq_steps(&seq[sel])), " ST");   /* (Seq: the steps) */
-    else if (page == PG_HOME) put_u(put_s(ui_hr, "> "), (uint32_t)clamp(seq_bpm, 20, 300));   /* (Main: the tempo) */
+    else if (page == PG_HOME) tempo_text(ui_hr, "> ");   /* (Main: the tempo; a MIDI clock's: "EXT 120.4") */
     else if (P->btn == BTN_SEL) put_u(put_s(ui_hr, "T"), sel + 1u);
     else if (page == PG_ARP) put_s(ui_hr, trk[sel].latch ? "LATCH" : "");   /* (Arp: LATCH, if on) */
     else if (page == PG_SYSTEM || page == PG_SYS2) put_s(ui_hr, "V" APP_VER);   /* (System: the version) */
@@ -322,8 +322,11 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         else if (v) S->fill = (uint8_t)(2 * v), put_s(put_u(S->val, SCR_S[clamp(v, 0, 4)] / 60u), "M");
         else S->fill = 8, put_s(S->val, "NVR");
         return;
-    case PG_SYS2: put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
-                        LEARN_NAME[clamp(v, 0, 2)]); return;
+    case PG_SYS2:                               /* MIDI LEARN, SEQ MIDI OUT, SAMPLES, CLOCK ("I+OUT": INT+OUT) */
+        if (k == 3u) { put_s(S->val, v == CK_OUT ? "I+OUT" : CK_NAME[clamp(v, 0, CK_N - 1)]); return; }
+        put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
+              LEARN_NAME[clamp(v, 0, 2)]);
+        return;
     case PG_SOUNDS:
         if (k == 0u) { ui_3(S->val, (uint32_t)v + 1u); return; }
         if (k == 1u) { ui_squeeze(S->val, CAT_NAME[clamp(v, 0, NCAT - 1)]); return; }
@@ -1165,7 +1168,7 @@ static void pic_grid(void)                      /* Seq: the 64 steps of the trac
     if (pos >= 0 && seq_on) put_u(put_s(put_u(st, (uint32_t)pos + 1u), "/"), (uint32_t)n);
     else put_u(put_s(st, "-/"), (uint32_t)n);
     ui_text(148, 71, st, 1, UI_L);
-    put_u(put_s(st, "BPM "), (uint32_t)clamp(seq_bpm, 20, 300));
+    tempo_text(st, "BPM ");
     ui_text(148, 83, st, 1, UI_L);
     put_u(put_s(st, "STEPS "), (uint32_t)n);
     ui_text(148, 93, st, 1, UI_L);

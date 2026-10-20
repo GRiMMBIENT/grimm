@@ -47,7 +47,7 @@ Request: none. Reply, in order:
 | 1 | a sound's size (64) |
 | 1 | factory sounds (40) |
 | 5 | a slot's size, u35 (2532) |
-| 5 | the settings' size, u35 (168) |
+| 5 | the settings' size, u35 (169; GR!MM 1.0: 168) |
 | 1 | sample slots (4) |
 | 1 | sample slots in use (holding a good sample) |
 
@@ -55,7 +55,7 @@ Request: none. Reply, in order:
 
 | id | Object | Size | GET | PUT |
 | --- | --- | --- | --- | --- |
-| 0 | the settings | 168 | yes | yes |
+| 0 | the settings | 169 (1.0: 168) | yes | yes |
 | 1–4 | slots A–D | 2532 | yes | yes |
 | 16–79 | user sounds 1–64 (id 16 + slot) | 64 | yes | yes |
 | 80–119 | factory sounds 1–40 (id 80 + index, in the firmware's order) | 64 | yes | no |
@@ -187,7 +187,7 @@ then the step's chord byte (0: a plain note; bit 7 set: a chord step).
 **Step locks (288 bytes):** 64 × 4 values (step n's lock of the source's knob k at 4 n + k), then 32 bytes of masks:
 step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd (bit k: knob k locked).
 
-## The settings (168 bytes)
+## The settings (169 bytes; GR!MM 1.0: 168)
 
 | Byte | |
 | --- | --- |
@@ -199,7 +199,11 @@ step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd
 | 5 | SEQ MIDI OUT (0 / 1) |
 | 6 | MIDI LEARN's links in use (0–32) |
 | 7–166 | 32 links of 5 bytes, the oldest first: CC, page, knob (0–3), track (0–3), x (SOUND: the source; GRID: the step; SONG: the section; FM ALGO's FINE, FM OP: the operator) |
-| 167 | the settings' version (1) |
+| 167 | the settings' version (2; GR!MM 1.0's: 1) |
+| 168 | CLOCK (V2): 0 INT, 1 INT+OUT, 2 USB, 3 TRS |
+
+A PUT of the settings also takes GR!MM 1.0's 168 bytes (version 1): they apply with CLOCK INT, so a backup of then
+restores.
 
 Pages (a link's page): 0 SOUND, 1 SOURCE, 2 ENV, 3 LFO, 4 SCALE, 5 CHORD, 6 SONG, 7 HOME, 8 MIXER 1, 9 MIXER 2,
 14 ARP, 15 GRID, 16 PATTERN SETTINGS, 17 TAPE, 18 GRAIN, 19 DELAY, 20 SPACE, 23 FM ALGO, 24 FM OP (the others can't be

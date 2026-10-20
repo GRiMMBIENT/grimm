@@ -294,13 +294,17 @@ FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
 | SYSTEM | COLOUR (red, amber, teal, violet) | MIDI CHANNEL | TUNE (±50 cents) | SCREEN OFF |
-| SYSTEM 2 | MIDI LEARN | SEQ MIDI OUT | SAMPLES | |
+| SYSTEM 2 | MIDI LEARN | SEQ MIDI OUT | SAMPLES | CLOCK |
 
 - **MIDI CHANNEL:** `1-4` puts T1–T4 on channels 1–4 (or start higher, up to `13-16`); `ALL > SEL` sends every channel to the selected track; `CH 1 > SEL` … `CH 16 > SEL` sends only that channel to the selected track and ignores the others (notes and CCs). The same for USB and the TRS jack.
 - **SCREEN OFF:** the screen goes dark after the chosen time; the music keeps going. Your first touch only wakes it.
 - **MIDI LEARN:** set LEARN, turn any knob on the FM-1, then move a knob on your controller. Up to 32 links. CLEAR ALL removes them (confirm with OCT+).
 - **SEQ MIDI OUT:** sends the sequencer's and arp's notes out over USB on each track's channel.
 - **SAMPLES:** turn it to RESTORE and press **OCT+** to write the four factory samples back into all four sample slots (a few seconds; stop the sequencer and let the sound die out first). **OCT−** keeps your samples.
+- **CLOCK:** where the tempo comes from.
+  - `INT`: the FM-1's own tempo (SELECT on HOME, PRESETS on the sequencer pages).
+  - `INT+OUT` (`I+OUT` on the knob): the same, and the FM-1 sends MIDI clock over USB: 24 pulses a beat (also while stopped), START when you press PLAY (it starts on the next pulse), STOP when it stops. Set your DAW to follow it.
+  - `USB` or `TRS`: the FM-1 follows the MIDI clock coming in over USB or the TRS jack. START plays from step 1, CONTINUE carries on where STOP left it, STOP stops; PLAY and STOP on the FM-1 still work (PLAY starts on the next pulse). HOME shows `EXT` and the tempo it measures; SELECT and PRESETS don't change the tempo meanwhile. The arp, song mode and slots changed "at the next bar" all follow the clock. If the clock stops for half a second, the FM-1 carries on at its own tempo.
 - SYSTEM 2 also shows the processor load (CPU NOW / PEAK). OCT− + OCT+ together resets PEAK.
 
 ---
@@ -358,7 +362,8 @@ Turn **PRESETS** to step through them by category, then your own.
 - **SOUND EDITOR:** the four tracks' sounds (T1–T4), every setting on screen with the FM-1's names. Every move plays on the FM-1 at once, like turning its knobs, and in the page's own GR!MM, whose screen and keys are beside the sliders (play them with the mouse or the computer keyboard: `Z`–`/`, `S`–`'`, `Q`–`O`). **STORE IN SLOT** saves the sound into one of your 64 slots, with the name you give it.
 - **SOUNDS:** your 64 slots and the 40 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
 - **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**.
-- **BACKUP:** one file with all your sounds, slots A–D and settings, and a restore that makes a backup of what's there first. (Samples aren't in it: keep their WAV files.)
+- **SETTINGS:** MIDI CHANNEL and CLOCK, read from the FM-1 and written back (the rest of the settings stay as they are).
+- **BACKUP:** one file with all your sounds, slots A–D and settings, and a restore that makes a backup of what's there first. (Samples aren't in it: keep their WAV files.) Backups from GR!MM 1.0 restore too.
 
 The FM-1 only writes to its memory (store, upload, restore) while the sequencer is stopped and nothing sounds; the editor tells you when to wait. Nothing is written without you pressing a button.
 

@@ -126,6 +126,7 @@
 #define NOW_BLOCKS 86u                          /* NOW: the average over 86 blocks, ~0.5 s */
 #define PEAK_AFTER_MS 2000u                     /* PEAK leaves out the first 2 s (boot: cold caches, USB coming up) */
 static volatile uint32_t cpu_now, cpu_peak;     /* audio: ticks a block, the last ~0.5 s's average; the longest since the reset */
+static uint32_t ck_e, ck_j;                     /* audio: this block's time (rt_now), its control block (clock.c) */
 static volatile uint32_t cpu_reset;             /* main loop: + 1 sets PEAK back to 0 */
 enum { CS_VOICES, CS_MIX, CS_GRAIN, CS_DELAY, CS_SPACE, CS_TAPE, CS_PERFORM, CS_SCAN, CS_N };
 static volatile uint32_t cpu_stage[CS_N];       /* audio: NOW split (GR!MM V2, the editor's 24 CPU): each stage's ticks
@@ -257,6 +258,7 @@ static void app_audio(int32_t *out, uint32_t n)
 {
     static uint32_t sum, cnt, reset_seen, cs_sum[CS_N];
     uint32_t t0 = fm1_ticks(), dt, used, i, tp = t0, s0 = isr_in_audio, sp = s0, t, s;
+    ck_e = rt_now(), ck_j = 0;                  /* (the MIDI clock: this block's time, clock.c) */
 #define CS_MARK(k) (t = fm1_ticks(), s = isr_in_audio, cs_sum[k] += t - tp - (s - sp), tp = t, sp = s)
     if (n > VB) n = VB;
     used = voices_render(tbuf, n);
@@ -544,6 +546,7 @@ static void restart_track(uint32_t t)           /* audio: a new source: the trac
 }
 
 #include "arp.c"                                /* the arpeggiator (its notes: note_on, note_off, SRC_ARP) */
+#include "clock.c"                              /* GR!MM V2: the MIDI clock in and out (SYSTEM 2: CLOCK) */
 
 /* audio: a key's (a MIDI note's) ask, on its track: ARP on, into or out of the arp's list; else its own notes */
 static void key_ask(uint32_t c, uint32_t t, uint32_t id, uint32_t note, int echo)
@@ -591,18 +594,20 @@ static void ctl_hook(void)
             if (trk[t].arp) arp_clear(t);
             break;
         case NQ_RESTART: restart_track(t); break;   /* a new source: the track's notes go over */
-        case NQ_PLAY: seq_start(note & 3u); break;
+        case NQ_PLAY:                           /* (a MIDI clock, in or out: at its next pulse) */
+            if (ck_ext || ck_mode == CK_OUT) ck_slot = note & 3u, ck.go = 1, ck.cont = 0;
+            else seq_start(note & 3u);
+            break;
         case NQ_SONG:                           /* song record, playing: from now, or ended */
             if (id) song_rec_begin(note & 3u);
             else song_stop();
             break;
-        default: seq_stop(); break;
+        default: ck.go = ck.cont = 0, seq_stop(); break;
         }
         nq_r = r + 1u;
     }
     shed_voice();
-    seq_ctl();
-    arp_ctl();
+    clk_ctl();                                  /* the sequencer's and the arps' ticks (clock.c: CLOCK) */
 }
 
 #include "perform.c"                            /* the FX layer: the tricks on the output (FX held + G3 .. F4) */
@@ -630,6 +635,7 @@ static void brw_forget(void)                    /* the tracks' sounds another's 
     for (t = 0; t < NT; t++) brw_pos[t] = -1, trk_nm[t][0] = 0;
 }
 static uint32_t playing, save_held, glo_held;   /* the sequencer runs (PLAY); SAVE, GLO held (their layers on the keys) */
+static uint32_t ck_seen;                        /* main loop: the MIDI clock's START / STOP seen (clock.c ck_trans) */
 static uint32_t rec_on;                         /* REC (app_main's rec, for the stress test's checks) */
 static uint32_t sel_held;                       /* SEL held (SEQ's pages: the knobs lock the selected step, ui.c) */
 /* SYSTEM, SYSTEM 2: the FM-1's own settings, not the project's: kept in the settings sector (platform.c) with the
@@ -647,10 +653,11 @@ static struct {
                                                  * track (a track's page), x (SOUND: the source; GRID: the step; SONG:
                                                  * the section) */
     uint8_t ver;                                /* SET_VER (steps 20..24 saved without it: their links moved, sys_load) */
+    uint8_t clk;                                /* (V2, SET_VER 2) CLOCK: CK_INT .. CK_TRS; V1.0's settings: INT */
 } set;
-#define SET_VER 1u
+#define SET_VER 2u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
-static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac;   /* SYSTEM's, SYSTEM 2's knobs
+static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk;   /* SYSTEM's, SYSTEM 2's knobs
                                                  * (sy_fac: SAMPLES, 1 RESTORE: OCT+ writes the factory ones) */
 static uint32_t fac_at;                         /* RESTORE confirmed: when it writes (the header said first), 0 none */
 static uint32_t learn_st;                       /* MIDI LEARN: 0 none; 1 TURN A KNOB; 2 MOVE A CC (learn_to: the knob) */
@@ -726,7 +733,7 @@ static const page_t PAGES[NPAGE] = {
     {"MIXER 1", BTN_HOME, 1, 1, 1, {"LEVEL", "DLY SEND", "REV SEND", "GRAIN SEND"}},
     {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "", "", ""}},
     {"SYSTEM", BTN_HOME, 1, 0, 0, {"COLOUR", "MIDI CHANNEL", "TUNE", "SCREEN OFF"}},   /* (HOME held; HOME again: */
-    {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", ""}},       /* SYSTEM 2, and back) */
+    {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", "CLOCK"}},       /* SYSTEM 2, and back) */
     {"SOUNDS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
     {"PROJECTS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
     {"ARP", BTN_ARP, 1, 1, 1, {"MODE", "RATE", "OCTAVES", "GATE"}},
@@ -820,7 +827,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_SOUNDS: return k == 0u ? &sv_slot : k == 1u ? &sv_cat : k == 2u ? &sv_type : &sv_act;
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
-    case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : 0;
+    case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : &sy_clk;
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -835,7 +842,7 @@ static int32_t knob_max(uint32_t pg, uint32_t k)
            pg == PG_ARP ? (k == 0u ? NARPMODE - 1 : k == 1u ? NARPRATE - 1 : k == 2u ? 4 : 100) :
            pg == PG_LFO ? (k == 0u ? 127 : k == 1u ? 100 : k == 2u ? NLFODEST - 1 : NLFOSHAPE - 1) :
            pg == PG_SONG ? (k == 0u ? SONG_N - 1 : k == 1u ? SONG_END : k == 2u ? 16 : NSONGMODE - 1) :
-           pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k ? 1 : 2) :
+           pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k == 3u ? CK_N - 1 : k ? 1 : 2) :
            pg == PG_HOME && k == 3u ? 200 : pg == PG_FMALGO ? (k == 0u ? 31 : k == 1u ? 7 : k == 2u ? 5 : 99) :
            pg == PG_FMOP ? (k ? 99 : 31) : 127;
 }
@@ -867,6 +874,13 @@ static char *mch_text(char *s, int32_t v)       /* MIDI CHANNEL: "1-4" .. "13-16
     if (v > MCH_ALL) return put_s(put_u(put_s(s, "CH "), (uint32_t)(v - MCH_ALL)), " > SEL");
     if (v == MCH_ALL) return put_s(s, "ALL > SEL");
     return put_u(put_s(put_u(s, (uint32_t)v + 1u), "-"), (uint32_t)v + 4u);
+}
+static char *tempo_text(char *s, const char *pre)   /* the tempo: pre "120"; a MIDI clock's (V2): "EXT 120.4", "EXT"
+                                                 * (not measured yet: its first beat) */
+{
+    if (!ck_ext) return put_u(put_s(s, pre), (uint32_t)clamp(seq_bpm, 20, 300));
+    s = put_s(s, "EXT");
+    return ck_bpm10 ? put_x10(put_s(s, " "), ck_bpm10) : s;
 }
 static char *tune_text(char *s, int32_t v)      /* TUNE: "+00", "-12" */
 {
@@ -1284,17 +1298,18 @@ static void sys_sync(void)
 {
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
-    uint8_t out = (uint8_t)clamp(sy_out, 0, 1);
+    uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
         for (n = 0; n < 128u; n++)
             for (t = 0; t < NT; t++)
                 if (midi_held[n] >> t & 1u) nq_note(NQ_OFF, t, 0, MIDI_ID(n)), midi_held[n] &= (uint8_t)~(1u << t);
-    if (tn != set.tune || col != set.col || mch != set.mch || scr != set.scr || out != set.out) {
-        set.tune = tn, set.col = col, set.mch = mch, set.scr = scr, set.out = out;
+    if (tn != set.tune || col != set.col || mch != set.mch || scr != set.scr || out != set.out || clk != set.clk) {
+        set.tune = tn, set.col = col, set.mch = mch, set.scr = scr, set.out = out, set.clk = clk;
         set_dirty = 1, set_t = fm1_ms;
     }
+    ck_mode = set.clk, rt_usb_fast = set.clk == CK_USB;   /* (CLOCK: the audio ISR's, platform.c's) */
     ui_acc = UI_ACCENTS[set.col & 3u];
     tune_f = (set.tune * 23666 + set.tune * set.tune * 7) / 10000;   /* (2^(c / 1200) - 1, x 4096) */
     mo_seq = set.out;
@@ -1305,16 +1320,24 @@ static void sys_load(void)                      /* the settings at power-on into
 {
     int8_t o = 0;
     uint32_t i;
-    if (settings_load(&set, sizeof set) && settings_load(&set, sizeof set - 1u)) {
+    if (!settings_load(&set, sizeof set))
+        ;
+    else if (!settings_load(&set, sizeof set - 1u))   /* (V1.0's: no CLOCK, INT) */
+        set.clk = CK_INT;
+    else if (!settings_load(&set, sizeof set - 2u))   /* (steps 20..24's: no version either) */
+        set.ver = 0, set.clk = CK_INT;
+    else {
         set.oct = settings_load(&o, 1) ? 0 : o;
-        set.tune = 0, set.col = set.mch = set.scr = set.out = set.nlk = 0;
+        set.tune = 0, set.col = set.mch = set.scr = set.out = set.nlk = 0, set.ver = 0, set.clk = CK_INT;
     }
+    if (set.mch > MCH_MAX) set.mch = 0;
+    if (set.clk >= CK_N) set.clk = CK_INT;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
-    sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out;
+    sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
     sys_sync();
     set_dirty = 0;
-    if (set.ver != SET_VER)
+    if (!set.ver)                               /* (steps 20..24's; V1.0's are version 1: as they are) */
         for (i = 0; i < set.nlk; i++) {         /* (a link moved: saved again) */
             uint8_t *L = set.lk[i];
             if (L[1] == PG_HOME) L[3] = L[2] & 3u, L[1] = PG_MIX1, L[2] = 0, L[4] = 0, set_dirty = 1;
@@ -1471,6 +1494,7 @@ static void batt_poll(void)
 #endif
 #ifdef DINGHY_HOST
 #include "../../tests/compat.c"                   /* (host mode: saves across versions, tests/run_host.sh) */
+#include "../../tests/probe.c"                    /* (host mode: "T probe", the MIDI clock's test) */
 #endif
 static void app_main(void)
 {
@@ -1540,13 +1564,14 @@ static void app_main(void)
                 b_used |= 1u << BTN_SEQ;        /* (let go: no page change) */
             } else if (PAGES[page].btn == BTN_SEQ)
                 seq[sel].cursor = clamp(seq[sel].cursor + enc_accel(ENC_SELECT, d, SEQ_N - 1), 0, SEQ_N - 1);
-            else if (page == PG_HOME)
+            else if (page == PG_HOME && !ck_ext)   /* (a MIDI clock's tempo: not ours to turn) */
                 seq_bpm = clamp(seq_bpm + enc_accel(ENC_SELECT, d, 280), 20, 300);
         }
         if ((d = enc_take(ENC_PRESETS)) != 0) {   /* PRESETS: on SEQ's pages the tempo; elsewhere the saved sounds */
             t_touch = fm1_ms;
-            if (PAGES[page].btn == BTN_SEQ)
-                seq_bpm = clamp(seq_bpm + enc_accel(ENC_PRESETS, d, 280), 20, 300);
+            if (PAGES[page].btn == BTN_SEQ) {
+                if (!ck_ext) seq_bpm = clamp(seq_bpm + enc_accel(ENC_PRESETS, d, 280), 20, 300);
+            }
             else
                 presets_turn(d);
         }
@@ -1608,6 +1633,8 @@ static void app_main(void)
                 } else
                     page = next_page(k);
             }
+        ck_slot = (uint32_t)slot_cur & 3u;      /* (V2: a MIDI clock's START plays the slot in use) */
+        if (ck_trans != ck_seen) ck_seen = ck_trans, playing = seq_on;   /* (its START / STOP: PLAY follows) */
         if (song_end) song_end = 0, playing = 0;   /* (a SONG played out: stopped) */
         if (b & (1u << BTN_PLAY)) {             /* PLAY/STOP: all four tracks' sequences (a song: song.c) */
             playing ^= 1u;
