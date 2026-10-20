@@ -4,7 +4,9 @@
  *   MASTER: a filter, stereo: CUTOFF, RESONANCE, TYPE (LP / HP / BP: dsp.c's SVF and its outputs, as the tracks'),
  *     POSITION: PRE FX (the tracks' dry mix, before GRAIN's, DELAY's and SPACE's returns), POST REVERB (after them,
  *     before DRIVE and TAPE), END (after TAPE and PERFORM, the very last). The cutoff glides as the tracks' (~6 ms).
- *     LP with CUTOFF at the top, HP at the bottom: bypassed (nothing done).
+ *     LP with CUTOFF at the top, HP at the bottom: bypassed (nothing done). Each POSITION its own filter and its share
+ *     of the sound: a new POSITION (or the filter opened, closed) fades in while the last one fades out, 8 blocks
+ *     (~46 ms), the two running together only then: no click.
  *   DRIVE: after SPACE (and MASTER's POST REVERB), before TAPE. AMOUNT: the gain into it, 1x .. ~60x; TYPE: SOFT (tanh),
  *     FUZZ (tanh, lopsided: even harmonics), CLIP (hard), FOLD (a wavefolder); TONE: a low-pass after it (the top:
  *     none); MIX: the driven sound against the dry. Then a limiter on both sides together: the peak followed at once,
@@ -18,16 +20,11 @@ static volatile int32_t mf_cut = 127, mf_res, mf_type, mf_pos = MP_END;   /* MAS
 static volatile int32_t dr_amt, dr_type, dr_tone = 127, dr_mix = 127;   /* DRIVE's (AMOUNT 0: bypassed) */
 #define DR_LIM 30000                            /* the limiter's ceiling (Q15: ~-0.8 dB) */
 #define DR_TOP 26000                            /* CLIP's and FOLD's (and FUZZ's offset's) level */
-static int32_t mf_cs = 127 << 8, mf_ic[2][2], dr_lp[2], dr_env;   /* audio: MASTER's cutoff now, its states; DRIVE's
-                                                 * TONE's, the limiter's peak */
-static uint8_t mf_on;
-
-static int mf_open(void)                        /* MASTER bypassed now */
-{
-    uint32_t ty = (uint32_t)clamp(mf_type, 0, NFTYPE - 1);
-    int32_t tgt = clamp(mf_cut, 0, 127) << 8;
-    return ty == FT_LP ? tgt >= 127 << 8 && mf_cs >= (127 << 8) - 64 : ty == FT_HP && tgt <= 0 && mf_cs <= 64;
-}
+static int32_t mf_cs[NMPOS], mf_ic[NMPOS][2][2], mf_mx[NMPOS], dr_lp[2], dr_env;   /* audio: MASTER at each POSITION:
+                                                 * its cutoff now, its states, its share (0 .. MF_ONE); DRIVE's TONE's,
+                                                 * the limiter's peak */
+#define MF_ONE 256
+#define MF_STEP 32                              /* (a share's change a block: 8 blocks) */
 /* one side's m frames (p: every other int, L or R) through the SVF c, its TYPE's output; the states in s (the chip:
  * one loop a TYPE, the coefficients and the states in registers) */
 #define MF_RUN(OUT) for (; m; m--, p += 2) {                                                                          \
@@ -44,29 +41,49 @@ static void mf_side(int32_t *p, uint32_t m, const tsvf_t *c, int32_t k, uint32_t
     s[0] = s1, s[1] = s2;
 }
 #undef MF_RUN
-static void master_filter(int32_t *out, uint32_t n, uint32_t at)   /* audio: MASTER where it is at (MP_) */
+static void mf_side_mix(int32_t *p, uint32_t m, const tsvf_t *c, int32_t k, uint32_t ty, int32_t *s, int32_t a, int32_t da)
+{                                               /* as mf_side, the filtered sound's share a (Q16 of MF_ONE) a frame, + da */
+    int32_t a1 = c->a1, a2 = c->a2, a3 = c->a3, s1 = s[0], s2 = s[1];
+    for (; m; m--, p += 2, a += da) {
+        int32_t in = *p >> 1, v3 = in - s2, v1 = (a1 * s1 + a2 * v3) >> 13, v2 = s2 + ((a2 * s1 + a3 * v3) >> 13), y;
+        s1 = clamp(2 * v1 - s1, -150000, 150000), s2 = clamp(2 * v2 - s2, -150000, 150000);
+        y = soft_knee(ty == FT_LP ? v2 : ty == FT_HP ? in - ((k * v1) >> 12) - v2 : (k * v1) >> 12, 60000) << 1;
+        *p += ((y - *p) * (a >> 16)) >> 8;
+    }
+    s[0] = s1, s[1] = s2;
+}
+static void master_filter(int32_t *out, uint32_t n, uint32_t at)   /* audio: MASTER at POSITION at (MP_), its share */
 {
     uint32_t ty = (uint32_t)clamp(mf_type, 0, NFTYPE - 1), i, m;
-    int32_t tgt = clamp(mf_cut, 0, 127) << 8, cs = mf_cs, k = 8192 - clamp(mf_res, 0, 127) * 7 / 8 * 7600 / 127;
+    int32_t tgt = clamp(mf_cut, 0, 127) << 8, k;
+    int32_t a0 = mf_mx[at], a1, cs, da;
+    int open = ty == FT_LP ? tgt >= 127 << 8 : ty == FT_HP && tgt <= 0;   /* (LP at the top, HP at the bottom) */
+    int32_t want = (uint32_t)clamp(mf_pos, 0, NMPOS - 1) == at && !open ? MF_ONE : 0;
     tsvf_t c;
-    if ((uint32_t)clamp(mf_pos, 0, NMPOS - 1) != at) return;
-    if (mf_open()) {
-        mf_cs = ty == FT_LP ? 127 << 8 : 0, mf_on = 0;
-        return;
+    if (!a0 && !want) return;                   /* (not here: nothing done) */
+    k = 8192 - clamp(mf_res, 0, 127) * 7 / 8 * 7600 / 127;
+    a1 = a0 < want ? (a0 + MF_STEP < want ? a0 + MF_STEP : want) : (a0 - MF_STEP > want ? a0 - MF_STEP : want);
+    mf_mx[at] = a1;
+    if (!a0) {                                  /* (coming in: from its cutoff now, its states clear; it fades in) */
+        mf_cs[at] = tgt;
+        mf_ic[at][0][0] = mf_ic[at][0][1] = mf_ic[at][1][0] = mf_ic[at][1][1] = 0;
     }
-    if (!mf_on) {                               /* (from bypassed: no step) */
-        mf_on = 1;
-        mf_ic[0][0] = mf_ic[1][0] = 0;
-        mf_ic[0][1] = ty == FT_LP ? out[0] >> 1 : 0, mf_ic[1][1] = ty == FT_LP ? out[1] >> 1 : 0;
-    }
+    cs = mf_cs[at];
+    da = (int32_t)(((a1 - a0) << 16) / (int32_t)n);
     for (i = 0; i < n; i += CTL) {
         cs += (tgt - cs) >> 3;
         tsvf_coef_k(&c, cs, k);
         m = n - i < CTL ? n - i : CTL;
-        mf_side(out + 2u * i, m, &c, k, ty, mf_ic[0]);
-        mf_side(out + 2u * i + 1u, m, &c, k, ty, mf_ic[1]);
+        if (a0 == MF_ONE && a1 == MF_ONE) {     /* (all of it, as it mostly is) */
+            mf_side(out + 2u * i, m, &c, k, ty, mf_ic[at][0]);
+            mf_side(out + 2u * i + 1u, m, &c, k, ty, mf_ic[at][1]);
+        } else {                                /* (fading in or out) */
+            int32_t a = (a0 << 16) + da * (int32_t)i;
+            mf_side_mix(out + 2u * i, m, &c, k, ty, mf_ic[at][0], a, da);
+            mf_side_mix(out + 2u * i + 1u, m, &c, k, ty, mf_ic[at][1], a, da);
+        }
     }
-    mf_cs = cs;
+    mf_cs[at] = cs;
 }
 
 static inline int32_t dr_shape(uint32_t ty, int32_t y)   /* y (Q15, driven): the TYPE's curve */
