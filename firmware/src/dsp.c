@@ -86,6 +86,20 @@ static inline int32_t tsvf_lp(const tsvf_t *c, int32_t in, int32_t *ic1, int32_t
     return v2;
 }
 
+/* GR!MM V2: the same SVF with its other outputs, from the same state: k its damping (tsvf_coef_k's, Q12); the high-pass
+ * in - k v1 - v2 (as perform.c's pf_hp), the band-pass k v1 (its peak at 1) */
+enum { FT_LP, FT_HP, FT_BP, NFTYPE };           /* (the track's filter TYPE, MASTER's) */
+static const char *const FT_NAME[NFTYPE] = {"LP", "HP", "BP"};
+static inline int32_t tsvf_any(const tsvf_t *c, int32_t k, uint32_t type, int32_t in, int32_t *ic1, int32_t *ic2)
+{
+    int32_t v3 = in - *ic2;
+    int32_t v1 = (c->a1 * *ic1 + c->a2 * v3) >> 13;
+    int32_t v2 = *ic2 + ((c->a2 * *ic1 + c->a3 * v3) >> 13);
+    *ic1 = clamp(2 * v1 - *ic1, -150000, 150000);
+    *ic2 = clamp(2 * v2 - *ic2, -150000, 150000);
+    return type == FT_LP ? v2 : type == FT_HP ? in - ((k * v1) >> 12) - v2 : (k * v1) >> 12;
+}
+
 /* linear up to k, then a soft knee: only the peaks above k saturate (|y| - k must stay < 2^30) */
 static inline int32_t soft_knee(int32_t y, int32_t k)
 {

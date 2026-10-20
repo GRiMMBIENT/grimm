@@ -198,28 +198,54 @@ static void mix_add5(int32_t *out, const int32_t *x, const int32_t *g0, const in
 /* the track filter (TRACK: CUTOFF, RESONANCE; the LFO's TRK CUTOFF): a low-pass after the track's voices and ENV, before
  * LEVEL, PAN and the sends. dsp.c's SVF (as VA's) at a quarter of the track's scale (a chord's sum: up to ~2^20), the
  * cutoff gliding to where it is turned (~6 ms) with its coefficients every CTL frames, RESONANCE up to a Q of ~2.5, a
- * soft knee after it: no zipper, nothing running away. Open (CUTOFF at the top, the LFO not moving it): bypassed */
+ * soft knee after it: no zipper, nothing running away. Open (CUTOFF at the top, the LFO not moving it): bypassed.
+ * GR!MM V2: MIXER 2's TYPE: LP (as V1.0, the same code), HP (open, bypassed: CUTOFF at the bottom), BP (never open), the
+ * same SVF's outputs (dsp.c tsvf_any); POS: PRE (as V1.0: the sends hear it filtered) or POST (mix_tracks: the sends
+ * hear the track before it, only its dry sound filtered) */
 static int32_t tf_cs[NT] = {127 << 8, 127 << 8, 127 << 8, 127 << 8}, tf_ic[NT][2];   /* audio: the cutoff now (<< 8),
                                                  * the states */
 static uint8_t tf_on[NT];
+static int tf_open(uint32_t t)                   /* the track filter bypassed now (its cutoff where its TYPE opens) */
+{
+    int32_t tgt = lfo_move(t, LD_CUT, clamp(trk[t].cut, 0, 127), 127) << 8, cs = tf_cs[t];
+    uint32_t ty = (uint32_t)clamp(trk[t].ftype, 0, NFTYPE - 1);
+    return ty == FT_LP ? tgt >= 127 << 8 && cs >= (127 << 8) - 64 : ty == FT_HP && tgt <= 0 && cs <= 64;
+}
 static void trk_filter(uint32_t t, int32_t *x, uint32_t n)
 {
     int32_t tgt = lfo_move(t, LD_CUT, clamp(trk[t].cut, 0, 127), 127) << 8, cs = tf_cs[t], ic1, ic2;
     int32_t r = clamp(trk[t].res, 0, 127) * 7 / 8;
-    uint32_t i, j;
+    uint32_t ty = (uint32_t)clamp(trk[t].ftype, 0, NFTYPE - 1), i, j;
     tsvf_t c;
-    if (tgt >= 127 << 8 && cs >= (127 << 8) - 64) { /* (open: as it is) */
-        tf_cs[t] = 127 << 8, tf_on[t] = 0;
+    if (tf_open(t)) {                           /* (open: as it is) */
+        tf_cs[t] = ty == FT_LP ? 127 << 8 : 0, tf_on[t] = 0;
         return;
     }
-    if (!tf_on[t]) tf_on[t] = 1, tf_ic[t][0] = 0, tf_ic[t][1] = x[0] >> 2;   /* (from bypassed: no step) */
+    if (!tf_on[t]) tf_on[t] = 1, tf_ic[t][0] = 0, tf_ic[t][1] = ty == FT_LP ? x[0] >> 2 : 0;   /* (from bypassed: no step) */
     ic1 = tf_ic[t][0], ic2 = tf_ic[t][1];
-    for (i = 0; i < n; i += CTL) {
-        cs += (tgt - cs) >> 3;
-        tsvf_coef(&c, cs, r);
-        for (j = i; j < i + CTL && j < n; j++) x[j] = soft_knee(tsvf_lp(&c, x[j] >> 2, &ic1, &ic2), 100000) << 2;
+    if (ty == FT_LP) {
+        for (i = 0; i < n; i += CTL) {
+            cs += (tgt - cs) >> 3;
+            tsvf_coef(&c, cs, r);
+            for (j = i; j < i + CTL && j < n; j++) x[j] = soft_knee(tsvf_lp(&c, x[j] >> 2, &ic1, &ic2), 100000) << 2;
+        }
+    } else {                                    /* (V2: HP, BP) */
+        int32_t k = 8192 - r * 7600 / 127;      /* (tsvf_coef's damping) */
+        for (i = 0; i < n; i += CTL) {
+            cs += (tgt - cs) >> 3;
+            tsvf_coef_k(&c, cs, k);
+            for (j = i; j < i + CTL && j < n; j++)
+                x[j] = soft_knee(tsvf_any(&c, k, ty, x[j] >> 2, &ic1, &ic2), 100000) << 2;
+        }
     }
     tf_cs[t] = cs, tf_ic[t][0] = ic1, tf_ic[t][1] = ic2;
+}
+static void trk_peak(uint32_t t, const int32_t *x, uint32_t n)   /* its peak, roughly: HOME's candle */
+{
+    uint32_t pk = 0, a, k;
+    for (k = 0; k < n; k += 16u)
+        if ((a = (uint32_t)(x[k] < 0 ? -x[k] : x[k])) > pk) pk = a;
+    if (pk > vis_pk[t]) vis_pk[t] = pk;
 }
 static int32_t fx_send(uint32_t t, int32_t s)   /* a send (0..127) times FX (0..200 %): x 258 its Q15 gain, to ~2x */
 {
@@ -241,14 +267,21 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
                                                  * after LEVEL (ECHO THROW, REV THROW held: full) */
         g[3] = mulq15(lv, pf_held >> PF_REV & 1u ? 127 * 258 : fx_send(t, lfo_move(t, LD_REV, clamp(trk[t].rev, 0, 127), 127)));
         g[4] = mulq15(lv, fx_send(t, lfo_move(t, LD_GRAIN, clamp(trk[t].grn, 0, 127), 127)));
-        if (used >> t & 1u) trk_filter(t, x, n);
-        else tf_on[t] = 0;                      /* (silent: from bypassed when it sounds again) */
-        if (used >> t & 1u) {
-            uint32_t pk = 0, a;
-            for (k = 0; k < n; k += 16u)        /* (its peak, roughly: HOME's candle) */
-                if ((a = (uint32_t)(x[k] < 0 ? -x[k] : x[k])) > pk) pk = a;
-            if (pk > vis_pk[t]) vis_pk[t] = pk;
-            mix_add5(out, x, mix_g[t], g, n);
+        if ((used >> t & 1u) && trk[t].fpos && !tf_open(t)) {   /* (V2: POS POST: the sends before the filter) */
+            mix_add(dbus, 1u, x, mix_g[t][2], g[2], n);
+            mix_add(rbus, 1u, x, mix_g[t][3], g[3], n);
+            mix_add(gbus, 1u, x, mix_g[t][4], g[4], n);
+            trk_filter(t, x, n);
+            mix_add(out, 2u, x, mix_g[t][0], g[0], n);
+            mix_add(out + 1, 2u, x, mix_g[t][1], g[1], n);
+            trk_peak(t, x, n);
+        } else {
+            if (used >> t & 1u) trk_filter(t, x, n);
+            else tf_on[t] = 0;                  /* (silent: from bypassed when it sounds again) */
+            if (used >> t & 1u) {
+                trk_peak(t, x, n);
+                mix_add5(out, x, mix_g[t], g, n);
+            }
         }
         for (k = 0; k < 5u; k++) mix_g[t][k] = g[k];
     }
@@ -731,7 +764,7 @@ static const page_t PAGES[NPAGE] = {
     {"HOME", BTN_HOME, 1, 1, 1, {"VOLUME", "CUTOFF", "RESONANCE", "FX"}},   /* (the track's: its LEVEL, its filter, its
                                                  * sends together; its sound's name in the header) */
     {"MIXER 1", BTN_HOME, 1, 1, 1, {"LEVEL", "DLY SEND", "REV SEND", "GRAIN SEND"}},
-    {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "", "", ""}},
+    {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "TYPE", "POS", ""}},   /* (V2: the track filter's TYPE and POS) */
     {"SYSTEM", BTN_HOME, 1, 0, 0, {"COLOUR", "MIDI CHANNEL", "TUNE", "SCREEN OFF"}},   /* (HOME held; HOME again: */
     {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", "CLOCK"}},       /* SYSTEM 2, and back) */
     {"SOUNDS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
@@ -813,7 +846,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
                         &trk[sel].arp_gate;
     case PG_HOME: return k == 0u ? &trk[sel].level : k == 1u ? &trk[sel].cut : k == 2u ? &trk[sel].res : &trk[sel].fx;
     case PG_MIX1: return MIX[k];
-    case PG_MIX2: return k ? 0 : &trk[sel].pan;
+    case PG_MIX2: return k == 0u ? &trk[sel].pan : k == 1u ? &trk[sel].ftype : k == 2u ? &trk[sel].fpos : 0;
     case PG_FMALGO: return k == 0u ? &trk[sel].fm_alg : k == 1u ? &trk[sel].fm_fb : k == 2u ? &fm_op :
                            &trk[sel].fmo[clamp(fm_op, 0, 5)][FO_FINE];
     case PG_FMOP: return &trk[sel].fmo[clamp(fm_op, 0, 5)][k == 0u ? FO_RATIO : k == 1u ? FO_LEVEL : k == 2u ? FO_ATK : FO_DEC];
@@ -844,7 +877,7 @@ static int32_t knob_max(uint32_t pg, uint32_t k)
            pg == PG_SONG ? (k == 0u ? SONG_N - 1 : k == 1u ? SONG_END : k == 2u ? 16 : NSONGMODE - 1) :
            pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k == 3u ? CK_N - 1 : k ? 1 : 2) :
            pg == PG_HOME && k == 3u ? 200 : pg == PG_FMALGO ? (k == 0u ? 31 : k == 1u ? 7 : k == 2u ? 5 : 99) :
-           pg == PG_FMOP ? (k ? 99 : 31) : 127;
+           pg == PG_FMOP ? (k ? 99 : 31) : pg == PG_MIX2 ? (k == 1u ? NFTYPE - 1 : k == 2u ? 1 : 127) : 127;
 }
 static int32_t knob_min(uint32_t pg, uint32_t k)   /* (RATCHET, LENGTH, STEPS, OCTAVES: from 1; GATE from 10 %) */
 {
@@ -874,6 +907,15 @@ static char *mch_text(char *s, int32_t v)       /* MIDI CHANNEL: "1-4" .. "13-16
     if (v > MCH_ALL) return put_s(put_u(put_s(s, "CH "), (uint32_t)(v - MCH_ALL)), " > SEL");
     if (v == MCH_ALL) return put_s(s, "ALL > SEL");
     return put_u(put_s(put_u(s, (uint32_t)v + 1u), "-"), (uint32_t)v + 4u);
+}
+static char *hz_text(char *s, int32_t v, int32_t ty)   /* a filter's CUTOFF (0..127): "880", "2.4K", "12K"; "OPEN"
+                                                 * where its TYPE (FT_) lets everything through: LP's top, HP's bottom */
+{
+    uint32_t hz = CUTOFF_HZ[clamp(v, 0, 127)];
+    if (ty == FT_LP ? v >= 127 : ty == FT_HP && v <= 0) return put_s(s, "OPEN");
+    if (hz < 1000u) return put_u(s, hz);
+    if (hz < 10000u) return put_s(put_x10(s, (hz + 50u) / 100u), "K");
+    return put_s(put_u(s, (hz + 500u) / 1000u), "K");
 }
 static char *tempo_text(char *s, const char *pre)   /* the tempo: pre "120"; a MIDI clock's (V2): "EXT 120.4", "EXT"
                                                  * (not measured yet: its first beat) */
@@ -931,6 +973,8 @@ static void knob_text(uint32_t pg, uint32_t k, char *s)   /* knob k's value on p
         return;
     case PG_HOME: case PG_MIX1: put_pc(s, v); return;
     case PG_MIX2:
+        if (k == 1u) { put_s(s, FT_NAME[clamp(v, 0, NFTYPE - 1)]); return; }
+        if (k == 2u) { put_s(s, v ? "POST" : "PRE"); return; }
         if (k) return;
         if (v == 64) { put_s(s, "C"); return; }
         put_u(put_s(s, v < 64 ? "L " : "R "), (uint32_t)(v < 64 ? 64 - v : v - 64));
@@ -1351,13 +1395,9 @@ static void home_say(uint32_t k)
 {
     static const char *const W[4] = {" VOL ", " CUTOFF ", " RES ", " FX "};
     char *e = put_s(put_u(put_s(hd_msg, "T"), sel + 1u), W[k & 3u]);
-    if (k == 1u) {
-        uint32_t hz = CUTOFF_HZ[clamp(trk[sel].cut, 0, 127)];
-        if (trk[sel].cut >= 127) put_s(e, "OPEN");
-        else if (hz < 1000u) put_u(e, hz);
-        else if (hz < 10000u) put_s(put_x10(e, (hz + 50u) / 100u), "K");
-        else put_s(put_u(e, (hz + 500u) / 1000u), "K");
-    } else if (k == 3u)
+    if (k == 1u)
+        hz_text(e, trk[sel].cut, trk[sel].ftype);
+    else if (k == 3u)
         put_s(put_u(e, (uint32_t)clamp(trk[sel].fx, 0, 200)), "%");
     else {
         uint32_t v = k ? (uint32_t)clamp(trk[sel].res, 0, 127) : (uint32_t)clamp(trk[sel].level, 0, 127);

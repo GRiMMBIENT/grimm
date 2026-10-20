@@ -392,8 +392,10 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         if (trk_quiet >> k & 1u) { put_s(S->val, "MUTE"); S->dim = 1; }
         S->acc = k == sel;
         return;
-    case PG_MIX2:
-        if (v == 64) put_s(S->val, "C");
+    case PG_MIX2:                               /* PAN; (V2) the track filter's TYPE, POS */
+        if (k == 1u) put_s(S->val, FT_NAME[clamp(v, 0, NFTYPE - 1)]);
+        else if (k == 2u) put_s(S->val, v ? "POST" : "PRE");
+        else if (v == 64) put_s(S->val, "C");
         else put_u(put_s(S->val, v < 64 ? "L" : "R"), (uint32_t)(v < 64 ? 64 - v : v - 64));
         return;
     case PG_GRAIN:
@@ -1026,7 +1028,7 @@ static void pic_env(void)                       /* Env: the shape of the track's
 static void pic_mix(void)                       /* FxTrack: the four tracks' columns, LEVEL and the sends (MIXER 2: PAN) */
 {
     int32_t t, m, j;
-    ui_caption(page == PG_MIX1 ? "LEVEL DLY REV GRAIN" : "PAN", 0);
+    ui_caption(page == PG_MIX1 ? "LEVEL DLY REV GRAIN" : "PAN  FILTER", 0);
     for (t = 0; t < (int32_t)NT; t++) {
         int32_t x0 = PX0 + t * 54 + 4;
         char lab[3] = {'T', (char)('1' + t), 0};
@@ -1040,7 +1042,9 @@ static void pic_mix(void)                       /* FxTrack: the four tracks' col
         } else {
             int32_t pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
             for (j = 0; j < 7; j++)
-                ui_rect(x0 + j * 7, 80, 6, 20, j == pp ? UI_L : j == 3 ? UI_M : UI_D);
+                ui_rect(x0 + j * 7, 64, 6, 20, j == pp ? UI_L : j == 3 ? UI_M : UI_D);
+            ui_text(x0 + 16, 100, FT_NAME[clamp(trk[t].ftype, 0, NFTYPE - 1)], 1, UI_L);   /* (V2: its TYPE, POS) */
+            ui_text(x0 + 8 + (trk[t].fpos ? 0 : 4), 116, trk[t].fpos ? "POST" : "PRE", 1, UI_M);
         }
         ui_text(x0 + 14, 145, lab, 1, t == (int32_t)sel ? ui_acc : UI_M);
     }
@@ -1565,7 +1569,8 @@ static uint32_t ui_pic_key(void)
         UI_H(p ? *p : -1);
     }
     for (t = 0; t < NT; t++)
-        UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng);
+        UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
+            UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);
     if (PAGES[page].btn == BTN_SEL) UI_H(ch_last), UI_H(ui_oct);

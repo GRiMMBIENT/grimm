@@ -48,7 +48,7 @@ The main screen: the eye, a candle per track (its flame follows the track's volu
 |---|---|---|---|
 | VOLUME | CUTOFF | RESONANCE | FX |
 
-- **CUTOFF / RESONANCE:** a low-pass filter at the end of the track, for every source. Fully open = no filtering.
+- **CUTOFF / RESONANCE:** a filter at the end of the track, for every source: a low-pass unless MIXER 2 says otherwise. Fully open = no filtering.
 - **FX:** turns all three of the track's effect sends up or down together. 0 = dry, 100 % = as set on MIXER 1, 200 % = twice as wet.
 
 Press **HOME** again for the mixer pages:
@@ -56,7 +56,10 @@ Press **HOME** again for the mixer pages:
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
 | MIXER 1 | LEVEL | DLY SEND | REV SEND | GRAIN SEND |
-| MIXER 2 | PAN | | | |
+| MIXER 2 | PAN | TYPE | POS | |
+
+- **TYPE** (MIXER 2): the track filter is a low-pass (`LP`), high-pass (`HP`) or band-pass (`BP`). `LP` open (CUTOFF at the top) or `HP` open (CUTOFF at the bottom) means no filtering. A band-pass is gentle at RESONANCE 0 and narrows as you turn it up.
+- **POS** (MIXER 2): `PRE`: the effect sends hear the filtered sound (as GR!MM 1.0). `POST`: only the track's dry sound is filtered; GRAIN, DELAY and SPACE hear it unfiltered (a dark track with a bright reverb, say).
 
 ---
 

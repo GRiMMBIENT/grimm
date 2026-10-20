@@ -171,7 +171,7 @@ row of 5 an operator, OP1 first: RATIO (0–31, 0 = 0.5), FINE, LEVEL, ATTACK, D
 | 29 | 127 − CUTOFF (HOME's filter; 0: open) |
 | 30 | RESONANCE (0–127) |
 | 31 | FX − 100, signed (0: 100 %; −100..100 for 0..200 %) |
-| 32 | 0 |
+| 32 | the filter's TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST) (MIXER 2, V2; GR!MM 1.0: 0) |
 | 33–36 | ENV: ATTACK, DECAY, SUSTAIN, RELEASE |
 | 37 | LATCH |
 | 38–42 | LEVEL, DLY SEND, REV SEND, GRAIN SEND, PAN (0–127, PAN 64 the middle) |

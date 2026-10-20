@@ -10,8 +10,9 @@
  *   the working project, saved by itself (autosave: grimm.c), in two objects, each in a pair of sectors written in
  *   turn (a cut save leaves the other copy):
  *     WORK  (sectors 1, 2): the four tracks (their source, every source's settings, ENV, LATCH, CHORD, ARP, LFO, LEVEL,
- *           the sends, PAN), the effects, the tempo, the SCALE, the four sequences, the slot in use, the song (its
- *           chain, MODE) and the mutes and solos, the tracks' FM patches (version 7; before: the PATCH as built)
+ *           the sends, PAN, the track filter's TYPE and POS), the effects, the tempo, the SCALE, the four sequences,
+ *           the slot in use, the song (its chain, MODE) and the mutes and solos, the tracks' FM patches (version 7;
+ *           before: the PATCH as built)
  *   the slots A..D (each the four tracks, their sequences and step locks, their FM patches; tempo and effects are
  *   global): one copy, a stream over sectors 3, 4 and 5 (each its own header and CRC; the FM patches after the four
  *   slots, where it was zeros before step 24: zeros, the PATCH as built). Saving a slot rewrites the sectors it lives in
@@ -38,7 +39,8 @@
 #define FM_PK 32u                               /* a track's FM patch, packed (FM_PK x NT: FM_ALL) */
 #define FM_ALL (FM_PK * NT)
 #define PK_ENG 7u                               /* a track's sources kept (NENG); bytes 29..31 (an eighth source's
-                                                 * room till step 23): TRACK's filter and FX, 0 their defaults */
+                                                 * room till step 23): TRACK's filter and FX, 0 their defaults; 32
+                                                 * (V2): the filter's TYPE | POS << 2, 0 (as saved before) LP PRE */
 #define TRK_PK 52u                              /* a track, packed (OBJ_VERS: older versions' were shorter) */
 #define SEQ_PK 260u                             /* a sequence, packed: 4 + 64 steps x 4 B (the 4th: its chord) */
 #define SEQ_PK5 196u                            /* (version 5 and before: 3 B a step) */
@@ -368,6 +370,7 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
     q[38] = (uint8_t)clamp(trk[t].level, 0, 127), q[39] = (uint8_t)clamp(trk[t].dly, 0, 127);
     q[40] = (uint8_t)clamp(trk[t].rev, 0, 127), q[41] = (uint8_t)clamp(trk[t].grn, 0, 127);
     q[42] = (uint8_t)clamp(trk[t].pan, 0, 127);
+    q[32] = (uint8_t)(clamp(trk[t].ftype, 0, NFTYPE - 1) | clamp(trk[t].fpos, 0, 1) << 2);   /* (V2: MIXER 2's TYPE, POS) */
     q[43] = ch_pack(t);
     q[44] = (uint8_t)((trk[t].arp ? 0x80u : 0u) | (uint32_t)clamp(trk[t].arp_mode, 0, NARPMODE - 1));   /* ARP */
     q[45] = (uint8_t)clamp(trk[t].arp_rate, 0, NARPRATE - 1), q[46] = (uint8_t)clamp(trk[t].arp_oct, 1, 4);
@@ -407,6 +410,7 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
     trk[t].latch = q[37];
     trk[t].level = q[38], trk[t].dly = q[39], trk[t].rev = q[40], trk[t].grn = q[41], trk[t].pan = q[42];
     trk[t].cut = 127 - clamp(q[29], 0, 127), trk[t].res = clamp(q[30], 0, 127), trk[t].fx = clamp((int8_t)q[31] + 100, 0, 200);
+    trk[t].ftype = clamp(q[32] & 3u, 0, NFTYPE - 1), trk[t].fpos = q[32] >> 2 & 1u;   /* (saved before V2: LP PRE) */
     ch_unpack(t, q[43]);
     trk[t].arp_mode = clamp(q[44] & 0x7Fu, 0, NARPMODE - 1), trk[t].arp_rate = clamp(q[45], 0, NARPRATE - 1);
     trk[t].arp_oct = clamp(q[46], 1, 4), trk[t].arp_gate = clamp(q[47], 10, 100);
