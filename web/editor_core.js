@@ -468,21 +468,54 @@ export function toInt16(x) {
   const pk = peak(x);
   return x.map((v) => Math.max(-32768, Math.min(32767, Math.trunc(v / pk * 30000))));
 }
+const IMA_VD = new Int32Array(89 * 8), IMA_NX = new Uint8Array(89 * 8);   // (sampleio.py _ima_tables)
+for (let i = 0; i < 89; i++)
+  for (let c = 0; c < 8; c++) {
+    const step = IMA_STEP[i];
+    IMA_VD[i * 8 + c] = (step >> 3) + (c & 4 ? step : 0) + (c & 2 ? step >> 1 : 0) + (c & 1 ? step >> 2 : 0);
+    IMA_NX[i * 8 + c] = Math.max(0, Math.min(88, i + IMA_IDX[c]));
+  }
+function imaCode(pred, idx, x) {                             // the standard choice of code for x
+  const step = IMA_STEP[idx];
+  let diff = x - pred, code = 0;
+  if (diff < 0) { code = 8; diff = -diff; }
+  if (diff >= step) { code |= 4; diff -= step; }
+  if (diff >= step >> 1) { code |= 2; diff -= step >> 1; }
+  if (diff >= step >> 2) code |= 1;
+  return code;
+}
+// GR!MM V2: each code the one whose sample and the next two decode closest (sampleio.py ima_encode, look: the same
+// codes): the standard choice follows a steep edge too slowly, a crackle. The decoder is the same (samples.c ima_nib)
 export function imaEncode(s) {
   let pred = 0, idx = 0;
-  const nib = [];
-  for (const x of s) {
-    const step = IMA_STEP[idx];
-    let diff = x - pred, code = 0;
-    if (diff < 0) { code = 8; diff = -diff; }
-    let vd = step >> 3;
-    if (diff >= step) { code |= 4; diff -= step; vd += step; }
-    if (diff >= step >> 1) { code |= 2; diff -= step >> 1; vd += step >> 1; }
-    if (diff >= step >> 2) { code |= 1; vd += step >> 2; }
-    pred = code & 8 ? pred - vd : pred + vd;
-    pred = Math.max(-32768, Math.min(32767, pred));
-    idx = Math.max(0, Math.min(88, idx + IMA_IDX[code & 7]));
-    nib.push(code);
+  const nib = [], n = s.length;
+  let P = 0, I = 0;
+  const next = (p, i, c) => {                                // the decoder: into P, I
+    const k = i * 8 + (c & 7);
+    P = Math.max(-32768, Math.min(32767, c & 8 ? p - IMA_VD[k] : p + IMA_VD[k])), I = IMA_NX[k];
+  };
+  for (let i = 0; i < n; i++) {
+    const x0 = s[i], x1 = i + 1 < n ? s[i + 1] : x0, x2 = i + 2 < n ? s[i + 2] : x1;
+    let best = -1, bestC = 0;
+    for (let c = 0; c < 16; c++) {
+      next(pred, idx, c);
+      const p1 = P, i1 = I, e1 = (p1 - x0) * (p1 - x0);
+      if (best >= 0 && e1 >= best) continue;                 // (already no better: the errors after it only add)
+      let b2 = -1;
+      for (let c2 = 0; c2 < 16; c2++) {
+        next(p1, i1, c2);
+        const p2 = P, i2 = I;
+        let e2 = e1 + (p2 - x1) * (p2 - x1);
+        if (b2 >= 0 && e2 >= b2) continue;
+        next(p2, i2, imaCode(p2, i2, x2));
+        e2 += (P - x2) * (P - x2);
+        if (b2 < 0 || e2 < b2) b2 = e2;
+      }
+      if (best < 0 || b2 < best) { best = b2; bestC = c; }
+    }
+    next(pred, idx, bestC);
+    pred = P, idx = I;
+    nib.push(bestC);
   }
   if (nib.length & 1) nib.push(0);
   const out = new Uint8Array(nib.length >> 1);

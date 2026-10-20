@@ -199,9 +199,60 @@ def onset(x, rel=0.02):
     return next((i for i, v in enumerate(x) if abs(v) > thr), 0)
 
 
-def ima_encode(samples, loop_start):
+def _ima_tables():
+    """for each step index and the code's low 3 bits: the difference it decodes to, the next step index"""
+    vd, nx = [], []
+    for i in range(89):
+        for c in range(8):
+            step = IMA_STEP[i]
+            d = step >> 3
+            if c & 4:
+                d += step
+            if c & 2:
+                d += step >> 1
+            if c & 1:
+                d += step >> 2
+            vd.append(d)
+            nx.append(min(88, max(0, i + IMA_IDX[c])))
+    return vd, nx
+
+
+_IMA_VD, _IMA_NX = _ima_tables()
+
+
+def _ima_next(pred, idx, code):
+    """the decoder (GR!MM samples.c ima_nib): code from pred, idx -> pred, idx"""
+    k = idx * 8 + (code & 7)
+    pred = pred - _IMA_VD[k] if code & 8 else pred + _IMA_VD[k]
+    return min(32767, max(-32768, pred)), _IMA_NX[k]
+
+
+def _ima_code(pred, idx, x):
+    """the standard choice of code for x"""
+    step, diff, code = IMA_STEP[idx], x - pred, 0
+    if diff < 0:
+        code, diff = 8, -diff
+    if diff >= step:
+        code |= 4
+        diff -= step
+    if diff >= step >> 1:
+        code |= 2
+        diff -= step >> 1
+    if diff >= step >> 2:
+        code |= 1
+    return code
+
+
+def ima_encode(samples, loop_start, look=True):
     """IMA ADPCM, 4 bit, low nibble first, from predictor 0 / index 0
-    -> (bytes, (predictor, index) at loop_start)"""
+    -> (bytes, (predictor, index) at loop_start)
+    look (GR!MM V2): each code the one whose sample and the next two decode closest to the input (the squared
+    errors summed; the next by any code, the one after by the standard choice; the lowest code on a tie). The
+    standard choice follows a steep edge too slowly: a sample off by a third of full scale, heard as a crackle (a
+    singing voice: 242 samples off by over 3000 -> 0). The decoder is the same: any GR!MM plays it. look=False: the
+    standard choice (the factory samples, tools/gen_samples.py, as they were made)."""
+    if look:
+        return _ima_encode_look(samples, loop_start)
     pred, idx, nib, state_at_loop = 0, 0, bytearray(), (0, 0)
     steps, adj = IMA_STEP, IMA_IDX
     for n, x in enumerate(samples):
@@ -241,6 +292,40 @@ def ima_encode(samples, loop_start):
     return bytes(a | (b << 4) for a, b in zip(nib[0::2], nib[1::2])), state_at_loop
 
 
+def _ima_encode_look(samples, loop_start):
+    """ima_encode with look (web/editor_core.js imaEncode: the same codes)"""
+    pred, idx, nib, state_at_loop, n = 0, 0, bytearray(), (0, 0), len(samples)
+    nxt, code_for = _ima_next, _ima_code
+    for i, x0 in enumerate(samples):
+        if i == loop_start:
+            state_at_loop = (pred, idx)
+        x1 = samples[i + 1] if i + 1 < n else x0
+        x2 = samples[i + 2] if i + 2 < n else x1
+        best, best_c = -1, 0
+        for c in range(16):
+            p1, i1 = nxt(pred, idx, c)
+            e1 = (p1 - x0) * (p1 - x0)
+            if best >= 0 and e1 >= best:
+                continue                        # (already no better: the errors after it only add)
+            b2 = -1
+            for c2 in range(16):
+                p2, i2 = nxt(p1, i1, c2)
+                e2 = e1 + (p2 - x1) * (p2 - x1)
+                if b2 >= 0 and e2 >= b2:
+                    continue
+                p3 = nxt(p2, i2, code_for(p2, i2, x2))[0]
+                e2 += (p3 - x2) * (p3 - x2)
+                if b2 < 0 or e2 < b2:
+                    b2 = e2
+            if best < 0 or b2 < best:
+                best, best_c = b2, c
+        pred, idx = nxt(pred, idx, best_c)
+        nib.append(best_c)
+    if len(nib) & 1:
+        nib.append(0)
+    return bytes(a | (b << 4) for a, b in zip(nib[0::2], nib[1::2])), state_at_loop
+
+
 def key_split(roots):
     """sorted root notes -> [(lo, hi)]: each zone reaches halfway to its neighbours, the
     outer zones to the ends of the keyboard"""
@@ -270,12 +355,12 @@ def to_int16(x):
     return [max(-32768, min(32767, int(v / pk * 30000))) for v in x]
 
 
-def user_slot(name, zones):
+def user_slot(name, zones, look=True):
     """zones: [(int16 samples at SLOT_RATE, root, lo or None, hi or None)] -> (header bytes, ADPCM data).
     Zones without lo/hi split the keyboard between their roots."""
     zs, data = [], bytearray()
     for s, root, lo, hi in zones:
-        adp, st = ima_encode(s, 0)
+        adp, st = ima_encode(s, 0, look)
         zs.append(dict(off=len(data), n=len(s), ls=0, le=len(s) - 1, root=root, lo=lo, hi=hi, pred=st[0], idx=st[1]))
         data += adp
     if len(data) > SLOT_MAX_DATA:
