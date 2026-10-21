@@ -283,8 +283,11 @@ static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)
  * it with sysex_get / sysex_done (from the main loop) and answers with sysex_send (F0 .. F7, 7-bit). The updater's
  * frames (00 59 ..) are the platform's as before. A frame of the app's left for a second goes: the updater's next
  * one gets through whatever the app does */
+static uint32_t sx_app_t0;                      /* when the frame waiting for the app was first seen (0: none seen);
+                                                 * (V2) 0 again as each is taken: requests back to back (a backup's
+                                                 * ~1000 GETs) each get their own second, not the first one's */
 static int sysex_get(const uint8_t **p, uint32_t *n) { return ota_frame_get(p, n) && *n && (*p)[0] == 0x7Du; }
-static void sysex_done(void) { ota_frame_done(); }
+static void sysex_done(void) { ota_frame_done(), sx_app_t0 = 0; }
 static int sysex_send(const uint8_t *p, uint32_t n) { return ota_wire_send(p, n); }
 
 /* ---- MIDI over USB: 4-byte USB-MIDI packets, cable 0 */
@@ -396,18 +399,15 @@ static void platform_poll(void)
     fm1_wdt_feed();
     usb_retry(fm1_ms);
     {   /* the updater's frames to ota_service; an F0 7D frame waits for the app (sysex_get), a second at most */
-        static uint32_t app_t0;
         const uint8_t *fp;
         uint32_t fn;
         if (sysex_get(&fp, &fn)) {
-            if (!app_t0)
-                app_t0 = fm1_ms | 1u;
-            else if (fm1_ms - app_t0 > 1000u) {
+            if (!sx_app_t0)
+                sx_app_t0 = fm1_ms | 1u;
+            else if (fm1_ms - sx_app_t0 > 1000u)
                 sysex_done();
-                app_t0 = 0;
-            }
         } else {
-            app_t0 = 0;
+            sx_app_t0 = 0;
             ota_service();
         }
     }
