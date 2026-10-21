@@ -1,6 +1,6 @@
 # GR!MM manual
 
-Version 1.0 · for the M-VAVE FM-1
+Version 2.0 · for the M-VAVE FM-1
 
 ![GR!MM HOME screen](docs/screens/home.png)
 

@@ -107,7 +107,7 @@ class Link:
         dev.link.close()
         if dev.id.loader:
             sys.exit(f"the FM-1 is in update mode ({ident}): finish the install first (tools\\fm1_install.py)")
-        if not re.fullmatch(r"FM-1_966|FM-1_95\d", ident):   # (GR!MM 1.x; 95N: its builds before the release)
+        if not re.fullmatch(r"FM-1_966|FM-1_95\d", ident):   # (GR!MM 1.x, 2.x; 95N: its builds before 1.0)
             sys.exit(f"the FM-1 runs {ident}, not GR!MM (FM-1_966): install GR!MM first (tools\\fm1_install.py)")
         out = fi.pair_output(name, backend.output_names())
         if not out:

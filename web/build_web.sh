@@ -9,7 +9,7 @@
 #                          editor.html, editor.js, editor_core.js, PressStart2P-Regular.ttf, OFL-PressStart2P.txt}
 #   node web/test_web.mjs   (after tests/run_host.sh: the browser build against host mode)
 #   EMSDK    the Emscripten SDK (default ~/emsdk; not needed when emcc is on the PATH)
-#   APP_VER  the version on the screen (default "1.0", as host mode and the release)
+#   APP_VER  the version on the screen (default "2.0", as host mode and the release)
 set -e
 cd "$(dirname "$0")/.."
 EMSDK="${EMSDK:-$HOME/emsdk}"
@@ -20,7 +20,7 @@ WASM_OPT="$EMSDK/upstream/bin/wasm-opt"
 [ -x "$EMCC" ] || { echo "build_web: no Emscripten (emcc) in $EMSDK or on the PATH"; exit 1; }
 [ -x "$WASM_OPT" ] || { echo "build_web: no wasm-opt (Binaryen) in $EMSDK or on the PATH"; exit 1; }
 mkdir -p build/web web/dist
-"$EMCC" -O2 -Wall -Wno-unused-function -DGRIMM_WEB -DAPP_VER="\"${APP_VER:-1.0}\"" -Ifirmware/src -Ifirmware/gen \
+"$EMCC" -O2 -Wall -Wno-unused-function -DGRIMM_WEB -DAPP_VER="\"${APP_VER:-2.0}\"" -Ifirmware/src -Ifirmware/gen \
     --no-entry -sSTANDALONE_WASM -sFILESYSTEM=0 -sSTACK_SIZE=262144 -sINITIAL_MEMORY=4194304 \
     -o build/web/grimm.wasm firmware/src/grimm.c
 "$WASM_OPT" build/web/grimm.wasm --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
