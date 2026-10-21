@@ -6,6 +6,18 @@ Version 2.0 · for the M-VAVE FM-1
 
 ---
 
+## What's new in 2.0
+
+- **Two new effects** on the FX pages: **MASTER**, a stereo filter over everything (LP, HP or BP, at one of three places in the chain), and **DRIVE** (SOFT, FUZZ, CLIP or FOLD, with TONE, MIX and a limiter). See [Effects](#9-effects-fx).
+- **Each track's filter** can be a low-pass, high-pass or band-pass, and can sit before or after the effect sends: MIXER 2's **TYPE** and **POS**. See [HOME](#2-home).
+- **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
+- **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
+- **The editor:** new FX and SETTINGS sections, and backups now hold the four samples too. See [The editor](#15-the-editor).
+- **Cleaner and lighter:** samples uploaded with the editor no longer crackle, PHYS uses much less of the processor (at most four PHYS notes at once), and long backups, DAW loops, latched PHYS notes and the `SAVES WHEN SILENT` message all behave as they should.
+- **Nothing is lost when you update:** your sounds, slots A–D, settings, MIDI LEARN links and samples carry over, and backups from 1.0 restore.
+
+---
+
 ## 1. The basics
 
 ![The boot screen](docs/screens/boot.png)
