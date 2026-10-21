@@ -699,7 +699,7 @@ function drawSamples() {
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("hot"); take(e.dataTransfer.files[0]); };
     up.onclick = () => job(`UPLOAD SLOT ${k + 1}`, async () => {
       if (!buf) throw new EditorError("CHOOSE A WAV FIRST", 0);
-      const sl = makeSlot(buf, sampleName(nm.value), Math.max(0, Math.min(127, +root.value | 0)));
+      const sl = makeSlot(buf, sampleName(nm.value), Math.max(0, Math.min(127, +root.value | 0)), $("smp-norm").checked);
       say(`UPLOADING ${(sl.data.length / 1024).toFixed(0)} KB…`);
       smpInfo = await conn.client.smpUpload(k, sl.hdr, sl.data, progress);
       drawSamples();

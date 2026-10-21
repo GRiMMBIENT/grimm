@@ -243,6 +243,18 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   if (py) {
     const mine = new Uint8Array([...sl.hdr, ...new Uint8Array(32).fill(0xff), ...sl.data]);
     check(eq([...mine], [...py]), `editor: the WAV's slot bytes as tools/fm1_sample_upload.py makes them (${mine.length} B)`);
+    let pyn = null;                                          // (NORMALISE off: the WAV's own level, the same bytes too)
+    for (const exe of ["python3", "py"]) {
+      try {
+        execFileSync(exe, ["tools/fm1_sample_upload.py", "3", "build/web/test.wav", "--name", "TESTWAV", "--root", "57",
+                           "--no-normalize", "--dry-run", "build/web/testn.bin"], { stdio: "ignore" });
+        pyn = readFileSync("build/web/testn.bin");
+        break;
+      } catch { /* (the next, or none) */ }
+    }
+    const sn = makeSlot(wav.buffer, "TESTWAV", 57, false), minen = new Uint8Array([...sn.hdr, ...new Uint8Array(32).fill(0xff), ...sn.data]);
+    check(pyn && eq([...minen], [...pyn]) && !eq([...sn.data], [...sl.data]),
+          "editor: NORMALISE off: the WAV's own level (other bytes than normalised), as the uploader's --no-normalize");
   } else console.log("  --    editor: no Python here: the WAV's bytes not compared with tools/fm1_sample_upload.py");
   if (py) {                                                  // a long name from the file: cut as the uploader cuts it
     writeFileSync("build/web/Sample-002.wav", wav);

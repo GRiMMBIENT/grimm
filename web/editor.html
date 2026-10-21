@@ -198,12 +198,14 @@ a.lnk { color: var(--l); }
 
     <section id="s-samples">
       <h2>SAMPLES</h2>
-      <div class="row"><button id="b-sinfo">REFRESH</button><button id="b-sfactory">RESTORE FACTORY SAMPLES</button></div>
+      <div class="row"><button id="b-sinfo">REFRESH</button><button id="b-sfactory">RESTORE FACTORY SAMPLES</button>
+        <label class="px"><input type="checkbox" id="smp-norm" checked> NORMALISE</label></div>
       <div id="smp"></div>
       <p class="note">Any WAV (8 to 32 bit, float, mono or stereo, any rate) becomes mono, 22050 Hz, IMA ADPCM, as
         tools/fm1_sample_upload.py makes it; a slot holds 6.64 s (longer: cut, with a short fade). The root note is C4
         unless the file name has one ("drone_A2.wav"). A name is 8 characters (the slot's, what the FM-1 shows): a longer
-        one keeps its number ("Sample-002": SAMP-002). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
+        one keeps its number ("Sample-002": SAMP-002). NORMALISE (on as it comes) brings every WAV to the same loudness;
+        off, a sample keeps its own level (quiet ones stay quiet, as recorded). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
         NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot that holds
         nothing.</p>
     </section>

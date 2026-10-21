@@ -569,9 +569,9 @@ export function resample(x, sr, to) {                        // a moving average
   return out;
 }
 const peak = (x) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 1e-9);
-export function toInt16(x) {
+export function toInt16(x, norm = true) {                   // (norm: its peak to 30000; off: its level as it is)
   const pk = peak(x);
-  return x.map((v) => Math.max(-32768, Math.min(32767, Math.trunc(v / pk * 30000))));
+  return x.map((v) => Math.max(-32768, Math.min(32767, Math.trunc(norm ? v / pk * 30000 : v * 32768))));
 }
 const IMA_VD = new Int32Array(89 * 8), IMA_NX = new Uint8Array(89 * 8);   // (sampleio.py _ima_tables)
 for (let i = 0; i < 89; i++)
@@ -644,7 +644,7 @@ export function sampleName(s) {
   return s || "SAMPLE";
 }
 export const noteName = (n) => ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][n % 12] + (Math.floor(n / 12) - 1);
-export function makeSlot(buf, name, root) {                  // -> {hdr (480 B), data, secs, cut}
+export function makeSlot(buf, name, root, norm = true) {      // -> {hdr (480 B), data, secs, cut} (norm: normalised)
   let { sr, x } = readAnyWav(buf);
   x = resample(x, sr, SAMPLE.RATE);
   if (!x.length || peak(x) <= 1e-6) throw new Error("no audio in it (silent or empty)");
@@ -654,7 +654,7 @@ export function makeSlot(buf, name, root) {                  // -> {hdr (480 B),
     const f = Math.trunc(0.02 * SAMPLE.RATE);
     for (let i = 0; i < f; i++) x[SAMPLE.MAX_N - f + i] *= (f - i) / f;
   }
-  const s = toInt16(x), data = imaEncode(s), hdr = new Uint8Array(SAMPLE.HDR_LEN), dv = new DataView(hdr.buffer);
+  const s = toInt16(x, norm), data = imaEncode(s), hdr = new Uint8Array(SAMPLE.HDR_LEN), dv = new DataView(hdr.buffer);
   const nm = name.toUpperCase().replace(/[^\x20-\x7e]/g, "").slice(0, 8);
   dv.setUint32(0, SAMPLE.MAGIC, true), dv.setUint16(4, 1, true), hdr[6] = 1;
   for (let i = 0; i < nm.length; i++) hdr[8 + i] = nm.charCodeAt(i);
