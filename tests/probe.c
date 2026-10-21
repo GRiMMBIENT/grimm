@@ -33,6 +33,10 @@ static void host_probe(void)
                sv_wait && fm1_ms - sv_said < SV_SAY_MS);
         P2 = brw_pos[sel] >= 0 ? cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel]) : 0;
         printf(" eng %d slatch %d", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
+        printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
+                                                 * fade), track, note, in the notes-on list or not) */
+        for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,
+                                        (unsigned)vc[i].note, voice_latched(i));
     }
     printf("\n");
 }

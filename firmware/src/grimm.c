@@ -593,11 +593,26 @@ static void shed_voice(void)
 
 #include "seq.c"                                /* the sequencer (its notes: note_on, note_off, SRC_SEQ) */
 
-static void release_keys(uint32_t t)            /* audio: LATCH ON -> OFF: the track's key notes released */
+static void release_keys(uint32_t t)            /* audio: ARP on: the track's key notes released */
 {
     uint32_t i;
     for (i = nlat; i-- > 0;)                    /* (a chord: all its notes go at once) */
         if (i < nlat && lat_trk[i] == t && lat_src[i] == SRC_KEY) note_off(t, lat_id[i], SRC_KEY, 1);
+}
+static void release_all(uint32_t t)             /* audio: (V2) LATCH ON -> OFF: every note of the track released, the
+                                                 * keys', MIDI's, the sequencer's: none can stay on */
+{
+    uint32_t i;
+    for (i = nlat; i-- > 0;)
+        if (i < nlat && lat_trk[i] == t) note_off(t, lat_id[i], lat_src[i], lat_src[i] == SRC_KEY && lat_id[i] < 27u);
+}
+static int note_find_root(uint32_t t, uint32_t note)   /* (V2) a key's or MIDI note's (SRC_KEY) place in the list,
+                                                 * played as note (before its chord), whichever it came from; -1 */
+{
+    uint32_t i;
+    for (i = 0; i < nlat; i++)
+        if (lat_trk[i] == t && lat_src[i] == SRC_KEY && lat_root[i] == note) return (int)i;
+    return -1;
 }
 static void restart_track(uint32_t t)           /* audio: a new source: the track's notes go over (a fade, a new attack) */
 {
@@ -617,14 +632,19 @@ static void restart_track(uint32_t t)           /* audio: a new source: the trac
 
 /* audio: a key's (a MIDI note's) ask, on its track: ARP on, into or out of the arp's list; else its own notes */
 static void key_ask(uint32_t c, uint32_t t, uint32_t id, uint32_t note, int echo)
-{
+{                                               /* (V2: TOGGLE, LATCH ON: the note latched as this one, a key's or
+                                                 * MIDI's, whichever latched it, let go; else on. Its echo off if a
+                                                 * key's: that one's echo went out) */
+    int32_t h;
     if (trk[t].arp) {
-        if (c == NQ_ON || (c == NQ_TOGGLE && !arp_has(t, id))) arp_add(t, id, note, echo);
+        if (c == NQ_TOGGLE && (h = arp_root(t, note)) >= 0) arp_take(t, (uint32_t)h, h < 27);
+        else if (c == NQ_ON || c == NQ_TOGGLE) arp_add(t, id, note, echo);
         else if (arp_has(t, id)) arp_take(t, id, echo);
         return;
     }
-    if (c == NQ_ON || (c == NQ_TOGGLE && note_find(t, id, SRC_KEY) < 0)) note_on(t, id, note, SRC_KEY, echo, -1);
-    else note_off(t, id, SRC_KEY, echo);        /* (OFF; TOGGLE: on already) */
+    if (c == NQ_TOGGLE && (h = note_find_root(t, note)) >= 0) note_off(t, lat_id[h], SRC_KEY, lat_id[h] < 27u);
+    else if (c == NQ_ON || c == NQ_TOGGLE) note_on(t, id, note, SRC_KEY, echo, -1);
+    else note_off(t, id, SRC_KEY, echo);
 }
 
 /* audio: the tracks muted (or not soloed) now: their notes out (released and faded in ~10 ms), new ones not started
@@ -656,8 +676,8 @@ static void ctl_hook(void)
         c &= ~NQ_ECHO;
         switch (c) {
         case NQ_ON: case NQ_OFF: case NQ_TOGGLE: key_ask(c, t, id, note, echo); break;   /* (TOGGLE: LATCH ON) */
-        case NQ_RELEASE:                        /* LATCH ON -> OFF: the track's key notes released (its arp emptied) */
-            release_keys(t);
+        case NQ_RELEASE:                        /* LATCH ON -> OFF: the track's notes released (its arp emptied) */
+            release_all(t);
             if (trk[t].arp) arp_clear(t);
             break;
         case NQ_RESTART: restart_track(t); break;   /* a new source: the track's notes go over */

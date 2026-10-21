@@ -125,5 +125,28 @@ p = run("midilatch", ev, 1700, ENV[0])
 check("LATCH ON: a MIDI note latches; ALL NOTES OFF leaves it; the note again lets it go",
       p[900]["notes"] == ["1:64"] and p[1200]["notes"] == ["1:64"] and not p[1600]["notes"],
       {t: p[t]["notes"] for t in sorted(p)})
+# (V2) whichever latched a note, its key or the MIDI note again lets it go; LATCH OFF lets go of all the track's notes
+# (a DAW's notes on channel 1: T1; its STOP's note-offs ignored, as LATCH ON does)
+ev = SEL_OCT(300) + [(600, "midi 0x90 60 100"), (650, "midi 0x80 60 0"), (700, "midi 0x90 64 100"),
+                     (750, "midi 0x80 64 0"), (900, "probe")] + tap(1000, C4) + [(1300, "probe")]
+ev += tap(1400, G4) + [(1600, "midi 0x91 67 100"), (1650, "midi 0x81 67 0"), (1900, "probe")]
+p = run("cross", ev, 2000, ENV[0])
+check("LATCH ON: a MIDI-latched note let go by its key (the same note in on T1's channel just after its key: taken for "
+      "the FM-1's own echo, ignored as ever)",
+      sorted(p[900]["notes"]) == ["1:60", "1:64"] and p[1300]["notes"] == ["1:64"] and p[1900]["notes"] == ["1:64", "1:67"],
+      {t: p[t]["notes"] for t in sorted(p)})
+ev = SEL_OCT(300) + [(400, "down 10"), (1200, "up 10"), (1400, "midi 0x90 60 100"), (1450, "midi 0x80 60 0")]
+ev += [(1700, "probe")] + tap(1800, C4) + [(2300, "probe")]
+p = run("crossarp", ev, 2400, ENV[0])
+check("LATCH ON, ARP: a MIDI note in the arp let go by its key", p[1700]["notes"] and not p[2300]["notes"],
+      {t: p[t]["notes"] for t in sorted(p)})
+SEQ_RANDOM = [(300, "down 11"), (350, "keys 0x4"), (400, "keys 0"), (450, "up 11")]
+ev = SEQ_RANDOM + SEL_OCT(600) + [(800, "btn 12"), (900, "midi 0x90 60 100"), (950, "midi 0x80 60 0")]
+ev += tap(1000, G4) + [(1400, "probe")] + SEL_OCT(1500) + [(1700, "probe"), (1800, "btn 12"), (2600, "probe")]
+p = run("latchoff", ev, 2700, ENV[0])
+check("LATCH OFF: the track's notes let go, MIDI's, the keys', the sequencer's (none left on)",
+      "1:60" in p[1400]["notes"] and "1:67" in p[1400]["notes"] and
+      not [x for x in p[1700]["notes"] if x in ("1:60", "1:67")] and not p[2600]["notes"],
+      {t: p[t]["notes"] for t in sorted(p)})
 print("latch test: passed" if not bad else "latch test: FAILED")
 sys.exit(1 if bad else 0)

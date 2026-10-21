@@ -143,6 +143,14 @@ static int arp_has(uint32_t t, uint32_t id)
         if (arp[t].id[i] == id) return 1;
     return 0;
 }
+static int32_t arp_root(uint32_t t, uint32_t note)   /* (V2) the origin of the list's notes played as note (a key's
+                                                 * or MIDI's), -1 none */
+{
+    uint32_t i;
+    for (i = 0; i < arp[t].n; i++)
+        if (arp[t].root[i] == note) return arp[t].id[i];
+    return -1;
+}
 static void arp_take(uint32_t t, uint32_t id, int echo)
 {
     arp_t *A = &arp[t];
