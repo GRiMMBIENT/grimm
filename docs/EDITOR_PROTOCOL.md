@@ -271,3 +271,8 @@ and check the result. The backup file (theirs): JSON, `{"format": "grimm-backup"
 "firmware", "date", "objects": [{"id", "len", "crc", "data"}], "samples": [4 × null or {"slot", "name", "len", "crc",
 "data"}]}`, data in base64, `crc` the CRC-32 of the bytes. `samples` is V2's: a file without it restores everything
 else and leaves the sample slots alone.
+
+Requests may follow each other back to back: the FM-1 holds one request at a time and drops one it has not taken
+within a second (GR!MM 1.0 and V2 before the fix could drop a fresh one in a long run of requests: a timer kept from an
+earlier one). A GET changes nothing, so a reply that does not come (3 s) can simply be asked again; the tools ask up
+to three times and say how many they asked again (a healthy link: 0).

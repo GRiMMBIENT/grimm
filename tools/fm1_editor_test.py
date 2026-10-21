@@ -37,6 +37,8 @@ O_SET, O_SLOT, O_SND, O_FACT, O_SMP = 0, 1, 16, 80, 120   # (O_SMP: GR!MM V2, th
 SET_V1, SET_V2 = 168, 169                       # the settings of GR!MM 1.0 (version 1), of V2's version 2: a V2 takes them
 SMP_RC = {1: "bad arguments", 2: "flash erase failed", 3: "flash write failed", 4: "out of order", 5: "header or CRC",
           7: "no flash"}
+missed = 0                                      # GET replies that did not come (or not for the offset asked): asked
+                                                # again, counted (a healthy link: 0)
 RC = {1: "bad arguments", 2: "refused (CRC or contents)", 3: "stop the sequencer and let every sound end first",
       4: "the flash write failed", 5: "no BEGIN (or it timed out)"}
 
@@ -87,10 +89,21 @@ def objects(inf):
 
 def get(link, o, size, at=0, missing=False):
     """size bytes of object o from offset at; missing: None if it is not there (rc 1 at the first)"""
+    global missed
     data = b""
     for off in range(at, at + size, 256):
         c = min(256, at + size - off)
-        r = link.req(GET, [o] + u35(off) + [c & 0x7F, c >> 7])
+        for tries in range(3):                  # (a GET changes nothing: a reply missed, asked again)
+            try:
+                r = link.req(GET, [o] + u35(off) + [c & 0x7F, c >> 7])
+                if r[0] == o and (r[1] or rd35(r[2:7]) == off):
+                    break
+            except TimeoutError:
+                if tries == 2:
+                    raise
+            missed += 1
+        else:
+            sys.exit(f"GET {o} at {off}: no reply for that offset, three times")
         if missing and off == at and r[0] == o and r[1] == 1:
             return None
         if r[0] != o or r[1]:
@@ -136,7 +149,8 @@ def backup(link, inf):
         objs.append(dict(id=o, len=size, crc=zlib.crc32(d), data=base64.b64encode(d).decode()))
     smp = samples(link, inf)
     print("\r  read: settings, slots A-D, " + f"{inf['sounds']} sounds" +
-          (", the sample slots" if smp is not None else " (not the samples: this GR!MM cannot read them back)"))
+          (", the sample slots" if smp is not None else " (not the samples: this GR!MM cannot read them back)") +
+          f"; replies missed and asked again: {missed}")
     b = dict(format="grimm-backup", version=1, proto=inf["proto"], fmt=inf["fmt"], firmware=inf["firmware"],
              date=time.strftime("%Y-%m-%d %H:%M:%S"), objects=objs)
     if smp is not None:

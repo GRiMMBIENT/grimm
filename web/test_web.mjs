@@ -20,7 +20,7 @@ import { inflateSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { Client, VirtualFM1, LiveSender, MidiTransport, findFM1, OBJ, parseSound, buildRecord, makeBackup, checkBackup,
          restoreBackup, makeSlot, recordOk, unpack7, hex, sampleName, SET_V1, SET_V2, settingsOf, withSettings,
-         sameSettings, crc32, checkSamples, restoreSamples } from "./editor_core.js";
+         sameSettings, crc32, checkSamples, restoreSamples, EditorError } from "./editor_core.js";
 
 let ex, data, size, started = false, rewinding = false;
 const { instance } = await WebAssembly.instantiate(readFileSync("web/dist/grimm.wasm"), {
@@ -153,6 +153,14 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   check(eq([...f2], meta.factory[2].rec) && recordOk(f2), `editor: factory sound 3 (${meta.factory[2].name}) read as the page has it`);
   const b0 = await makeBackup(cl, info);
   check(b0.objects.length === 69, `editor: every object read (${b0.objects.length}: settings, slots A-D, 64 sounds)`);
+  {                                                          // a reply missed (a real USB link): the GET asked again
+    let n = 0;
+    const lossy = { request: async (f, t, q) => { const r = await vf.request(f, t, q); if (f[3] === 21 && ++n % 37 === 0) throw new EditorError("no answer from the FM-1", 97); return r; } };
+    const lc = new Client(lossy), bl = await makeBackup(lc, info);
+    check(lc.missed > 0 && JSON.stringify(bl.objects) === JSON.stringify(b0.objects) &&
+          JSON.stringify(bl.samples) === JSON.stringify(b0.samples),
+          `editor: a backup with every 37th reply lost: each asked again (${lc.missed}), the same backup`);
+  }
   const s = parseSound(Uint8Array.from(meta.factory[2].rec), meta);
   Object.assign(s, { name: "TEST EDIT", chordOn: 1, voicing: 2 });
   s.k[1] = 99, s.env[0] = 20, s.lfo = [50, 30, 9, 1], s.fm.alg = 17, s.fm.fb = 5, s.fm.ops[3][2] = 77;

@@ -102,10 +102,19 @@ export class Client {
     return r[2];
   }
   async select(t) { return (await this.req(CMD.TRACK, [2, t], 1500))[2]; }
-  async get(obj, size, progress, at = 0) {                 // size bytes of object obj from offset at
-    const out = new Uint8Array(size);
+  async get(obj, size, progress, at = 0) {                 // size bytes of object obj from offset at (a reply missed,
+    const out = new Uint8Array(size);                        // or not for the offset asked: asked again, counted in missed)
     for (let off = 0; off < size; off += 256) {
-      const c = Math.min(256, size - off), r = await this.req(CMD.GET, [obj, ...u35(at + off), c & 0x7f, c >> 7]);
+      const c = Math.min(256, size - off);
+      let r;
+      for (let tries = 0; ; tries++) {
+        try {
+          r = await this.req(CMD.GET, [obj, ...u35(at + off), c & 0x7f, c >> 7]);
+          if (r[0] === obj && (r[1] || rd35(r, 2) === at + off)) break;
+        } catch (e) { if (e.rc !== 97 || tries >= 2) throw e; }
+        this.missed = (this.missed || 0) + 1;
+        if (tries >= 2) throw new EditorError(`object ${obj}: no reply for offset ${at + off}`, 97);
+      }
       if (r[0] !== obj || r[1]) throw new EditorError(RC[r[1]] || `rc ${r[1]}`, r[1]);
       const d = unpack7(r.slice(9));
       if (d.length !== c) throw new EditorError(`object ${obj}: ${d.length} bytes back, not ${c}`, 99);
