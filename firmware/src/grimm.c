@@ -70,7 +70,8 @@
  *   SEQ        GRID (the track's 64 steps; KNOB: the selected step's NOTE (all down: OFF), CHANCE, RATCHET,
  *              LENGTH) -> PATTERN SETTINGS (STEPS 1..64, DIVISION 1/4 .. 1/32 and triplets, SWING, PLAY MODE); the
  *              sequencer: seq.c; held + white keys F3 .. F4: CLEAR, RANDOM, SHIFT LEFT, SHIFT RIGHT, COPY, PASTE, DOUBLE,
- *              MUTATE (the selected track's pattern; undoable; no page change; the eight keys lit)
+ *              MUTATE (the selected track's pattern; undoable; no page change; the eight keys lit); (V2) REC held
+ *              ~1 s: the selected track's pattern cleared as CLEAR does, REC as before the press
  *   FX         TAPE -> GRAIN -> DELAY -> SPACE:
  *              TAPE:  WOW, SATURATION, TONE, HISS, over the whole mix (all 0: bypassed)
  *              GRAIN: SIZE (10 .. 390 ms), DENSITY (1 .. 98 a second), SCATTER, MIX (return); FX held + the lowest
@@ -695,6 +696,8 @@ static void brw_forget(void)                    /* the tracks' sounds another's 
 static uint32_t playing, save_held, glo_held;   /* the sequencer runs (PLAY); SAVE, GLO held (their layers on the keys) */
 static uint32_t ck_seen;                        /* main loop: the MIDI clock's START / STOP seen (clock.c ck_trans) */
 static uint32_t rec_on;                         /* REC (app_main's rec, for the stress test's checks) */
+static uint32_t rec_hold, rec_t, rec_was;       /* (V2) REC held: since when, REC before that press */
+#define REC_CLEAR_MS 1000u                      /* (V2) REC held this long: the selected track's pattern cleared */
 static uint32_t sel_held;                       /* SEL held (SEQ's pages: the knobs lock the selected step, ui.c) */
 /* SYSTEM, SYSTEM 2: the FM-1's own settings, not the project's: kept in the settings sector (platform.c) with the
  * octave, loaded at power-on, never touched by a project or slot load, NEW or undo; saved 2 s after a change, when
@@ -1750,10 +1753,19 @@ static void app_main(void)
                     song_rec = 1;
                     if (playing) nq_note(NQ_SONG, 0, (uint32_t)slot_cur & 3u, 1);
                 }
-            } else {                            /* REC: stopped, step record; playing, live record */
+            } else {                            /* REC: stopped, step record; playing, live record (V2: held, see
+                                                 * below) */
+                rec_hold = 1, rec_t = fm1_ms, rec_was = rec;
                 rec ^= 1u;
                 if (rec) undo_take(UK_ONE | ++uk_n, -1);   /* (undo: the recording pass) */
             }
+        }
+        if (rel >> BTN_REC & 1u) rec_hold = 0;
+        if (rec_hold && fm1_ms - rec_t >= REC_CLEAR_MS) {   /* (V2) REC held ~1 s: the selected track's pattern
+                                                 * cleared (undoable), REC as before the press */
+            rec_hold = 0, rec = rec_was;
+            seq_tool(0u, base);
+            put_s(put_u(put_s(hd_msg, "T"), sel + 1u), " CLEARED");
         }
         rec_on = rec;
         glo_held = b_down >> BTN_GLO & 1u;      /* GLO held: mutes, solos on the keys */

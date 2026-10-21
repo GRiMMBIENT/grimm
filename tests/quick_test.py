@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
 """GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (a NEW project's tracks; saved with the
-settings; older settings: OFF) and SEL + OCT+ (the selected track's LATCH on, off: its latched notes released).
-Prints a line a check, exit 1 on a failure.
+settings; older settings: OFF), SEL + OCT+ (the selected track's LATCH on, off: its latched notes released), REC held
+~1 s (the selected track's pattern cleared, undoable; REC as before; a short press as ever). Prints a line a check,
+exit 1 on a failure.
   python3 tests/quick_test.py [build/host/grimm]"""
 import os
 import subprocess
@@ -83,5 +84,28 @@ check("SEL + OCT+ held long, let go: LATCH ON, still no page change (not the cho
       pr[2500]["latch"] == [1, 0, 0, 0] and pr[2500]["page"] == PG_HOME,
       f"latch {pr[2500]['latch']} page {pr[2500]['page']}")
 
+# REC: a pattern (SEQ held + white key 2: RANDOM); a short press: REC on, the steps kept; again: off. Held 1 s: the
+# pattern cleared, REC as before the press; EDIT + OCT-: undone. Held while recording: cleared, still recording
+SEQ_RANDOM = [(300, "down 11"), (350, "keys 0x4"), (400, "keys 0"), (450, "up 11")]
+ev = SEQ_RANDOM + [(600, "btn 13"), (800, "btn 13"), (1000, "down 13"), (2300, "up 13"), (2500, "down 6"), (2550, "btn 0"),
+                   (2600, "up 6")] + probes(500, 700, 900, 1500, 2100, 2400, 2700)
+pr, out = run("rec", ev, 2800)
+n = pr[500]["steps"]
+check("a pattern made (SEQ + RANDOM)", n > 0, n)
+check("REC tapped: on, the pattern kept; tapped again: off", pr[700]["rec"] == 1 and pr[700]["steps"] == n and
+      pr[900]["rec"] == 0 and pr[900]["steps"] == n)
+check("REC held: under ~1 s nothing cleared (REC on meanwhile, as a tap)", pr[1500]["rec"] == 1 and pr[1500]["steps"] == n)
+check("REC held ~1 s: the track's pattern cleared, REC off again (as before the press)",
+      pr[2100]["steps"] == 0 and pr[2100]["rec"] == 0 and pr[2400]["steps"] == 0 and pr[2400]["rec"] == 0,
+      f"{pr[2100]} {pr[2400]}")
+check("EDIT + OCT-: the clear undone", pr[2700]["steps"] == n, pr[2700]["steps"])
+ev = SEQ_RANDOM + [(600, "btn 13"), (1000, "down 13"), (2300, "up 13")] + probes(900, 2100, 2400)
+pr, _ = run("rec_on", ev, 2500)
+check("REC held while recording: cleared, still recording", pr[2100]["steps"] == 0 and pr[2400]["rec"] == 1 and
+      pr[900]["rec"] == 1, f"{pr[2100]} {pr[2400]}")
+ev = [(200, "enc 1 1")] + SEQ_RANDOM + [(1000, "down 13"), (2300, "up 13")] + probes(900, 2400)
+pr, _ = run("rec_t2", ev, 2500)
+check("REC held on T2: T2's pattern cleared", pr[900]["sel"] == 1 and pr[900]["steps"] > 0 and pr[2400]["steps"] == 0,
+      f"{pr[900]} {pr[2400]}")
 print("quick test: passed" if not bad else "quick test: FAILED")
 sys.exit(1 if bad else 0)
