@@ -3,8 +3,8 @@
 # Copyright (C) 2026 GR!MM
 """GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (a NEW project's tracks; saved with the
 settings; older settings: OFF), SEL + OCT+ (the selected track's LATCH on, off: its latched notes released), REC held
-~1 s (the selected track's pattern cleared, undoable; REC as before; a short press as ever). Prints a line a check,
-exit 1 on a failure.
+~1 s (the selected track's pattern cleared, undoable; REC as before; a short press as ever), SAVES WHEN SILENT said
+~2 s, then out of the way. Prints a line a check, exit 1 on a failure.
   python3 tests/quick_test.py [build/host/grimm]"""
 import os
 import subprocess
@@ -30,8 +30,17 @@ def run(name, ev, end, env=None):
             d = {w[i]: w[i + 1] for i in range(0, len(w) - 1, 2)}
             pr[int(ln.split()[1])] = dict(page=int(d["page"]), sel=int(d["sel"]), rec=int(d["rec"]),
                                           latch=[int(x) for x in d["latch"].split(",")], new=int(d["new"]),
-                                          steps=int(d["steps"]), notes=ln.split(" notes", 1)[1].split(" fx ", 1)[0].split())
+                                          steps=int(d["steps"]), wait=int(d["wait"]), said=int(d["said"]),
+                                          notes=ln.split(" notes", 1)[1].split(" fx ", 1)[0].split())
     return pr, out
+
+
+def settings(name, out=0, latch=0):             # version 3's settings (170 B): SEQ MIDI OUT, SYSTEM 3's LATCH
+    b = bytearray(170)
+    b[5], b[167], b[169] = out, 3, latch
+    f = OUT / f"set_{name}.bin"
+    f.write_bytes(bytes(b))
+    return dict(os.environ, GRIMM_SETTINGS_IN=str(f))
 
 
 def check(what, ok, detail=""):
@@ -107,5 +116,20 @@ ev = [(200, "enc 1 1")] + SEQ_RANDOM + [(1000, "down 13"), (2300, "up 13")] + pr
 pr, _ = run("rec_t2", ev, 2500)
 check("REC held on T2: T2's pattern cleared", pr[900]["sel"] == 1 and pr[900]["steps"] > 0 and pr[2400]["steps"] == 0,
       f"{pr[900]} {pr[2400]}")
+
+# SAVES WHEN SILENT: a latched note (never silent), a knob turned: the autosave waits; the header says so ~2 s, then
+# gives the page back while it still waits; PLAY, STOP: a new wait, said again
+ev = [(300, "down 3"), (400, "btn 1"), (500, "up 3"), (700, "keys 0x80"), (800, "keys 0"), (1200, "enc 2 -5"),
+      (9000, "btn 12"), (9400, "btn 12")]
+pr, out = run("said", ev + probes(*range(1300, 15000, 100)), 15000)
+w = [t for t in sorted(pr) if pr[t]["wait"]]
+t0 = w[0] if w else 0
+check("an autosave waits for a drone: SAVES WHEN SILENT said", bool(w) and pr[t0]["said"] == 1, w[:1])
+check("~2 s on: still waiting (no save), the header given back",
+      bool(w) and all(pr[t]["wait"] and not pr[t]["said"] for t in pr if t0 + 2100 <= t < 9000) and
+      all(pr[t]["said"] for t in pr if t0 <= t < t0 + 1900), f"from {t0}")
+w2 = [t for t in sorted(pr) if t > 9400 and pr[t]["wait"]]
+check("PLAY, STOP: a new wait, said again (~2 s)", bool(w2) and pr[w2[0]]["said"] == 1 and
+      not pr[min(14900, w2[0] + 2200)]["said"], w2[:1])
 print("quick test: passed" if not bad else "quick test: FAILED")
 sys.exit(1 if bad else 0)

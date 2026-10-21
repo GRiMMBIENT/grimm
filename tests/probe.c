@@ -8,8 +8,9 @@
  * the ticks played for them; pos: each track's step (-1 stopped); mch, clk, links: MIDI CHANNEL, CLOCK, MIDI LEARN's
  * links (the settings); notes: the notes on, by track:note (1..4); then (V2) "fx mf CUT,RES,TYPE,POS dr AMOUNT,TYPE,
  * TONE,MIX ft T1 T2 T3 T4": MASTER's and DRIVE's knobs, the tracks' filter TYPE | POS << 2; "ui page P sel T rec R
- * latch L1,L2,L3,L4 new N steps S": the page (PG_), the selected track (0..3), REC, the tracks' LATCH, SYSTEM 3's LATCH,
- * the selected track's steps with a note (tests/quick_test.py) */
+ * latch L1,L2,L3,L4 new N steps S wait W said A": the page (PG_), the selected track (0..3), REC, the tracks' LATCH,
+ * SYSTEM 3's LATCH (0 FROM SOUND, 1 ALWAYS OFF), the selected track's steps with a note, a save waiting for silence,
+ * the header saying so (tests/quick_test.py) */
 static void host_probe(void)
 {
     uint32_t i;
@@ -25,8 +26,9 @@ static void host_probe(void)
         const seq_pat_t *P = &seq[sel].pat[clamp(seq[sel].cur, 0, SEQ_NPAT - 1)];
         uint32_t n = 0;
         for (i = 0; i < SEQ_N; i++) n += P->st[i].note != 0;
-        printf(" ui page %u sel %u rec %u latch %d,%d,%d,%d new %u steps %u", page, sel, rec_on, (int)trk[0].latch,
-               (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch, n);
+        printf(" ui page %u sel %u rec %u latch %d,%d,%d,%d new %u steps %u wait %u said %u", page, sel, rec_on,
+               (int)trk[0].latch, (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch, n, sv_wait,
+               sv_wait && fm1_ms - sv_said < SV_SAY_MS);
     }
     printf("\n");
 }

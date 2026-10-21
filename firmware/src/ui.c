@@ -119,7 +119,8 @@ static void ui_head_text(void)
         for (p = 0; p < 4u; p++) *q++ = ' ', *q++ = slot_used(p) ? (char)('A' + p) : '-';
         *q = 0;
     }
-    if (sv_wait) put_s(ui_hl, "SAVES WHEN SILENT");   /* (a save waits: a voice sounds, a latched note) */
+    if (sv_wait && fm1_ms - sv_said < SV_SAY_MS)   /* (a save waits: a voice sounds, a latched note; said ~2 s) */
+        put_s(ui_hl, "SAVES WHEN SILENT");
     if (fm1_ms < hd_until) put_s(ui_hl, hd_msg);   /* (a moment: SAVED, LOADED, a sound's name) */
     if (learn_st) put_s(ui_hl, learn_st == 1u ? "TURN A KNOB" : "MOVE A CC");   /* (MIDI LEARN, till it ends) */
     if (as_err) put_s(ui_hl, "SAVE ERROR: RETRYING");
@@ -151,7 +152,7 @@ static void ui_head_text(void)
     {                                           /* the left fits beside the right (the battery, the tempo); a message
                                                  * that does not: the right side gives way while it shows; then cut */
         int32_t x0 = 3 + 10 + 8 * ui_len(ui_hb) + 3 + 5, rw = 8 * ui_len(ui_hr) + (ui_bat >= 0 ? UI_BAT_W + 4 : 0), room;
-        int msg = fm1_ms < hd_until || sv_wait || as_err || learn_st || save_held;
+        int msg = fm1_ms < hd_until || (sv_wait && fm1_ms - sv_said < SV_SAY_MS) || as_err || learn_st || save_held;
         room = (232 - (rw ? rw + 8 : 0) - x0) / 8;
         if (msg && ui_len(ui_hl) > room) ui_hr[0] = 0, ui_bat = -1, room = (232 - x0) / 8;
         if (room >= 0 && ui_len(ui_hl) > room) ui_hl[room] = 0;

@@ -28,7 +28,7 @@ GR!MM has **four tracks (T1–T4)**. Each track plays one sound, has its own seq
 
 **Knobs speed up:** turn slowly for fine steps, quickly to sweep the whole range.
 
-**Saving is automatic:** when the sequencer is stopped and you haven't touched anything for 2.5 seconds, GR!MM saves your work. Switch off any time; it comes back exactly as you left it. (It never saves while something is still sounding, to avoid audio dropouts; the header says `SAVES WHEN SILENT` while it waits.)
+**Saving is automatic:** when the sequencer is stopped and you haven't touched anything for 2.5 seconds, GR!MM saves your work. Switch off any time; it comes back exactly as you left it. (It never saves while something is still sounding, to avoid audio dropouts; the header says `SAVES WHEN SILENT` for 2 seconds when it starts waiting, then gets out of the way; the save still waits.)
 
 **Undo:** hold **EDIT** and press **OCT−** to undo the last edit, **OCT+** to redo it.
 

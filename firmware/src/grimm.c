@@ -733,6 +733,9 @@ static int32_t bat_lvl = -1;                    /* the battery's level (batt_pol
 static uint32_t hd_until, as_err;               /* (as_err: an autosave failed, it is tried again) */
 static uint32_t as_wait, sv_wait;               /* an autosave waits for the voices to fall silent; that, or a SOUNDS
                                                  * SAVE / CLEAR, waits (ui.c: SAVES WHEN SILENT) */
+static uint32_t sv_said;                        /* (V2) when that wait began: the header says so SV_SAY_MS, then gives
+                                                 * the page back (a drone: never silent); a new wait says it again */
+#define SV_SAY_MS 2000u
 static int32_t sv_pend = -1;                    /* SOUNDS: a SAVE or CLEAR waiting for the sequencer to stop (its ACTION) */
 static uint32_t sv_pend_slot, sv_pend_cat, sv_pend_trk;
 static int32_t ow_slot = -1;                    /* a used slot asked to be saved into: the same again within 3 s */
@@ -1997,7 +2000,11 @@ static void app_main(void)
         samples_poll(quiet() && !playing);      /* an upload's frame (writes only while nothing sounds, never while
                                                  * the sequencer plays), the slots' checks */
 
-        sv_wait = !playing && (as_wait || sv_pend >= 0) && !voices_silent();
+        {                                       /* (a save waits for silence: since when) */
+            uint32_t w = !playing && (as_wait || sv_pend >= 0) && !voices_silent();
+            if (w && !sv_wait) sv_said = fm1_ms;
+            sv_wait = w;
+        }
         if (set_dirty && quiet() && !playing && fm1_ms - set_t > 2000u) {   /* 2 s after the change, when silent */
             settings_save(&set, sizeof set);
             set_dirty = 0;
