@@ -34,7 +34,9 @@ def run(name, ev, end, env=None):
             pr[int(ln.split()[1])] = dict(page=int(d["page"]), sel=int(d["sel"]), rec=int(d["rec"]),
                                           latch=[int(x) for x in d["latch"].split(",")], new=int(d["new"]),
                                           steps=int(d["steps"]), wait=int(d["wait"]), said=int(d["said"]),
-                                          notes=ln.split(" notes", 1)[1].split(" fx ", 1)[0].split())
+                                          notes=ln.split(" notes", 1)[1].split(" fx ", 1)[0].split(),
+                                          voices=[tuple(int(x) for x in v.split("/"))
+                                                  for v in ln.split(" voices ")[1].split()])
     return pr, out
 
 
@@ -192,5 +194,33 @@ check("no arp: a note-on again before its off; the earlier one's late off: the n
 pr, _ = run("midi_plain", [N(1000, 60), F(2000, 60), N(2000, 60), F(3000, 60)] + probes(1500, 2500, 3500), 3600)
 check("no arp, a note let go and played again: as ever", pr[2500]["notes"] == ["1:60"] and pr[3500]["notes"] == [],
       f"{pr[2500]['notes']} {pr[3500]['notes']}")
+
+# (V2) voices: a track never takes another's (1.0: a 7th note took the oldest note of any track, a release of any)
+SIX = 0x80 | 0x200 | 0x800 | 0x1000 | 0x4000 | 0x10000          # (C4 D4 E4 F4 G4 A4)
+ev = [(300, "down 3"), (350, "btn 1"), (400, "up 3")] + [(500, "keys 0x10"), (560, "keys 0")]   # T1: LATCH, A3 latched
+ev += [(700, "enc 1 1"), (900, f"keys {SIX:#x}"), (1200, "probe")]                                 # T2: six keys held
+ev += [(1300, "enc 1 1"), (1400, f"keys {SIX | 0x4:#x}"), (1700, "probe")]                         # T3: one more (G3)
+pr, _ = run("voices", ev, 1800)
+n1 = lambda p, t: len([x for x in p["notes"] if x.startswith(f"{t}:")])   # noqa: E731
+check("six keys on T2 beside T1's latched drone: the drone stays, T2 gets the five voices free",
+      n1(pr[1200], 1) == 1 and n1(pr[1200], 2) == 5, pr[1200]["notes"])
+check("T3 with no voice at all: one from the track holding the most (T2), T1's drone untouched",
+      n1(pr[1700], 1) == 1 and n1(pr[1700], 2) == 4 and n1(pr[1700], 3) == 1, pr[1700]["notes"])
+ev = [(300, "keys 0x880"), (500, "keys 0"), (550, "enc 1 1"), (600, f"keys {SIX:#x}"), (700, "probe")]
+pr, _ = run("voicerel", ev, 800)
+rel1 = [v for v in pr[700]["voices"] if v[1] == 1 and v[0] == 3]
+check("T1's release tails not taken by T2's six keys (T2: the four idle voices)",
+      len(rel1) == 2 and n1(pr[700], 2) == 4, f"{pr[700]['notes']} {pr[700]['voices']}")
+ev = [(300, "btn 6"), (350, "btn 6"), (400, "enc 2 5"), (600, f"keys {SIX:#x}"), (900, "probe")]   # (T1: PHYS)
+pr, _ = run("voicephys", ev, 1000)
+check("PHYS: at most four notes still (the fifth, sixth not played)", n1(pr[900], 1) == 4, pr[900]["notes"])
+ev = [(300, "down 3"), (350, "btn 1"), (400, "up 3"), (500, "keys 0x10"), (560, "keys 0"), (700, "enc 1 1"),
+      (900, f"keys {SIX:#x}"), (1200, "keys 0"), (1500, "probe")]   # (T1's drone; T2: six keys, five played, let go)
+pr, out = run("voiceecho", ev, 1600)
+mo = [ln.split("MIDI out ")[1].split() for ln in out.splitlines() if " MIDI out 9" in ln or " MIDI out 8" in ln]
+on2 = sorted(m[1] for m in mo if m[0] == "91" and m[2] != "0")
+off2 = sorted(m[1] for m in mo if m[0] == "81" or (m[0] == "91" and m[2] == "0"))
+check("a key's note not played (no voice): no note-on out over USB either, so none is left on out there",
+      len(on2) == 5 and on2 == off2 and pr[1500]["notes"] == ["1:57"], f"on {on2} off {off2} {pr[1500]['notes']}")
 print("quick test: passed" if not bad else "quick test: FAILED")
 sys.exit(1 if bad else 0)

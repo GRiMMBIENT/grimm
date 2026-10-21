@@ -441,21 +441,6 @@ static int voice_latched(uint32_t v)
         if (lat_voice[i] == v) return 1;
     return 0;
 }
-static uint32_t free_voice(uint32_t t, uint32_t note)   /* no note on on it: one still sounding this note of this
-                                                         * track, else an idle one, else the quietest release (there is
-                                                         * one: nlat < NV) */
-{
-    uint32_t v, best = 0;
-    int32_t lv = 0x7FFFFFFF;
-    for (v = 0; v < NV; v++)
-        if (!voice_latched(v) && !voice_idle(v) && vc[v].note == note && vc[v].trk == t) return v;
-    for (v = 0; v < NV; v++) {
-        if (voice_latched(v)) continue;
-        if (voice_idle(v)) return v;
-        if (voice_level(v) < lv) { lv = voice_level(v); best = v; }
-    }
-    return best;
-}
 /* SEQ MIDI OUT: a step's (an arp's) note goes out when it is put in the list and when it leaves it (STOP, a mute, the
  * 7th note, the overload guard: every way out is drop), once while the track has it on (a chord's, the arp's twice) */
 static int out_twin(uint32_t i, uint32_t t, uint32_t note)   /* another (not i) step's or arp's note of t on note */
@@ -508,19 +493,50 @@ static uint32_t phys_count(void)                /* PHYS voices sounding: its not
         if (vc[v].stage == ST_REL && vc[v].eng == ENG_PHYS && !voice_latched(v)) n++;
     return n;
 }
-static int phys_steal(uint32_t *v)              /* PHYS_MAX sound: the voice a new PHYS note takes; 0 none needed */
+/* (V2) a voice for a new note of track t: a track never takes another track's voice (1.0: the quietest release of any
+ * track, all six on: the oldest note of any, a latched drone too). Its own release of this note, else an idle voice,
+ * else its own quietest release; else none: the note not played. A track with no voice at all takes one from the track
+ * holding the most (its quietest release, else its oldest note), so none is shut out. PHYS past PHYS_MAX: its own PHYS
+ * release, else its oldest PHYS note; with none, from the track holding the most PHYS voices */
+static uint32_t trk_voices(uint32_t t, int phys)   /* track t's voices sounding (phys: its PHYS ones): its notes on (the
+                                                 * list: a voice just started is its at once, vc[] only a block on),
+                                                 * its releases */
 {
-    uint32_t i, w, best = NV;
+    uint32_t i, v, n = 0;
+    for (i = 0; i < nlat; i++) n += lat_trk[i] == t && (!phys || trk[t].eng == ENG_PHYS);
+    for (v = 0; v < NV; v++)
+        n += !voice_latched(v) && !voice_idle(v) && vc[v].trk == t && (!phys || vc[v].eng == ENG_PHYS);
+    return n;
+}
+static int take_from(uint32_t t, int phys, int rel, uint32_t *v)   /* track t's quietest release, else (rel 0) its oldest
+                                                 * note: its voice */
+{
+    uint32_t w, i, best = NV;
     int32_t lv = 0x7FFFFFFF;
-    if (phys_count() < PHYS_MAX) return 0;
-    for (w = 0; w < NV; w++)                    /* a PHYS release first, the quietest (as free_voice: a note on, held
-                                                 * or latched, goes only when there is none) */
-        if (vc[w].stage == ST_REL && vc[w].eng == ENG_PHYS && !voice_latched(w) && voice_level(w) < lv)
+    for (w = 0; w < NV; w++)
+        if (vc[w].stage == ST_REL && vc[w].trk == t && (!phys || vc[w].eng == ENG_PHYS) && !voice_latched(w) &&
+            voice_level(w) < lv)
             lv = voice_level(w), best = w;
     if (best < NV) { *v = best; return 1; }
-    for (i = 0; i < nlat; i++)                  /* (all of them notes on: the oldest PHYS note) */
-        if (trk[lat_trk[i]].eng == ENG_PHYS) { *v = drop_at(i); return 1; }
+    for (i = 0; !rel && i < nlat; i++)
+        if (lat_trk[i] == t && (!phys || trk[t].eng == ENG_PHYS)) { *v = drop_at(i); return 1; }
     return 0;
+}
+static int pick_voice(uint32_t t, uint32_t note, uint32_t *v)
+{
+    uint32_t w, u, most = 0, from = NT;
+    int phys = trk[t].eng == ENG_PHYS && phys_count() >= PHYS_MAX;
+    if (!phys) {
+        for (w = 0; w < NV; w++)                /* (its own release of this note: it again) */
+            if (!voice_latched(w) && !voice_idle(w) && vc[w].note == note && vc[w].trk == t) { *v = w; return 1; }
+        for (w = 0; w < NV; w++)
+            if (!voice_latched(w) && voice_idle(w)) { *v = w; return 1; }
+    }
+    if (trk_voices(t, phys)) return take_from(t, phys, !phys, v);   /* (its own release; PHYS: else its oldest PHYS
+                                                 * note; none: not played) */
+    for (u = 0; u < NT; u++)                    /* (none at all: from the track holding the most) */
+        if (u != t && trk_voices(u, phys) > most) most = trk_voices(u, phys), from = u;
+    return from < NT && take_from(from, phys, 0, v);
 }
 static void note_off(uint32_t t, uint32_t id, uint32_t src, int echo)   /* origin id's voices released (its chord) */
 {
@@ -538,7 +554,7 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
                                                  * voices start over on it */
 {
     uint8_t ns[CH_MAX], own[CH_MAX];
-    uint32_t v, i, n, no = 0;
+    uint32_t v, i, n, no = 0, on = 0;
     int j;
     if (note > 127u || t >= NT || (trk_quiet >> t & 1u)) return;   /* (a silent track: none) */
     while ((j = note_find(t, id, src)) >= 0) {  /* (struck again: its voices out of the list, to be used again) */
@@ -553,13 +569,8 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
     for (i = 0; i < n; i++) {
         if (i < no)                             /* its own voice again */
             v = own[i];
-        else if (trk[t].eng == ENG_PHYS && phys_steal(&v))
-            ;                                   /* (PHYS_MAX PHYS voices: a release's, else the oldest's) */
-        else if (nlat == NV)                    /* all voices on: the oldest note goes, its voice fades and takes
-                                                 * the new one */
-            v = drop_oldest();
-        else
-            v = free_voice(t, ns[i]);
+        else if (!pick_voice(t, ns[i], &v))     /* (V2: no voice of its own for it: not played) */
+            continue;
         voice_start(v, t, ns[i]);
         if (mo_seq && src != SRC_KEY && !out_twin(NV, t, ns[i])) ec_put(0x90, t, ns[i] | EC_SEQ);
         lat_note[nlat] = ns[i];
@@ -568,10 +579,10 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
         lat_trk[nlat] = (uint8_t)t;
         lat_voice[nlat] = (uint8_t)v;
         lat_src[nlat] = (uint8_t)src;
-        nlat = nlat + 1u;
+        nlat = nlat + 1u, on++;
     }
     for (; i < no; i++) voice_release(own[i]);  /* (a smaller chord now: the rest let go) */
-    if (echo && n) ec_put(0x90, t, note);
+    if (echo && on) ec_put(0x90, t, note);      /* (V2: none played, none sent: no note-off would follow it) */
 }
 static uint32_t tracks_latched(void)            /* bit t: track t has notes on */
 {
