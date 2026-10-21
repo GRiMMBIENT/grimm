@@ -367,10 +367,18 @@ static void host_matrix(void)
 static uint64_t host_frames;                    /* frames rendered: an audio block's time is its first frame's, as on the
                                                  * FM-1 (its ISR comes on the DMA), not the millisecond it is made in */
 static int host_in_audio;
+static uint32_t host_jit, host_jit_rng = 1u;   /* GRIMM_ISR_JITTER (us): the audio ISR starts late by 0 .. it, as the
+                                                 * FM-1's can (the timer's ISR outranks it), its time read so */
+static uint32_t host_hz = FS;                   /* GRIMM_AUDIO_HZ: the audio's true rate against the timer's 24 MHz (an
+                                                 * FM-1's may not be 44100 to the hertz) */
 static uint32_t rt_now(void)
 {
-    return (uint32_t)(host_in_audio ? host_frames * 24000000u / FS : (uint64_t)fm1_ms * 24000u);
+    uint32_t j = 0;
+    if (host_in_audio && host_jit)
+        host_jit_rng = host_jit_rng * 1103515245u + 12345u, j = (host_jit_rng >> 8) % (host_jit * 24u);
+    return (uint32_t)(host_in_audio ? host_frames * 24000000u / host_hz : (uint64_t)fm1_ms * 24000u) + j;
 }
+static int host_clock_log;                      /* GRIMM_CLOCK_LOG: each pulse out, its time (ticks), a line */
 static struct { uint64_t t0, k; uint32_t bpm10, end, src; } hg;   /* the pulses: from t0 (ticks), the next, the tempo */
 static struct { uint32_t n, last, lo, hi; } ho;   /* pulses out: how many; the last's time; their intervals (ticks) */
 static void host_clock(void)                    /* each millisecond: the pulses due in, the FM-1's out */
@@ -382,6 +390,7 @@ static void host_clock(void)                    /* each millisecond: the pulses 
         uint32_t st = ro_q[ro_r % RTQ], due = ro_t[ro_r % RTQ];
         ro_r++;
         if (st != 0xF8u) { printf("%6u ms  clock out %02X\n", fm1_ms, st); continue; }
+        if (host_clock_log) printf("pulse %u\n", due);
         if (ho.n) {
             uint32_t d = due - ho.last;
             if (!ho.lo || d < ho.lo) ho.lo = d;
@@ -486,6 +495,9 @@ int main(int argc, char **argv)
     if (argc > 2) read_script(argv[2]);
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);
     memset(fake_flash, 0xFF, sizeof fake_flash);   /* (erased: the factory samples go in at boot) */
+    host_jit = getenv("GRIMM_ISR_JITTER") ? (uint32_t)atoi(getenv("GRIMM_ISR_JITTER")) : 0u;
+    host_clock_log = getenv("GRIMM_CLOCK_LOG") != 0;
+    if (getenv("GRIMM_AUDIO_HZ")) host_hz = (uint32_t)atoi(getenv("GRIMM_AUDIO_HZ"));
     if (getenv("GRIMM_SETTINGS_IN")) {          /* (tests/clock_test.py: the settings an older GR!MM saved, as stored) */
         FILE *f = fopen(getenv("GRIMM_SETTINGS_IN"), "rb");
         size_t n = f ? fread(host_store + 4, 1, 256, f) : 0;

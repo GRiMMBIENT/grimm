@@ -103,6 +103,23 @@ def clock_out():                                # INT+OUT at 120: evenly spaced 
     fc = [int(x) for x in re.findall(r"(\d+) ms  clock out FC", out)]
     check("INT+OUT: START as PLAY starts, STOP as it stops", len(fa) == 1 and len(fc) == 1 and 3000 <= fa[0] <= 3040 and
           33000 <= fc[0] <= 33020, f"FA {fa} FC {fc}")
+    # (V2.0's clock out on the timer: the audio ISR 0 .. 100 us late, its clock 44118 Hz, not 44100: the pulses still
+    # exactly 60e6 / BPM ticks apart, the remainder carried; a new tempo glides there, never past it)
+    env = dict(os.environ, GRIMM_CLOCK_LOG="1", GRIMM_ISR_JITTER="100", GRIMM_AUDIO_HZ="44118")
+    HOME = [(1600, "btn 6"), (1700, "btn 8")]   # (EDIT, then HOME: HOME, where SELECT is the tempo)
+    for bpm, turn in ((120, None), (133, "enc 0 13")):
+        _, out = run(f"out{bpm}", clock_setting("OUT") + HOME + ([(1800, turn)] if turn else []), 20000, env)
+        p = [int(ln.split()[1]) for ln in out.splitlines() if ln.startswith("pulse ")]
+        p = [x for x in p if x > 6 * 24000000]
+        dev = max(abs(x - p[0] - (i * 60000000 + bpm // 2) // bpm) for i, x in enumerate(p))
+        check(f"INT+OUT {bpm} BPM, the audio ISR late 0 .. 0.1 ms, its clock 44118 Hz: each pulse on the exact grid "
+              f"(60e6 / {bpm} ticks)", len(p) > 300 and dev <= 1, f"{len(p)} pulses, {dev} ticks off")
+    _, out = run("outglide", clock_setting("OUT") + HOME + [(8000, "enc 0 10")], 16000, env)
+    p = [int(ln.split()[1]) for ln in out.splitlines() if ln.startswith("pulse ")]
+    beats = [1440000000.0 / (p[i + 24] - p[i]) for i in range(0, len(p) - 24, 24) if p[i] > 8 * 24000000]
+    check("INT+OUT 120 -> 130 BPM: glides there (no jump, never past it), within 0.05 BPM in 3 s",
+          beats[0] < 129 and all(a <= b + 0.01 for a, b in zip(beats, beats[1:])) and max(beats) < 130.05 and
+          abs(beats[6] - 130) < 0.05, " ".join(f"{b:.2f}" for b in beats[:8]))
     ev = clock_setting("INT") + [(2000, "clock usb 1200 10000"), (3000, "midi 0xFA 0 0"), (5000, "probe")]
     pr, out = run("int", ev, 6000)
     check("INT: the clock and START from outside ignored, nothing out",

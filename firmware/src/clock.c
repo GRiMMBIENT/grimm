@@ -2,10 +2,13 @@
  * Copyright (C) 2026 GR!MM */
 /* GR!MM V2's MIDI clock: SYSTEM 2's CLOCK (grimm.c includes this file after the sequencer and the arp).
  *   INT      the FM-1's own tempo (SELECT / PRESETS on HOME); the clock and START / STOP from outside ignored
- *   INT+OUT  the same, and its clock out over USB (the jack has no output): F8 every 4 of the sequencer's ticks (24 a
- *            beat), also while stopped (the other gear knows the tempo before PLAY), on one tick count that never skips:
- *            PLAY starts at the next pulse, FA and that pulse (the downbeat) together; FC as it stops. Each goes out
- *            when its sound plays (platform.c rt_flush): ~0.1 ms of jitter
+ *   INT+OUT  the same, and its clock out over USB (the jack has no output): F8 24 a beat, also while stopped (the
+ *            other gear knows the tempo before PLAY): PLAY starts at the next pulse, FA and that pulse (the downbeat)
+ *            together; FC as it stops. The pulses are timed on the timer (rt_now, 24 MHz), not the audio's samples: a
+ *            pulse every 60e6 / BPM ticks, its remainder carried (exact over any time, whatever the audio's true
+ *            rate); a new tempo glides there (a sixteenth of the way a pulse: ~2 beats). The sequencer and the arps
+ *            play on them, 4 ticks a pulse, each in the control block whose sound holds its time. Each goes out when
+ *            its sound plays (platform.c rt_flush, 10 kHz; other USB-MIDI held back ~1.2 ms before it)
  *   USB, TRS the clock from there, after SLOOP's mclk (isod89/sloop-fm1 seq.c, after Felucca 1.0's midi_clock.c, from
  *            contributions by ChanceTheMaker and keremimo; GPL-3.0; GR!MM's own code): a pulse is 4 of the sequencer's
  *            96 ticks a beat, the first on the pulse, the other three between it and the next by the pulses' interval
@@ -29,7 +32,10 @@ static volatile uint32_t ck_bpm10;              /* audio: its tempo, x 10 (0: no
 static volatile uint32_t ck_trans;              /* audio: + 1 at each START / CONTINUE / STOP from there (the main
                                                  * loop's PLAY follows seq_on) */
 static volatile uint32_t ck_slot;               /* main loop: the slot PLAY plays (a START's) */
-static uint32_t ck_acc, ck_co;                  /* audio, INT+OUT: the tempo's samples (Q16), its ticks (a pulse each 4) */
+static uint32_t ko_t, ko_per, ko_rem, ko_n;    /* audio, INT+OUT: the next pulse's sound time (rt_now's ticks), a
+                                                 * pulse's spacing now (ticks: gliding to the tempo's), the carry of
+                                                 * 60e6 / BPM's remainder, the pulse's ticks played (0 .. 3) */
+#define KO_US 60000000u                         /* a pulse at 1 BPM, in rt_now's ticks: 60 s x 24 MHz / 24 */
 static struct {
     uint32_t last, iv, beat_t, beat;            /* the last pulse; their interval (smoothed); a beat's first pulse; a
                                                  * beat (smoothed) */
@@ -75,25 +81,36 @@ static void ck_resume(void)                     /* audio: CONTINUE: on from STOP
     seq_ticks = ck_rest.ticks, song_at = ck_rest.at, song_left = ck_rest.left, song_t = ck_rest.st, song_len = ck_rest.len;
     seq_on = 1;
 }
-static void ck_int_out(void)                    /* audio, a control block, INT+OUT: the FM-1's tempo, its pulses out */
+static void ck_int_out(uint32_t w)              /* audio, a control block, INT+OUT: the ticks whose sound time is
+                                                 * before w (this control block's end), the pulses out at theirs */
 {
-    uint32_t tick = SEQ_TICK_Q16 / (uint32_t)clamp(seq_bpm, 20, 300), t;
-    ck_acc += (uint32_t)CTL << 16;
-    while (ck_acc >= tick) {
-        ck_acc -= tick;
-        if (!(ck_co % 4u)) {                    /* a pulse: PLAY waiting starts here (START out, then the downbeat) */
+    uint32_t b = (uint32_t)clamp(seq_bpm, 20, 300), pt = KO_US / b, k, t, tt;
+    if ((int32_t)(w - ko_t) > (int32_t)(8u * ko_per)) ko_t = w, ko_n = 0;   /* (far behind: the audio stood, the
+                                                 * flash; on from now) */
+    for (k = 0; k < 16u; k++) {
+        tt = ko_t + ko_n * ko_per / 4u;         /* (this tick's time) */
+        if ((int32_t)(tt - w) >= 0) break;
+        if (!ko_n) {                            /* a pulse: PLAY waiting starts here (START out, then the downbeat) */
             if (ck.go && !seq_on) {
                 seq_start((uint32_t)ck_slot & 3u);
-                ck_out(0xFAu, ck_acc);
-                ck.go = 0, ck_co = 0, ck_trans++;
+                rt_out(0xFAu, tt);
+                ck.go = 0, ck_trans++;
             }
-            ck_out(0xF8u, ck_acc);
+            rt_out(0xF8u, tt);
         }
-        ck_co++;
         if (seq_on)
             seq_tick();                         /* (a song's end stops it; the pulses go on) */
         else
             for (t = 0; t < NT; t++) arp_tick(t, 0);
+        if (++ko_n < 4u) continue;
+        ko_n = 0, ko_t += ko_per;               /* the next pulse: at its tempo's spacing (exact), or gliding there */
+        if (ko_per == pt) {
+            ko_rem += KO_US % b;
+            if (ko_rem >= b) ko_rem -= b, ko_t++;
+        } else {
+            int32_t d = (int32_t)(pt - ko_per) / 16;
+            ko_per = d ? ko_per + (uint32_t)d : pt, ko_rem = 0;
+        }
     }
 }
 static void ck_lose(void)                       /* audio: no clock: the FM-1's own tempo from here (playing on) */
@@ -154,14 +171,17 @@ static void clk_ctl(void)
     if (m != ck.was) {                          /* CLOCK changed: a clock followed let go; INT+OUT: its tick count from
                                                  * the tempo's own (left playing: STOP out) */
         if (ck.was == CK_OUT && seq_on) ck_out(0xFCu, (uint32_t)CTL << 16);
-        if (ck.was == CK_OUT) seq_acc = arp_acc = ck_acc;
-        if (m == CK_OUT) ck_acc = seq_on ? seq_acc : arp_acc, ck_co = seq_ticks;
+        if (ck.was == CK_OUT) seq_acc = arp_acc = 0;
+        if (m == CK_OUT) {                      /* (on from now, the beat kept: a pulse every 4 of seq_ticks) */
+            ko_per = KO_US / (uint32_t)clamp(seq_bpm, 20, 300), ko_rem = 0, ko_n = seq_on ? seq_ticks % 4u : 0u;
+            ko_t = ck_e + CK_LAT + ck_j * CK_CTL - ko_n * ko_per / 4u;
+        }
         if (ck.alive) ck_lose();
         ck.go = ck.cont = 0, ck.was = (uint8_t)m;
     }
     if (m < CK_USB) {                           /* INT, INT+OUT: the FM-1's tempo; realtime in ignored */
         rt_r = rt_w;
-        if (m == CK_OUT) ck_int_out();
+        if (m == CK_OUT) ck_int_out(ck_e + CK_LAT + (ck_j + 1u) * CK_CTL);
         else {
             seq_ctl();
             arp_ctl();
