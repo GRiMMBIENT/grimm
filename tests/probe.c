@@ -33,6 +33,9 @@ static void host_probe(void)
                sv_wait && fm1_ms - sv_said < SV_SAY_MS);
         P2 = brw_pos[sel] >= 0 ? cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel]) : 0;
         printf(" eng %d slatch %d", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
+        printf(" dv %d,%d,%d,%d", (int)trk[0].drv, (int)trk[1].drv, (int)trk[2].drv, (int)trk[3].drv);   /* (V2: the
+                                                 * tracks' DRIVE sends) */
+        printf(" t1mix %d,%d,%d,%d", (int)trk[0].level, (int)trk[0].dly, (int)trk[0].rev, (int)trk[0].grn);
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

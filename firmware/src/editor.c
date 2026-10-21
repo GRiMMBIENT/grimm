@@ -15,8 +15,9 @@
  *   24 CPU                     -> the budget, NOW, PEAK, then NOW split by stage (grimm.c cpu_stage), u35 fm1_ticks
  *                              each (GR!MM V2: a diagnostic, tools/fm1_cpu.py; no protocol number of its own)
  *   25 FX   op 0 READ          -> op, rc, the project's effects as their pages' knobs (TAPE, GRAIN, DELAY, SPACE, MASTER,
- *                                 DRIVE: four each, 24), the tracks' filter TYPE | POS << 2 (4)
- *           op 1 SET i, v      -> op, rc: value i (0..27, as READ's) to v, live (the project's: the autosave keeps it)
+ *                                 DRIVE: four each, 24), the tracks' filter TYPE | POS << 2 (4), the tracks' sends DLY,
+ *                                 REV, GRAIN, DRIVE (16: T1's four first; an older page reads the first 28)
+ *           op 1 SET i, v      -> op, rc: value i (0..43, as READ's) to v, live (the project's: the autosave keeps it)
  *                              (GR!MM V2, the editor page's FX; no protocol number of its own either)
  * TRACK is live (protocol 2): a track's sound as it plays, read or set at once, as PRESETS loads one (snd_apply), never
  * saved; at any time, also while playing (the editor page's sliders, SLOOP's live SET). The page sends one at a time.
@@ -177,13 +178,14 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         ed_send(cmd, a, (uint32_t)(w - a), 0, 0, 0);
         return 1;
     }
-    if (cmd == ED_EFFECTS) {                    /* op [, i, v] -> op, rc [, the 28 values] */
-        uint8_t a[2u + 28u];
+    if (cmd == ED_EFFECTS) {                    /* op [, i, v] -> op, rc [, the 44 values] */
+        uint8_t a[2u + 44u];
         uint32_t op = n ? f[0] : 2u, i, t;
         a[0] = (uint8_t)op, a[1] = ER_OK;
-        if (op == 1u && n >= 3u && f[1] < 28u) {
+        if (op == 1u && n >= 3u && f[1] < 44u) {
             i = f[1];
-            if (i >= 24u) t = i - 24u, trk[t].ftype = clamp(f[2] & 3u, 0, NFTYPE - 1), trk[t].fpos = f[2] >> 2 & 1u;
+            if (i >= 28u) *mx_send((i - 28u) / 4u, (i - 28u) % 4u) = f[2] & 0x7Fu;   /* (V2: MIXER 1's sends) */
+            else if (i >= 24u) t = i - 24u, trk[t].ftype = clamp(f[2] & 3u, 0, NFTYPE - 1), trk[t].fpos = f[2] >> 2 & 1u;
             else {
                 uint32_t pg = ED_FXPG[i / 4u], k = i % 4u;
                 volatile int32_t *p = knob_param(pg, k);
@@ -202,7 +204,8 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
             a[2u + i] = (uint8_t)clamp(p ? *p : 0, 0, 127);
         }
         for (t = 0; t < NT; t++) a[26u + t] = (uint8_t)(clamp(trk[t].ftype, 0, NFTYPE - 1) | clamp(trk[t].fpos, 0, 1) << 2);
-        ed_send(cmd, a, 30, 0, 0, 0);
+        for (i = 0; i < 16u; i++) a[30u + i] = (uint8_t)clamp(*mx_send(i / 4u, i % 4u), 0, 127);
+        ed_send(cmd, a, 46, 0, 0, 0);
         return 1;
     }
     if (cmd == ED_GET) {                        /* obj, off (5), count (2) -> obj, rc, off, count, the bytes */

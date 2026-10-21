@@ -1114,17 +1114,25 @@ static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL co
 static void pic_mix(void)                       /* FxTrack: the four tracks' columns, LEVEL and the sends (MIXER 2: PAN) */
 {
     int32_t t, m, j;
-    ui_caption(page == PG_MIX1 ? "LEVEL DLY REV GRAIN" : "PAN  FILTER", 0);
+    static const char *const SQ[4] = {"DL", "RV", "GR", "DR"};
+    if (page == PG_MIX1) {                      /* (V2) the level, then a square a send (its amount filled, the one
+                                                 * SELECT picked outlined: the selected track's in the accent) */
+        ui_caption("LEVEL  SENDS", MX_SEND[mx_sq & 3]);
+        for (m = 0; m < 4; m++) ui_text(PX0 + 3 * 54 + 4 + 40, 44 + m * 24 + 6, SQ[m], 1, m == mx_sq ? UI_L : UI_M);
+    } else
+        ui_caption("PAN  FILTER", 0);
     for (t = 0; t < (int32_t)NT; t++) {
         int32_t x0 = PX0 + t * 54 + 4;
         char lab[3] = {'T', (char)('1' + t), 0};
         if (page == PG_MIX1) {
-            volatile int32_t *const V[4] = {&trk[t].level, &trk[t].dly, &trk[t].rev, &trk[t].grn};
             uint16_t lc = mx_col(trk[t].level);
-            for (m = 0; m < 4; m++) {           /* (LEVEL: the sound now, in LEVEL's colour; the sends: as set) */
-                int32_t n = m ? (clamp(*V[m], 0, 127) * 8 + 63) / 127 : mx_h[t];
-                for (j = 0; j < 8; j++)
-                    ui_rect(x0 + m * 12, 44 + j * 12, 9, 10, 7 - j < n ? (m ? UI_M : lc) : UI_D);
+            for (j = 0; j < 8; j++)             /* (LEVEL: the sound now, in LEVEL's colour) */
+                ui_rect(x0, 44 + j * 12, 9, 10, 7 - j < mx_h[t] ? lc : UI_D);
+            for (m = 0; m < 4; m++) {           /* (the sends: a square each, filled from below as set) */
+                int32_t y = 44 + m * 24, h = (clamp(*mx_send((uint32_t)t, (uint32_t)m), 0, 127) * 18 + 63) / 127;
+                ui_rect(x0 + 16, y, 20, 20, m != mx_sq ? UI_D : t == (int32_t)sel ? ui_acc : UI_L);
+                ui_rect(x0 + 17, y + 1, 18, 18, UI_K);
+                if (h) ui_rect(x0 + 17, y + 19 - h, 18, h, m == mx_sq ? UI_L : UI_M);
             }
         } else {
             int32_t pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
@@ -1702,13 +1710,14 @@ static uint32_t ui_pic_key(void)
 {
     uint32_t h = 2166136261u, k, t;
 #define UI_H(v) (h = (h ^ (uint32_t)(v)) * 16777619u)
-    UI_H(page), UI_H(sel), UI_H(sel_eng()), UI_H(ge_freeze), UI_H(ui_acc);
+    UI_H(page), UI_H(sel), UI_H(sel_eng()), UI_H(ge_freeze), UI_H(ui_acc), UI_H(mx_sq);
     for (k = 0; k < 4u; k++) {
         volatile int32_t *p = knob_param(page, k);
         UI_H(p ? *p : -1);
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
+            UI_H(trk[t].drv),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);

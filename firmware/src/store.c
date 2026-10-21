@@ -379,7 +379,8 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
     q[29] = (uint8_t)(127 - clamp(trk[t].cut, 0, 127)), q[30] = (uint8_t)clamp(trk[t].res, 0, 127);   /* TRACK (0, 0, 0:
                                                  * open, 0, 100 %: as a save from before it) */
     q[31] = (uint8_t)(int8_t)(clamp(trk[t].fx, 0, 200) - 100);
-    q[37] = (uint8_t)(trk[t].latch != 0);
+    q[37] = (uint8_t)((trk[t].latch != 0) | clamp(trk[t].drv, 0, 127) << 1);   /* (V2: the DRIVE send above LATCH's
+                                                 * bit; 1.0's: 0, no send) */
     q[38] = (uint8_t)clamp(trk[t].level, 0, 127), q[39] = (uint8_t)clamp(trk[t].dly, 0, 127);
     q[40] = (uint8_t)clamp(trk[t].rev, 0, 127), q[41] = (uint8_t)clamp(trk[t].grn, 0, 127);
     q[42] = (uint8_t)clamp(trk[t].pan, 0, 127);
@@ -413,14 +414,14 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];
     for (k = 0; k < 4u; k++) trk[t].env[k] = q[33 + k];
-    if (trk[t].latch && !q[37]) {               /* (LATCH ON -> OFF: its latched notes released; at the bar, now) */
+    if (trk[t].latch && !(q[37] & 1u)) {               /* (LATCH ON -> OFF: its latched notes released; at the bar, now) */
         if (!isr) nq_put(NQ_RELEASE, t, 0);
         else {
             release_keys(t);
             if (trk[t].arp) arp_clear(t);
         }
     }
-    trk[t].latch = q[37];
+    trk[t].latch = q[37] & 1u, trk[t].drv = q[37] >> 1;
     trk[t].level = q[38], trk[t].dly = q[39], trk[t].rev = q[40], trk[t].grn = q[41], trk[t].pan = q[42];
     trk[t].cut = 127 - clamp(q[29], 0, 127), trk[t].res = clamp(q[30], 0, 127), trk[t].fx = clamp((int8_t)q[31] + 100, 0, 200);
     trk[t].ftype = clamp(q[32] & 3u, 0, NFTYPE - 1), trk[t].fpos = q[32] >> 2 & 1u;   /* (saved before V2: LP PRE) */

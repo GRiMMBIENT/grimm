@@ -137,7 +137,9 @@ static volatile uint32_t cpu_stage[CS_N];       /* audio: NOW split (GR!MM V2, t
                                                  * a block over NOW's blocks, the key scan's (SCAN: the timer ISR inside
                                                  * the audio ISR) taken out of them and counted on its own */
 static uint32_t cpu_over;                       /* audio: blocks in a row over the budget (the overload guard) */
-static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB];   /* the tracks (mono); the DLY, REV and GRAIN buses */
+static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB], vbus[VB];   /* the tracks (mono); the DLY, REV, GRAIN and
+                                                 * (V2) DRIVE buses */
+static uint32_t dv_used;                        /* audio: the DRIVE bus fed this block (a send up, or coming down) */
 #include "master.c"                             /* GR!MM V2: MASTER (a filter on the whole sound), DRIVE (and a limiter) */
 static volatile uint32_t trk_mute, trk_solo;    /* main loop: GLO held + white keys 1..4, 5..8 (bit t: track t) */
 enum { PF_REV, PF_ECHO, PF_TAPE, PF_BACK, PF_FDOWN, PF_FUP, PF_STUT, NPF };   /* the FX layer's tricks: G3 .. F4 */
@@ -154,8 +156,8 @@ static inline int32_t mulq15w(int32_t a, int32_t b)
 {
     return (a >> 15) * b + (int32_t)(((uint32_t)a & 0x7FFFu) * (uint32_t)b >> 15);
 }
-static int32_t mix_g[NT][5];                    /* audio: each track's gains (L, R, DLY, REV, GRAIN) as the last block
-                                                 * ended: this block's ramps start there */
+static int32_t mix_g[NT][6];                    /* audio: each track's gains (L, R, DLY, REV, GRAIN, (V2) DRIVE) as the
+                                                 * last block ended: this block's ramps start there */
 static void mix_add(int32_t *o, uint32_t st, const int32_t *x, int32_t g0, int32_t g1, uint32_t n)   /* o[i st] +=
                                                  * x[i] times the gain, from g0 to g1 over the block (no zipper) */
 {
@@ -268,13 +270,20 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
         int32_t *x = tbuf[t];
         int32_t lv = (trk_quiet >> t & 1u) ? 0 : lfo_move(t, LD_VOLUME, clamp(trk[t].level, 0, 127), 127) * 258;   /* (a
                                                  * silent track: all its gains down, ramped) */
-        int32_t pan = lfo_move(t, LD_PAN, clamp(trk[t].pan, 0, 127), 127), g[5];
+        int32_t pan = lfo_move(t, LD_PAN, clamp(trk[t].pan, 0, 127), 127), g[6];
         g[0] = mulq15(lv, pan <= 64 ? 32767 : (127 - pan) * 520);   /* PAN: the far side down, the near one full */
         g[1] = mulq15(lv, pan >= 64 ? 32767 : pan * 512);
         g[2] = mulq15(lv, pf_held >> PF_ECHO & 1u ? 127 * 258 : fx_send(t, clamp(trk[t].dly, 0, 127)));   /* the sends:
                                                  * after LEVEL (ECHO THROW, REV THROW held: full) */
         g[3] = mulq15(lv, pf_held >> PF_REV & 1u ? 127 * 258 : fx_send(t, lfo_move(t, LD_REV, clamp(trk[t].rev, 0, 127), 127)));
         g[4] = mulq15(lv, fx_send(t, lfo_move(t, LD_GRAIN, clamp(trk[t].grn, 0, 127), 127)));
+        g[5] = trk[t].drv > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send; 0: none,
+                                                 * nothing done) */
+        if ((used >> t & 1u) && (g[5] | mix_g[t][5])) {   /* (its bus cleared as it is first fed this block) */
+            if (!dv_used)
+                for (k = 0; k < n; k++) vbus[k] = 0;
+            dv_used = 1;
+        }
         int32_t px0 = tf_px[t], pw = trk[t].fpos ? TF_PX1 : 0;
         int32_t px1 = !(used >> t & 1u) ? pw : px0 < pw ? (px0 + 32 < pw ? px0 + 32 : pw) : (px0 - 32 > pw ? px0 - 32 : pw);
         tf_px[t] = px1;                         /* (V2: POS; silent: at once) */
@@ -283,13 +292,17 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             int32_t *bus[3] = {dbus, rbus, gbus};
             if (px0 == TF_PX1 && px1 == TF_PX1) {
                 for (k = 0; k < 3u; k++) mix_add(bus[k], 1u, x, mix_g[t][2u + k], g[2u + k], n);
+                if (g[5] | mix_g[t][5]) mix_add(vbus, 1u, x, mix_g[t][5], g[5], n);
                 trk_filter(t, x, n);
             } else {
                 for (k = 0; k < 3u; k++)
                     mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * px0) >> 8, (g[2u + k] * px1) >> 8, n);
+                if (g[5] | mix_g[t][5]) mix_add(vbus, 1u, x, (mix_g[t][5] * px0) >> 8, (g[5] * px1) >> 8, n);
                 trk_filter(t, x, n);
                 for (k = 0; k < 3u; k++)
                     mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * (TF_PX1 - px0)) >> 8, (g[2u + k] * (TF_PX1 - px1)) >> 8, n);
+                if (g[5] | mix_g[t][5])
+                    mix_add(vbus, 1u, x, (mix_g[t][5] * (TF_PX1 - px0)) >> 8, (g[5] * (TF_PX1 - px1)) >> 8, n);
             }
             mix_add(out, 2u, x, mix_g[t][0], g[0], n);
             mix_add(out + 1, 2u, x, mix_g[t][1], g[1], n);
@@ -300,9 +313,10 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             if (used >> t & 1u) {
                 trk_peak(t, x, n);
                 mix_add5(out, x, mix_g[t], g, n);
+                if (g[5] | mix_g[t][5]) mix_add(vbus, 1u, x, mix_g[t][5], g[5], n);   /* (V2: DRIVE's send) */
             }
         }
-        for (k = 0; k < 5u; k++) mix_g[t][k] = g[k];
+        for (k = 0; k < 6u; k++) mix_g[t][k] = g[k];
     }
 }
 
@@ -317,8 +331,13 @@ static void app_audio(int32_t *out, uint32_t n)
     CS_MARK(CS_VOICES);
     for (i = 0; i < n; i++)
         dbus[i] = rbus[i] = gbus[i] = 0;
+    dv_used = 0;
     mix_tracks(out, used, n);
     CS_MARK(CS_MIX);
+    if (dv_used) {                              /* (V2) the tracks' DRIVE sends: their bus driven, back into the mix */
+        drive_send(out, n);
+        CS_MARK(CS_DRIVE);
+    }
     master_filter(out, n, MP_PRE);              /* (V2) MASTER, PRE FX: the tracks' dry mix */
     CS_MARK(CS_MASTER);
     grain_render(gbus, out, rbus, n);           /* GRAIN: the GRAIN bus in; the cloud out, and into the REV bus */
@@ -825,7 +844,8 @@ static const page_t PAGES[NPAGE] = {
     {"SONG", BTN_GLO, 1, 0, 1, {"SECTION", "PATTERN", "REPEATS", "MODE"}},
     {"HOME", BTN_HOME, 1, 1, 1, {"VOLUME", "CUTOFF", "RESONANCE", "FX"}},   /* (the track's: its LEVEL, its filter, its
                                                  * sends together; its sound's name in the header) */
-    {"MIXER 1", BTN_HOME, 1, 1, 1, {"LEVEL", "DLY SEND", "REV SEND", "GRAIN SEND"}},
+    {"MIXER 1", BTN_HOME, 1, 1, 1, {"SEND", "LEVEL", "", ""}},   /* (V2: SELECT picks the send KNOB 1 sets: DLY,
+                                                 * REV, GRAIN, DRIVE; its links as before, cc_apply: mx_link) */
     {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "TYPE", "POS", ""}},   /* (V2: the track filter's TYPE and POS) */
     {"SYSTEM", BTN_HOME, 1, 0, 0, {"COLOUR", "MIDI CHANNEL", "TUNE", "SCREEN OFF"}},   /* (HOME held; HOME again: */
     {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", "CLOCK"}},       /* SYSTEM 2, SYSTEM 3, and
@@ -857,6 +877,18 @@ static int pg_on(uint32_t p)                    /* in its button's round now (FM
     return PAGES[p].cyc && ((p != PG_FMALGO && p != PG_FMOP) || clamp(trk[sel].eng, 0, NENG - 1) == ENG_FM);
 }
 static volatile int32_t fm_op;                  /* FM ALGO's OP: the operator FINE and FM OP's knobs edit (0 = OP1) */
+static volatile int32_t mx_sq;                  /* (V2) MIXER 1: the send SELECT picks (0 DLY, 1 REV, 2 GRAIN, 3 DRIVE) */
+static const char *const MX_SEND[4] = {"DLY SEND", "REV SEND", "GRAIN SEND", "DRIVE SEND"};
+static volatile int32_t *mx_send(uint32_t t, uint32_t s)   /* track t's send s (mx_sq's) */
+{
+    return s == 0u ? &trk[t].dly : s == 1u ? &trk[t].rev : s == 2u ? &trk[t].grn : &trk[t].drv;
+}
+static volatile int32_t *mx_link(const uint8_t *L)   /* a MIDI LEARN link to MIXER 1: x 0 its knobs as they were
+                                                 * (1.0: LEVEL, DLY, REV, GRAIN SEND), x 4 the DRIVE send */
+{
+    uint32_t t = L[3] & 3u, k = L[2] & 3u;
+    return L[4] == 4u ? &trk[t].drv : k ? mx_send(t, k - 1u) : &trk[t].level;
+}
 static const char *const BTN_NAME[14] = {"OCT-", "OCT+", "FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP",
                                          "SEQ", "PLAY", "REC"};
 #define BTN_PAGES (1u << BTN_EDIT | 1u << BTN_ENV | 1u << BTN_LFO | 1u << BTN_SEL | 1u << BTN_GLO | 1u << BTN_HOME | \
@@ -898,7 +930,6 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
                                                {&ge_size, &ge_dens, &ge_scat, &ge_mix},
                                                {&dl_time, &dl_fb, &dl_wear, &dl_mix},
                                                {&rv_size, &rv_damp, &rv_mix, &rv_pre}};
-    volatile int32_t *const MIX[4] = {&trk[sel].level, &trk[sel].dly, &trk[sel].rev, &trk[sel].grn};
     switch (pg) {
     case PG_SOUND: return &trk[sel].p[sel_eng()][k];
     case PG_SOURCE: return k == 0u ? &trk[sel].eng : k == 1u ? &trk[sel].latch : 0;
@@ -912,7 +943,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_ARP: return k == 0u ? &trk[sel].arp_mode : k == 1u ? &trk[sel].arp_rate : k == 2u ? &trk[sel].arp_oct :
                         &trk[sel].arp_gate;
     case PG_HOME: return k == 0u ? &trk[sel].level : k == 1u ? &trk[sel].cut : k == 2u ? &trk[sel].res : &trk[sel].fx;
-    case PG_MIX1: return MIX[k];
+    case PG_MIX1: return k == 0u ? mx_send(sel, (uint32_t)mx_sq) : k == 1u ? &trk[sel].level : 0;
     case PG_MIX2: return k == 0u ? &trk[sel].pan : k == 1u ? &trk[sel].ftype : k == 2u ? &trk[sel].fpos : 0;
     case PG_FMALGO: return k == 0u ? &trk[sel].fm_alg : k == 1u ? &trk[sel].fm_fb : k == 2u ? &fm_op :
                            &trk[sel].fmo[clamp(fm_op, 0, 5)][FO_FINE];
@@ -934,7 +965,10 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
-static const char *knob_name(uint32_t pg, uint32_t k) { return pg == PG_SOUND ? sel_engine()->knob[k] : PAGES[pg].knob[k]; }
+static const char *knob_name(uint32_t pg, uint32_t k)
+{
+    return pg == PG_SOUND ? sel_engine()->knob[k] : pg == PG_MIX1 && !k ? MX_SEND[mx_sq & 3] : PAGES[pg].knob[k];
+}
 static int32_t knob_max(uint32_t pg, uint32_t k)
 {
     static const int32_t GRID_MAX[4] = {127, 100, 4, SEQ_N}, PATT_MAX[4] = {SEQ_N, 7, 127, SEQ_NMODE - 1};
@@ -1310,7 +1344,14 @@ static void learn_knob(uint32_t pg, uint32_t k) /* a knob turned while LEARN wai
     if (!learn_st || pg == PG_SYSTEM || pg == PG_SYS2 || pg == PG_SYS3 || PAGES[pg].btn == BTN_SAVE || pg == PG_PERFORM ||
         !knob_param(pg, k))
         return;
-    if (pg == PG_HOME && k == 0u) pg = PG_MIX1; /* (HOME's VOLUME: the track's LEVEL, as MIXER 1's) */
+    if (pg == PG_HOME && k == 0u) pg = PG_MIX1, k = 1u;   /* (HOME's VOLUME: the track's LEVEL, as MIXER 1's) */
+    if (pg == PG_MIX1) {                        /* (V2: linked as 1.0 linked them, mx_link: LEVEL k 0, a send k 1 + its
+                                                 * number; DRIVE's: k 0, x 4) */
+        learn_to[0] = (uint8_t)pg, learn_to[2] = (uint8_t)sel;
+        learn_to[1] = (uint8_t)(k == 1u || mx_sq >= 3 ? 0 : mx_sq + 1), learn_to[3] = (uint8_t)(k == 0u && mx_sq >= 3 ? 4 : 0);
+        learn_st = 2;
+        return;
+    }
     learn_to[0] = (uint8_t)pg, learn_to[1] = (uint8_t)k, learn_to[2] = (uint8_t)(PAGES[pg].own ? sel : 0u);
     learn_to[3] = (uint8_t)(pg == PG_SOUND ? sel_eng() : pg == PG_GRID ? (uint32_t)seq[sel].cursor :
                             pg == PG_SONG && (k == 1u || k == 2u) ? (uint32_t)song_sect :
@@ -1321,6 +1362,7 @@ static char *link_name(char *s, const uint8_t *L)   /* a link's parameter: "T1 C
 {
     uint32_t pg = L[1] % NPAGE, k = L[2] & 3u;
     if (PAGES[pg].own) s = put_s(put_u(put_s(s, "T"), (L[3] & 3u) + 1u), " ");
+    if (pg == PG_MIX1) return put_s(s, L[4] == 4u ? MX_SEND[3] : k ? MX_SEND[k - 1u] : "LEVEL");   /* (mx_link) */
     return put_s(s, pg == PG_SOUND ? ENGINES[L[4] % NENG]->knob[k] : PAGES[pg].knob[k]);
 }
 static void learn_cc(uint32_t cc)               /* MOVE A CC: this one, linked */
@@ -1361,7 +1403,7 @@ static void cc_apply(const uint8_t *L, uint32_t val)   /* a linked CC: its param
     if (pg == PG_FMOP || (pg == PG_FMALGO && k == 3u)) fm_op = clamp((int32_t)x, 0, 5);
     if (pg == PG_GRID) seq[sel].cursor = clamp((int32_t)x, 0, SEQ_N - 1);
     if (pg == PG_SONG && (k == 1u || k == 2u)) song_sect = clamp((int32_t)x, 0, SONG_N - 1);
-    if ((p = knob_param(pg, k)) != 0) {
+    if ((p = pg == PG_MIX1 ? mx_link(L) : knob_param(pg, k)) != 0) {   /* (V2: MIXER 1's links as they were) */
         v = knob_min(pg, k) + ((int32_t)val * (knob_max(pg, k) - knob_min(pg, k)) + 63) / 127;
         if (pg == PG_GRID && k == 0u) {         /* NOTE: the note (a SCALE: its nearest), 0 OFF */
             seq_step_t *st = grid_step();
@@ -1369,7 +1411,9 @@ static void cc_apply(const uint8_t *L, uint32_t val)   /* a linked CC: its param
             *p = v ? (int32_t)sc_snap((uint32_t)v) : 0;
             grid_put();
             if (!*p) st->lmask = 0, st->chord = 0;
-        } else
+        } else if (pg == PG_MIX1)
+            *p = clamp(v, 0, 127);              /* (V2: mx_link's target, not the page's knob now) */
+        else
             knob_step(pg, k, v - *p);
     }
     seq[sel].cursor = cu, sel = s, fm_op = op;
@@ -1698,6 +1742,8 @@ static void app_main(void)
                 seq[sel].cursor = clamp(seq[sel].cursor + enc_accel(ENC_SELECT, d, SEQ_N - 1), 0, SEQ_N - 1);
             else if (page == PG_HOME && !ck_ext)   /* (a MIDI clock's tempo: not ours to turn) */
                 seq_bpm = clamp(seq_bpm + enc_accel(ENC_SELECT, d, 280), 20, 300);
+            else if (page == PG_MIX1)           /* (V2) MIXER 1: the send KNOB 1 sets */
+                mx_sq = clamp(mx_sq + d, 0, 3);
         }
         if ((d = enc_take(ENC_PRESETS)) != 0) {   /* PRESETS: on SEQ's pages the tempo; elsewhere the saved sounds */
             t_touch = fm1_ms;

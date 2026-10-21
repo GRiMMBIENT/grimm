@@ -131,6 +131,24 @@ static void dr_wet(const int32_t *x, int32_t *w, uint32_t n, uint32_t ty, int32_
     }
 }
 #undef DR_RUN
+/* (V2) the tracks' DRIVE sends (MIXER 1): their bus (mono) driven as DRIVE drives, by its TYPE and TONE, at a gain
+ * of its own (DV_AMT: the send's level is how hard it hits it), level-matched (DR_LEVEL), back into the mix in the
+ * middle; after the tracks, before MASTER PRE. No send up: never called. DRIVE's AMOUNT, MIX, limiter: the whole mix's */
+#define DV_AMT 80
+static int32_t dv_lp;                           /* audio: its TONE's state */
+static void drive_send(int32_t *out, uint32_t n)
+{
+    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), i;
+    int32_t g = dr_gain(ty, DV_AMT), lv = dr_level(ty, DV_AMT), l = dv_lp, y;
+    int32_t tc = dr_tone >= 127 ? 32768 : (int32_t)(pow2_q16((clamp(dr_tone, 0, 127) - 127) * 12) >> 1) + 160;
+    dr_wet(vbus, vbus, n / 2u, ty, g, lv);      /* (n mono: as n / 2 frames of two) */
+    for (i = 0; i < n; i++) {
+        y = vbus[i];
+        if (tc < 32768) l += ((y - l) >> 1) * tc >> 14, y = l;
+        out[2u * i] += y, out[2u * i + 1u] += y;
+    }
+    dv_lp = l;
+}
 static void drive_render(int32_t *out, uint32_t n)   /* audio: DRIVE and its limiter on the mix (n frames, L R) */
 {
     int32_t a = clamp(dr_amt, 0, 127), g, lv, tc, mx, env = dr_env, l0 = dr_lp[0], l1 = dr_lp[1];
