@@ -142,6 +142,11 @@ static void ui_head_text(void)
     else put_u(put_s(put_u(ui_hr, i), "/"), n);
     ui_bat = page == PG_HOME && bat_lvl >= 0 ? bat_lvl * 2 + (bat_lvl == 0 && (fm1_ms / 500u & 1u)) : -1;   /* (the
                                                  * battery: where the tempo shows) */
+#ifdef GRIMM_TRS_TEST
+    put_u(put_s(put_u(put_s(ui_hr, "TRS "), um.bytes), "/"), um.msgs);   /* (a test build: the bytes, the messages in on
+                                                 * the TRS jack so far, every page) */
+    ui_bat = -1;
+#endif
     if (song_mode != SM_OFF) {                  /* a song MODE: SONG, SONG LOOP on every page (the left cut short to
                                                  * fit) */
         int32_t room = (232 - 8 * (int32_t)ui_len(SONG_MODE_NAME[song_mode]) - 8 - 21 - 8 * ui_len(ui_hb)) / 8;

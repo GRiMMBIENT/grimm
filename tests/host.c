@@ -91,6 +91,9 @@ static int settings_save(const void *p, uint32_t n)
     return 0;
 }
 
+#ifdef GRIMM_TRS_TEST
+static struct { uint32_t bytes, msgs; } um;     /* (the TRS test build's counter, as midi_uart.c's on the FM-1) */
+#endif
 static uint8_t mq[64][3];
 static uint32_t mq_w, mq_r;
 static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
@@ -425,6 +428,9 @@ static void platform_poll(void)                 /* one call = one millisecond */
         else if (script[step].st) {
             mq[mq_w % 64u][0] = script[step].st; mq[mq_w % 64u][1] = script[step].d1; mq[mq_w % 64u][2] = script[step].d2;
             mq_w++;
+#ifdef GRIMM_TRS_TEST
+            if (script[step].src) um.bytes += 3u, um.msgs++;   /* (the TRS test build's counter: a "trs" line, 3 B) */
+#endif
         } else if (script[step].btn >= 0) {
             uint32_t m = 1u << (script[step].btn & 0xFF);
             if (script[step].btn & 0x200) {     /* up */

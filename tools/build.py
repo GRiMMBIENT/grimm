@@ -52,6 +52,7 @@ PRODUCT = "FM-1_966"                # GR!MM: 966, every release (1.x, 2.x) (FM-1
                                     # other firmwares hold 950, 95x, 961, so not Dinghy's 9 + minor); Dinghy is 99N
 VERSION = None                      # APP_VER for release builds (else DEFAULT_VERSION)
 DEFAULT_VERSION = "2.0"
+DEFINES = []                        # --define: a test build's -D names for the app
 
 
 def toolchain():
@@ -154,7 +155,8 @@ def build_loader():
 # ---- app
 
 def build_app():
-    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or DEFAULT_VERSION}"']
+    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or DEFAULT_VERSION}"',
+             *(f"-D{d}" for d in DEFINES)]
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
             ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
             ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
@@ -275,14 +277,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y", help="release build: the version string X.Y (identity FM-1_966 as always)")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
+    ap.add_argument("--define", action="append", default=[], metavar="NAME",
+                    help="a test build: -DNAME for the app (e.g. GRIMM_TRS_TEST); give it its own --name")
+    ap.add_argument("--name", metavar="FILE.fwsc", help="the package's file name (default grimm.fwsc)")
     a = ap.parse_args()
-    name = "grimm.fwsc"
+    DEFINES.extend(a.define)
+    name = a.name or "grimm.fwsc"
     if a.release:                   # one digit each: the identity has room for two (X.Y; a .Z only in the text)
         m = re.fullmatch(r"(\d)\.(\d)(\.\d)?(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y-suffix, one digit each")
         VERSION = m[1] + "." + m[2] + (m[3] or "")
-        name = f"grimm-{a.release}.fwsc"
+        name = a.name or f"grimm-{a.release}.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
