@@ -28,7 +28,7 @@
 
 #define ED_PROTO 2u                             /* this protocol's version (INFO; 2: TRACK) */
 #define ED_FMT 1u                               /* the objects' format: sounds of 64 B, slots of SLOT_ALL, settings
-                                                 * as set (SET_VER 2; a PUT of V1.0's, 1, too) */
+                                                 * as set (SET_VER 3; a PUT of V1.0's, 1, and of version 2 too) */
 enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24, ED_EFFECTS = 25 };
 static const uint8_t ED_FXPG[6] = {PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_MASTER, PG_DRIVE};   /* (FX's i / 4) */
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
@@ -97,16 +97,19 @@ static uint32_t ed_commit(uint32_t o)
         __typeof__(set) s;
         uint32_t i;
         memcpy(&s, ED_RX, sizeof s);
-        if (ed_len == sizeof s - 1u) {          /* (V1.0's: version 1, no CLOCK: INT) */
+        if (ed_len == sizeof s - 2u) {          /* (V1.0's: version 1, no CLOCK: INT, no LATCH: OFF) */
             if (s.ver != 1u) return ER_BAD;
-            s.ver = SET_VER, s.clk = CK_INT;
+            s.ver = SET_VER, s.clk = CK_INT, s.latch = 0;
+        } else if (ed_len == sizeof s - 1u) {   /* (V2's version 2: no LATCH, OFF) */
+            if (s.ver != 2u) return ER_BAD;
+            s.ver = SET_VER, s.latch = 0;
         }
         if (s.ver != SET_VER || s.oct < -2 || s.oct > 2 || s.tune < -50 || s.tune > 50 || s.col > 3u ||
-            s.mch > MCH_MAX || s.scr > 4u || s.out > 1u || s.nlk > NLINK || s.clk >= CK_N)
+            s.mch > MCH_MAX || s.scr > 4u || s.out > 1u || s.nlk > NLINK || s.clk >= CK_N || s.latch > 1u)
             return ER_BAD;
         for (i = 0; i < s.nlk; i++)
             if (s.lk[i][1] >= NPAGE || s.lk[i][2] > 3u || s.lk[i][3] > 3u) return ER_BAD;
-        sy_col = s.col, sy_mch = s.mch, sy_tune = s.tune, sy_scr = s.scr, sy_out = s.out, sy_clk = s.clk;
+        sy_col = s.col, sy_mch = s.mch, sy_tune = s.tune, sy_scr = s.scr, sy_out = s.out, sy_clk = s.clk, sy_latch = s.latch;
         sys_sync();                             /* (a new MIDI CHANNEL: what is on out there let go first) */
         set.oct = s.oct, set.nlk = s.nlk, set.ver = SET_VER;
         memcpy(set.lk, s.lk, sizeof set.lk);
@@ -241,8 +244,8 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         if (op == 0u) {                         /* BEGIN: fmt, len (5), crc (5) */
             uint32_t len = n >= 13u ? ed_rd35(f + 3) : 0u;
             if (n < 13u || !ed_size(o) || o >= EO_FACT || f[2] != ED_FMT ||
-                (len != ed_size(o) && !(o == EO_SET && len == sizeof set - 1u))) rc = ER_ARGS;   /* (the settings: V1.0's
-                                                 * too, a backup of then) */
+                (len != ed_size(o) && !(o == EO_SET && len + 2u >= sizeof set && len < sizeof set))) rc = ER_ARGS;
+                                                /* (the settings: V1.0's, V2's version 2 too, a backup of then) */
             else if (!silent) rc = ER_STOP;
             else ed_obj = (int32_t)o, ed_len = len, ed_crc = ed_rd35(f + 8), ed_got = 0, ed_t = fm1_ms;
         } else if (op == 1u) {                  /* DATA: off (5), pack7, where the last ended */

@@ -37,7 +37,8 @@
  *              the track's chord mode on / off, as SEL is let go (no page change; a knob turned meanwhile: not): a key (a
  *              MIDI note, a note step) plays its chord (scale.c); a step recorded in chord mode keeps its chord (a chord
  *              step, in the accent); SEQ's pages, SEL held: the knobs lock the selected step's sound (the source's four;
- *              a mark in the grid), + OCT-: its locks cleared
+ *              a mark in the grid), + OCT-: its locks cleared; (V2) SEL held + OCT+, any page: the track's LATCH
+ *              on / off
  *   GLO        SONG (the chain: up to 16 steps, each a slot A..D and its REPEATS, or END; SECTION, PATTERN, REPEATS,
  *              MODE OFF / SONG / SONG LOOP; REC on it: song record, the slots switched to as they are played) (song.c);
  *              held + white keys 1..4: mute T1..T4, 5..8: solo them (on / off; lit), no page change
@@ -52,7 +53,8 @@
  *              running, the first touch only wakes it), HOME again: SYSTEM 2 (MIDI LEARN: LEARN, a knob turned on any
  *              page, then a CC: linked, 32 at most; CLEAR ALL + OCT+; OCT- cancels; SEQ MIDI OUT: the steps' and the
  *              arps' notes out on their tracks' channels too; SAMPLES: RESTORE + OCT+ writes the four factory
- *              samples over the slots, OCT- keeps them); the FM-1's settings, not the project's
+ *              samples over the slots, OCT- keeps them), HOME again: SYSTEM 3 (V2: LATCH: the LATCH a NEW project's
+ *              tracks start with); the FM-1's settings, not the project's
  *   SAVE       SOUNDS (64 slots: a track's source, its four, ENV, LATCH (FM: its own patch); SLOT, CATEGORY, TYPE (the list by source),
  *              ACTION; playing: SAVE / CLEAR wait for the stop) -> PROJECTS (the slots A..D: the four tracks' sounds,
  *              sequences and the mixer; SLOT, ACTION LOAD / SAVE / ERASE / NEW); OCT+ does the ACTION, OCT- backs out;
@@ -710,11 +712,13 @@ static struct {
                                                  * the section) */
     uint8_t ver;                                /* SET_VER (steps 20..24 saved without it: their links moved, sys_load) */
     uint8_t clk;                                /* (V2, SET_VER 2) CLOCK: CK_INT .. CK_TRS; V1.0's settings: INT */
+    uint8_t latch;                              /* (V2, SET_VER 3) SYSTEM 3's LATCH: a NEW project's tracks'; before: OFF */
 } set;
-#define SET_VER 2u
+#define SET_VER 3u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
-static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk;   /* SYSTEM's, SYSTEM 2's knobs
-                                                 * (sy_fac: SAMPLES, 1 RESTORE: OCT+ writes the factory ones) */
+static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk, sy_latch;   /* SYSTEM's,
+                                                 * SYSTEM 2's, SYSTEM 3's knobs (sy_fac: SAMPLES, 1 RESTORE: OCT+
+                                                 * writes the factory ones) */
 static uint32_t fac_at;                         /* RESTORE confirmed: when it writes (the header said first), 0 none */
 static uint32_t learn_st;                       /* MIDI LEARN: 0 none; 1 TURN A KNOB; 2 MOVE A CC (learn_to: the knob) */
 static uint8_t learn_to[4];                     /* (the page, the knob, the track, x) */
@@ -767,7 +771,7 @@ static char *put_ms(char *s, uint32_t q16)      /* a time, ms in Q16: "5 ms", "1
  * tap opens its first page, again the next (round); SYSTEM is HOME's, held */
 enum { PG_SOUND, PG_SOURCE, PG_ENV, PG_LFO, PG_SCALE, PG_CHORD, PG_SONG, PG_HOME, PG_MIX1, PG_MIX2, PG_SYSTEM,
        PG_SYS2, PG_SOUNDS, PG_PROJECTS, PG_ARP, PG_GRID, PG_PATTERN, PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_PERFORM,
-       PG_TRACK, PG_FMALGO, PG_FMOP, PG_MASTER, PG_DRIVE, NPAGE };   /* (the newer last: MIDI LEARN's links keep the pages' numbers they
+       PG_TRACK, PG_FMALGO, PG_FMOP, PG_MASTER, PG_DRIVE, PG_SYS3, NPAGE };   /* (the newer last: MIDI LEARN's links keep the pages' numbers they
                                                  * have; in their button's round by pg_key. TRACK: gone in step 25, its
                                                  * number kept: sys_load moves its links onto HOME) */
 typedef struct {
@@ -789,7 +793,8 @@ static const page_t PAGES[NPAGE] = {
     {"MIXER 1", BTN_HOME, 1, 1, 1, {"LEVEL", "DLY SEND", "REV SEND", "GRAIN SEND"}},
     {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "TYPE", "POS", ""}},   /* (V2: the track filter's TYPE and POS) */
     {"SYSTEM", BTN_HOME, 1, 0, 0, {"COLOUR", "MIDI CHANNEL", "TUNE", "SCREEN OFF"}},   /* (HOME held; HOME again: */
-    {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", "CLOCK"}},       /* SYSTEM 2, and back) */
+    {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", "CLOCK"}},       /* SYSTEM 2, SYSTEM 3, and
+                                                 * back) */
     {"SOUNDS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
     {"PROJECTS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
     {"ARP", BTN_ARP, 1, 1, 1, {"MODE", "RATE", "OCTAVES", "GATE"}},
@@ -806,6 +811,7 @@ static const page_t PAGES[NPAGE] = {
     {"FM OP", BTN_EDIT, 1, 1, 1, {"RATIO", "LEVEL", "ATTACK", "DECAY"}},  /* (the operator OP selects) */
     {"MASTER", BTN_FX, 1, 0, 1, {"CUTOFF", "RESONANCE", "TYPE", "POSITION"}},   /* (V2: FX's 5th and 6th, master.c) */
     {"DRIVE", BTN_FX, 1, 0, 1, {"AMOUNT", "TYPE", "TONE", "MIX"}},
+    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "", "", ""}},   /* (V2: a NEW project's tracks' LATCH) */
 };
 static uint32_t pg_key(uint32_t p)              /* its place in its button's round */
 {
@@ -827,7 +833,8 @@ static uint32_t page = PG_HOME;
 static uint32_t next_page(uint32_t b)           /* button b tapped: its first page, or (on one of its) the next */
 {
     uint32_t p, first = NPAGE, nx = NPAGE, on = PAGES[page].btn == b && pg_on(page);
-    if (b == BTN_HOME && (page == PG_SYSTEM || page == PG_SYS2)) return page == PG_SYSTEM ? PG_SYS2 : PG_SYSTEM;
+    if (b == BTN_HOME && (page == PG_SYSTEM || page == PG_SYS2 || page == PG_SYS3))
+        return page == PG_SYSTEM ? PG_SYS2 : page == PG_SYS2 ? PG_SYS3 : PG_SYSTEM;
     for (p = 0; p < NPAGE; p++) {
         if (PAGES[p].btn != b || !pg_on(p)) continue;
         if (first == NPAGE || pg_key(p) < pg_key(first)) first = p;
@@ -888,6 +895,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
     case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : &sy_clk;
+    case PG_SYS3: return k == 0u ? &sy_latch : 0;
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -903,6 +911,7 @@ static int32_t knob_max(uint32_t pg, uint32_t k)
            pg == PG_LFO ? (k == 0u ? 127 : k == 1u ? 100 : k == 2u ? NLFODEST - 1 : NLFOSHAPE - 1) :
            pg == PG_SONG ? (k == 0u ? SONG_N - 1 : k == 1u ? SONG_END : k == 2u ? 16 : NSONGMODE - 1) :
            pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k == 3u ? CK_N - 1 : k ? 1 : 2) :
+           pg == PG_SYS3 ? 1 :
            pg == PG_HOME && k == 3u ? 200 : pg == PG_FMALGO ? (k == 0u ? 31 : k == 1u ? 7 : k == 2u ? 5 : 99) :
            pg == PG_FMOP ? (k ? 99 : 31) : pg == PG_MIX2 ? (k == 1u ? NFTYPE - 1 : k == 2u ? 1 : 127) :
            pg == PG_MASTER ? (k == 2u ? NFTYPE - 1 : k == 3u ? NMPOS - 1 : 127) :
@@ -1263,7 +1272,7 @@ static void learn_end(const char *m)
 static void learn_knob(uint32_t pg, uint32_t k) /* a knob turned while LEARN waits: the parameter (SYSTEM's, SAVE's,
                                                  * PERFORM's: none) */
 {
-    if (!learn_st || pg == PG_SYSTEM || pg == PG_SYS2 || PAGES[pg].btn == BTN_SAVE || pg == PG_PERFORM ||
+    if (!learn_st || pg == PG_SYSTEM || pg == PG_SYS2 || pg == PG_SYS3 || PAGES[pg].btn == BTN_SAVE || pg == PG_PERFORM ||
         !knob_param(pg, k))
         return;
     if (pg == PG_HOME && k == 0u) pg = PG_MIX1; /* (HOME's VOLUME: the track's LEVEL, as MIXER 1's) */
@@ -1382,21 +1391,22 @@ static void sys_sync(void)
 {
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
-    uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
+    uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1), la = (uint8_t)clamp(sy_latch, 0, 1);
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
         for (n = 0; n < 128u; n++)
             for (t = 0; t < NT; t++)
                 if (midi_held[n] >> t & 1u) nq_note(NQ_OFF, t, 0, MIDI_ID(n)), midi_held[n] &= (uint8_t)~(1u << t);
-    if (tn != set.tune || col != set.col || mch != set.mch || scr != set.scr || out != set.out || clk != set.clk) {
-        set.tune = tn, set.col = col, set.mch = mch, set.scr = scr, set.out = out, set.clk = clk;
+    if (tn != set.tune || col != set.col || mch != set.mch || scr != set.scr || out != set.out || clk != set.clk ||
+        la != set.latch) {
+        set.tune = tn, set.col = col, set.mch = mch, set.scr = scr, set.out = out, set.clk = clk, set.latch = la;
         set_dirty = 1, set_t = fm1_ms;
     }
     ck_mode = set.clk, rt_usb_fast = set.clk == CK_USB;   /* (CLOCK: the audio ISR's, platform.c's) */
     ui_acc = UI_ACCENTS[set.col & 3u];
     tune_f = (set.tune * 23666 + set.tune * set.tune * 7) / 10000;   /* (2^(c / 1200) - 1, x 4096) */
-    mo_seq = set.out;
+    mo_seq = set.out, new_latch = set.latch;
 }
 static void sys_load(void)                      /* the settings at power-on into SYSTEM's knobs (version 19's: the
                                                  * octave alone; steps 20..24's: no ver, their links to HOME's T1..T4
@@ -1406,19 +1416,23 @@ static void sys_load(void)                      /* the settings at power-on into
     uint32_t i;
     if (!settings_load(&set, sizeof set))
         ;
-    else if (!settings_load(&set, sizeof set - 1u))   /* (V1.0's: no CLOCK, INT) */
-        set.clk = CK_INT;
-    else if (!settings_load(&set, sizeof set - 2u))   /* (steps 20..24's: no version either) */
-        set.ver = 0, set.clk = CK_INT;
+    else if (!settings_load(&set, sizeof set - 1u))   /* (V2's before SET_VER 3: no LATCH, OFF) */
+        set.latch = 0;
+    else if (!settings_load(&set, sizeof set - 2u))   /* (V1.0's: no CLOCK, INT) */
+        set.clk = CK_INT, set.latch = 0;
+    else if (!settings_load(&set, sizeof set - 3u))   /* (steps 20..24's: no version either) */
+        set.ver = 0, set.clk = CK_INT, set.latch = 0;
     else {
         set.oct = settings_load(&o, 1) ? 0 : o;
-        set.tune = 0, set.col = set.mch = set.scr = set.out = set.nlk = 0, set.ver = 0, set.clk = CK_INT;
+        set.tune = 0, set.col = set.mch = set.scr = set.out = set.nlk = 0, set.ver = 0, set.clk = CK_INT, set.latch = 0;
     }
     if (set.mch > MCH_MAX) set.mch = 0;
     if (set.clk >= CK_N) set.clk = CK_INT;
+    if (set.latch > 1u) set.latch = 0;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
     sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
+    sy_latch = set.latch;
     sys_sync();
     set_dirty = 0;
     if (!set.ver)                               /* (steps 20..24's; V1.0's are version 1: as they are) */
@@ -1670,6 +1684,11 @@ static void app_main(void)
             st->lmask = 0;
             b_used |= 1u << BTN_SEL;
             hd_say("LOCKS CLEARED");
+        } else if ((b & (1u << BTN_OCT_UP)) && (b_down >> BTN_SEL & 1u)) {   /* SEL held + OCT+ (V2): the selected
+                                                 * track's LATCH on, off (off: its latched notes released) */
+            set_latch(!trk[sel].latch);
+            b_used |= 1u << BTN_SEL;
+            hd_say(trk[sel].latch ? "LATCH ON" : "LATCH OFF");
         } else if ((b & OCT_BOTH) && (b_down >> BTN_EDIT & 1u)) {   /* EDIT held + OCT-: undo; + OCT+: redo */
             if (b & (1u << BTN_OCT_DOWN)) hd_say(undo() ? "NOTHING TO UNDO" : "UNDO");
             if (b & (1u << BTN_OCT_UP)) hd_say(redo() ? "NOTHING TO REDO" : "REDO");

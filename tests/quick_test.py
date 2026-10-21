@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 GR!MM
+"""GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (a NEW project's tracks; saved with the
+settings; older settings: OFF) and SEL + OCT+ (the selected track's LATCH on, off: its latched notes released).
+Prints a line a check, exit 1 on a failure.
+  python3 tests/quick_test.py [build/host/grimm]"""
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+EXE = sys.argv[1] if len(sys.argv) > 1 else "build/host/grimm"
+OUT = Path("build/host/quick")
+OUT.mkdir(parents=True, exist_ok=True)
+PG_HOME, PG_SYSTEM, PG_SYS2, PG_PROJECTS, PG_SYS3 = 7, 10, 11, 13, 27
+bad = 0
+
+
+def run(name, ev, end, env=None):
+    path = OUT / f"{name}.txt"
+    path.write_text("".join(f"{t} {s}\n" for t, s in sorted(ev, key=lambda e: e[0])) + f"{end} end\n")
+    out = subprocess.run([EXE, str(OUT / name), str(path)], capture_output=True, text=True, check=True,
+                         env=env).stdout
+    pr = {}
+    for ln in out.splitlines():
+        if ln.startswith("probe "):
+            w = ln.split(" ui ", 1)[1].split()
+            d = {w[i]: w[i + 1] for i in range(0, len(w) - 1, 2)}
+            pr[int(ln.split()[1])] = dict(page=int(d["page"]), sel=int(d["sel"]), rec=int(d["rec"]),
+                                          latch=[int(x) for x in d["latch"].split(",")], new=int(d["new"]),
+                                          steps=int(d["steps"]), notes=ln.split(" notes", 1)[1].split(" fx ", 1)[0].split())
+    return pr, out
+
+
+def check(what, ok, detail=""):
+    global bad
+    print(f"  {'ok' if ok else 'FAIL':4s}  quick: {what}" + (f" ({detail})" if detail and not ok else ""))
+    bad += not ok
+
+
+def probes(*ts):
+    return [(t, "probe") for t in ts]
+
+
+# SYSTEM 3: HOME held (SYSTEM), HOME, HOME; LATCH ON (saved: 170 B); HOME: SYSTEM again. Then NEW (SAVE, SAVE:
+# PROJECTS; ACTION NEW; OCT+): the four tracks LATCH ON
+ev = [(300, "down 8"), (1000, "up 8"), (1200, "btn 8"), (1400, "btn 8"), (1600, "enc 2 1"), (4000, "btn 8"),
+      (4500, "btn 9"), (4700, "btn 9"), (4900, "enc 5 3"), (5100, "btn 1")] + probes(1100, 1300, 1500, 1700, 4100, 4800, 5300)
+pr, out = run("sys3", ev, 5400)
+check("HOME held, HOME, HOME: SYSTEM, SYSTEM 2, SYSTEM 3; HOME again: SYSTEM",
+      [pr[t]["page"] for t in (1100, 1300, 1500, 4100)] == [PG_SYSTEM, PG_SYS2, PG_SYS3, PG_SYSTEM],
+      [pr[t]["page"] for t in (1100, 1300, 1500, 4100)])
+check("SYSTEM 3's LATCH turned ON: set, saved with the settings (170 B)",
+      pr[1500]["new"] == 0 and pr[1700]["new"] == 1 and "settings saved (170 B)" in out)
+check("LATCH ON: a project's tracks as they were until NEW", pr[4800]["latch"] == [0, 0, 0, 0], pr[4800]["latch"])
+check("NEW: the four tracks LATCH ON", pr[5300]["page"] == PG_PROJECTS and pr[5300]["latch"] == [1, 1, 1, 1],
+      f"page {pr[5300]['page']} latch {pr[5300]['latch']}")
+pr, _ = run("new_off", [(4500, "btn 9"), (4700, "btn 9"), (4900, "enc 5 3"), (5100, "btn 1")] + probes(5300), 5400)
+check("LATCH OFF (as set out): NEW's tracks LATCH OFF, as in 1.0", pr[5300]["latch"] == [0, 0, 0, 0], pr[5300]["latch"])
+
+# the settings saved before: V2's version 2 (169 B) and V1.0's (168 B) load with LATCH OFF; version 3's as saved
+v1 = bytearray(168)
+v1[0:7] = bytes([1, 256 - 12, 2, 5, 1, 1, 0])
+v1[167] = 1
+for name, blob, want in (("v1", bytes(v1), 0), ("v2", bytes(v1[:167]) + bytes([2, 2]), 0),
+                         ("v3", bytes(v1[:167]) + bytes([3, 2, 1]), 1), ("v3off", bytes(v1[:167]) + bytes([3, 2, 0]), 0)):
+    f = OUT / f"settings_{name}.bin"
+    f.write_bytes(blob)
+    pr, out = run(f"settings_{name}", probes(1000), 1100, dict(os.environ, GRIMM_SETTINGS_IN=str(f)))
+    check(f"settings {name} ({len(blob)} B): LATCH {'ON' if want else 'OFF'}", pr[1000]["new"] == want, pr[1000]["new"])
+
+# SEL held + OCT+: T1's LATCH ON (no page change, no chord mode); a key then latches its note; again: OFF, the note let go
+ev = [(300, "down 3"), (400, "btn 1"), (500, "up 3"), (700, "keys 0x80"), (800, "keys 0"), (1000, "down 3"),
+      (1100, "btn 1"), (1200, "up 3"), (1500, "down 3"), (1600, "btn 1"), (2400, "up 3")] + probes(250, 600, 900, 1300, 2500)
+pr, out = run("combo", ev, 2600)
+check("SEL + OCT+: the track's LATCH ON, the page as it was", pr[600]["latch"] == [1, 0, 0, 0] and pr[600]["page"] == PG_HOME,
+      f"latch {pr[600]['latch']} page {pr[600]['page']}")
+check("LATCH ON: a key tapped, its note stays", pr[900]["notes"] == ["1:60"], pr[900]["notes"])
+check("SEL + OCT+ again: LATCH OFF, the latched note let go", pr[1300]["latch"] == [0, 0, 0, 0] and pr[1300]["notes"] == [],
+      f"latch {pr[1300]['latch']} notes {pr[1300]['notes']}")
+check("SEL + OCT+ held long, let go: LATCH ON, still no page change (not the chord mode's hold)",
+      pr[2500]["latch"] == [1, 0, 0, 0] and pr[2500]["page"] == PG_HOME,
+      f"latch {pr[2500]['latch']} page {pr[2500]['page']}")
+
+print("quick test: passed" if not bad else "quick test: FAILED")
+sys.exit(1 if bad else 0)

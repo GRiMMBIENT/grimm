@@ -762,6 +762,7 @@ static void slot_apply_isr(uint32_t s)          /* the audio ISR, at the bar (se
     uk_slot(slots[s & 3u], 1);
     slot_cur = (int32_t)(s & 3u);
 }
+static uint8_t new_latch;                       /* (V2) SYSTEM 3's LATCH: a NEW project's tracks' (grimm.c's sys_sync) */
 static void project_new(void)                   /* NEW: the four tracks' power-on sounds, empty sequences */
 {
     static const track_t T0 = TRK_DEF;
@@ -771,7 +772,7 @@ static void project_new(void)                   /* NEW: the four tracks' power-o
             for (k = 0; k < 4u; k++) trk[t].p[e][k] = T0.p[e][k];
         for (k = 0; k < 4u; k++) trk[t].env[k] = T0.env[k];
         if (trk[t].latch) nq_put(NQ_RELEASE, t, 0);
-        trk[t].latch = T0.latch;
+        trk[t].latch = new_latch;               /* (V2: SYSTEM 3's LATCH; OFF as TRK_DEF's, as V1.0's NEW) */
         trk[t].chord = T0.chord, trk[t].ch_type = T0.ch_type, trk[t].ch_voice = T0.ch_voice;
         trk[t].arp = T0.arp, trk[t].arp_mode = T0.arp_mode, trk[t].arp_rate = T0.arp_rate;
         trk[t].arp_oct = T0.arp_oct, trk[t].arp_gate = T0.arp_gate;

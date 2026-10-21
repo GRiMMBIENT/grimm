@@ -32,3 +32,5 @@ build/host/midi_uart_test
 python3 tests/clock_test.py build/host/grimm
 # GR!MM V2: the effects (tests/fx_test.py): the track filter's TYPE and POS, MASTER, DRIVE, their saves
 python3 tests/fx_test.py build/host/grimm
+# GR!MM V2: the quick wins (tests/quick_test.py)
+python3 tests/quick_test.py build/host/grimm
