@@ -777,7 +777,7 @@ function drawSettings() {
   m.textContent = c.textContent = l.textContent = "";
   MCH_NAMES.forEach((n, i) => { if (v2 || i <= 13) el("option", { value: i }, m, n); });
   CLOCK_NAMES.forEach((n, i) => el("option", { value: i }, c, n));
-  ["OFF", "ON"].forEach((n, i) => el("option", { value: i }, l, n));
+  ["FROM SOUND", "ALWAYS OFF"].forEach((n, i) => el("option", { value: i }, l, n));
   if (setBytes) { const s = settingsOf(setBytes); m.value = s.mch; c.value = s.clk; l.value = s.latch; }
   refreshButtons();
 }
@@ -794,7 +794,7 @@ $("b-setwrite").onclick = () => job("SETTINGS", async () => {
   setBytes = back;
   drawSettings();
   return `SETTINGS WRITTEN: MIDI CHANNEL ${MCH_NAMES[b[3]]}${b.length > SET_V1 ? ", CLOCK " + CLOCK_NAMES[b[SET_V1]] : ""}` +
-         (b.length > SET_V2 ? `, LATCH ${b[SET_V2] ? "ON" : "OFF"}` : "");
+         (b.length > SET_V2 ? `, LATCH ${b[SET_V2] ? "ALWAYS OFF" : "FROM SOUND"}` : "");
 });
 drawSettings();
 

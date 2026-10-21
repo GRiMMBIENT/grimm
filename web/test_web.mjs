@@ -182,11 +182,11 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
     bk.objects[0] = { id: OBJ.SET, len: SET_V2, crc: crc32(v2), data: Buffer.from(v2).toString("base64") };
     await restoreBackup(cl, checkBackup(bk, info).slice(0, 1), info);
     const s3 = await cl.get(OBJ.SET, info.setSize), v3 = settingsOf(s3);
-    check(sameSettings(v2, s3) && v3.clk === 3 && v3.latch === 0, "editor: a V2 version 2 backup's settings restored (CLOCK as saved, LATCH OFF)");
+    check(sameSettings(v2, s3) && v3.clk === 3 && v3.latch === 0, "editor: a V2 version 2 backup's settings restored (CLOCK as saved, LATCH FROM SOUND)");
     const sl = withSettings(s3, { mch: 0, clk: 0, latch: 1 });
     await cl.put(OBJ.SET, sl, info.fmt);
     const s4 = await cl.get(OBJ.SET, info.setSize);
-    check(sameSettings(sl, s4) && settingsOf(s4).latch === 1, "editor: SETTINGS: LATCH (SYSTEM 3) ON written, read back");
+    check(sameSettings(sl, s4) && settingsOf(s4).latch === 1, "editor: SETTINGS: LATCH (SYSTEM 3) ALWAYS OFF written, read back");
     await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0 }), info.fmt);
   }
   {                                                          // GR!MM V2: FX (25): read, set live (MASTER, DRIVE, T2's filter)

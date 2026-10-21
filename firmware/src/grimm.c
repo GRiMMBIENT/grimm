@@ -53,8 +53,9 @@
  *              running, the first touch only wakes it), HOME again: SYSTEM 2 (MIDI LEARN: LEARN, a knob turned on any
  *              page, then a CC: linked, 32 at most; CLEAR ALL + OCT+; OCT- cancels; SEQ MIDI OUT: the steps' and the
  *              arps' notes out on their tracks' channels too; SAMPLES: RESTORE + OCT+ writes the four factory
- *              samples over the slots, OCT- keeps them), HOME again: SYSTEM 3 (V2: LATCH: the LATCH a NEW project's
- *              tracks start with); the FM-1's settings, not the project's
+ *              samples over the slots, OCT- keeps them), HOME again: SYSTEM 3 (V2: LATCH: FROM SOUND, a sound
+ *              loaded brings its own LATCH, as 1.0; ALWAYS OFF, loading a sound never changes the track's LATCH, off
+ *              unless SEL + OCT+ latched it); the FM-1's settings, not the project's
  *   SAVE       SOUNDS (64 slots: a track's source, its four, ENV, LATCH (FM: its own patch); SLOT, CATEGORY, TYPE (the list by source),
  *              ACTION; playing: SAVE / CLEAR wait for the stop) -> PROJECTS (the slots A..D: the four tracks' sounds,
  *              sequences and the mixer; SLOT, ACTION LOAD / SAVE / ERASE / NEW); OCT+ does the ACTION, OCT- backs out;
@@ -715,7 +716,8 @@ static struct {
                                                  * the section) */
     uint8_t ver;                                /* SET_VER (steps 20..24 saved without it: their links moved, sys_load) */
     uint8_t clk;                                /* (V2, SET_VER 2) CLOCK: CK_INT .. CK_TRS; V1.0's settings: INT */
-    uint8_t latch;                              /* (V2, SET_VER 3) SYSTEM 3's LATCH: a NEW project's tracks'; before: OFF */
+    uint8_t latch;                              /* (V2, SET_VER 3) SYSTEM 3's LATCH: 0 FROM SOUND (before: so), 1
+                                                 * ALWAYS OFF */
 } set;
 #define SET_VER 3u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
@@ -1412,7 +1414,7 @@ static void sys_sync(void)
     ck_mode = set.clk, rt_usb_fast = set.clk == CK_USB;   /* (CLOCK: the audio ISR's, platform.c's) */
     ui_acc = UI_ACCENTS[set.col & 3u];
     tune_f = (set.tune * 23666 + set.tune * set.tune * 7) / 10000;   /* (2^(c / 1200) - 1, x 4096) */
-    mo_seq = set.out, new_latch = set.latch;
+    mo_seq = set.out, snd_latch_off = set.latch;
 }
 static void sys_load(void)                      /* the settings at power-on into SYSTEM's knobs (version 19's: the
                                                  * octave alone; steps 20..24's: no ver, their links to HOME's T1..T4

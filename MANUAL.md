@@ -76,7 +76,7 @@ Press **HOME** again for the mixer pages:
 - **LATCH OFF:** a note sounds while you hold the key, like a normal keyboard.
 - **LATCH ON:** press once to start a note, press again to stop it. For drones.
 - **Hold SEL + OCT+** switches the selected track's LATCH on or off from any page, while you play. Switching it off lets go of the latched notes.
-- A NEW project's tracks start with SYSTEM 3's LATCH (OFF unless you change it). A sound you load brings its own LATCH.
+- A sound you load brings its own LATCH, as in GR!MM 1.0, unless SYSTEM 3's LATCH is set to ALWAYS OFF: then loading a sound never changes the track's LATCH.
 
 ### SOUND page: the source's four knobs
 
@@ -328,7 +328,10 @@ FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
   - `INT+OUT` (`I+OUT` on the knob): the same, and the FM-1 sends MIDI clock over USB: 24 pulses a beat (also while stopped), START when you press PLAY (it starts on the next pulse), STOP when it stops. Set your DAW to follow it.
   - `USB` or `TRS`: the FM-1 follows the MIDI clock coming in over USB or the TRS jack. START plays from step 1, CONTINUE carries on where STOP left it, STOP stops; PLAY and STOP on the FM-1 still work (PLAY starts on the next pulse). HOME shows `EXT` and the tempo it measures; SELECT and PRESETS don't change the tempo meanwhile. The arp, song mode and slots changed "at the next bar" all follow the clock. If the clock stops for half a second, the FM-1 carries on at its own tempo.
 - SYSTEM 2 also shows the processor load (CPU NOW / PEAK). OCT− + OCT+ together resets PEAK.
-- **LATCH** (SYSTEM 3): OFF or ON, the LATCH that a NEW project's four tracks start with. Tracks you already have keep theirs, and a sound you load brings its own. To switch the selected track's LATCH while you play, hold **SEL + OCT+**.
+- **LATCH** (SYSTEM 3): what loading a sound does to a track's LATCH.
+  - `FROM SOUND` (`SOUND` on the knob; the default, as GR!MM 1.0): the sound brings the LATCH it was saved with.
+  - `ALWAYS OFF` (`OFF` on the knob): loading a sound never changes the track's LATCH, so every sound plays unlatched, whatever was saved in it. You can still latch a track by hand with **SEL + OCT+** (it then stays latched when you load another sound).
+  - Projects and slots A–D keep the LATCH they were saved with, and a NEW project's tracks start unlatched.
 
 ---
 
@@ -388,7 +391,7 @@ Turn **PRESETS** to step through them by category, then your own.
 - **SOUNDS:** your 64 slots and the 40 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
 - **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**.
 - **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE) and each track's filter TYPE and POS, live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
-- **SETTINGS:** MIDI CHANNEL, CLOCK and LATCH (for new projects), read from the FM-1 and written back (the rest of the settings stay as they are).
+- **SETTINGS:** MIDI CHANNEL, CLOCK and LATCH (FROM SOUND / ALWAYS OFF), read from the FM-1 and written back (the rest of the settings stay as they are).
 - **BACKUP:** one file with all your sounds, slots A–D, settings and the four sample slots, and a restore that makes a backup of what's there first. A restore puts the samples back too; a slot that already holds the same sample isn't written again, and a slot that was empty in the backup is emptied. Backups from GR!MM 1.0 (they have no samples) restore too and leave your samples as they are.
 
 The FM-1 only writes to its memory (store, upload, restore) while the sequencer is stopped and nothing sounds; the editor tells you when to wait. Nothing is written without you pressing a button.

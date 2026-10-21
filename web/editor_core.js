@@ -417,7 +417,7 @@ export const SET_V2 = 169;                                   // V2's version 2 (
 export const MCH_NAMES = [...Array.from({ length: 13 }, (_, k) => `${k + 1}-${k + 4}`), "ALL > SEL",
   ...Array.from({ length: 16 }, (_, k) => `CH ${k + 1} > SEL`)];
 export const CLOCK_NAMES = ["INT", "INT+OUT", "USB", "TRS"];
-export function settingsOf(b) {                              // -> { mch, clk, latch } (older: CLOCK INT, LATCH OFF)
+export function settingsOf(b) {                              // -> { mch, clk, latch } (older: CLOCK INT, LATCH FROM SOUND)
   return { mch: b[3], clk: b.length > SET_V1 ? b[SET_V1] : 0, latch: b.length > SET_V2 ? b[SET_V2] : 0 };
 }
 export function withSettings(b, s) {                         // a copy of b with MIDI CHANNEL, CLOCK and LATCH s

@@ -221,13 +221,14 @@ a.lnk { color: var(--l); }
       <div class="row"><button id="b-setread" class="go">READ FROM FM-1</button><button id="b-setwrite">WRITE TO FM-1</button></div>
       <div class="row"><label class="px" for="set-mch">MIDI CHANNEL</label><select id="set-mch"></select></div>
       <div class="row"><label class="px" for="set-clk">CLOCK</label><select id="set-clk"></select></div>
-      <div class="row"><label class="px" for="set-latch">LATCH (NEW PROJECTS)</label><select id="set-latch"></select></div>
+      <div class="row"><label class="px" for="set-latch">LATCH</label><select id="set-latch"></select></div>
       <p class="note">The FM-1's own settings (SYSTEM, SYSTEM 2, SYSTEM 3), not the project's. MIDI CHANNEL: 1-4 puts T1–T4 on
         channels 1–4 (up to 13-16); ALL &gt; SEL plays every channel on the selected track; CH n &gt; SEL plays only
         channel n on the selected track and ignores the others. CLOCK: INT, the FM-1's own tempo; INT+OUT, the same
         and its MIDI clock out over USB (START, STOP and 24 pulses a beat); USB or TRS, it follows the MIDI clock from
-        there (START, CONTINUE, STOP; the jack is MIDI IN only). LATCH: OFF or ON for the four tracks of a NEW project
-        (a sound you load brings its own LATCH). The same on the FM-1: SYSTEM's KNOB 2, SYSTEM 2's KNOB 4, SYSTEM 3's
+        there (START, CONTINUE, STOP; the jack is MIDI IN only). LATCH: FROM SOUND, a sound you load brings its own
+        LATCH (as GR!MM 1.0); ALWAYS OFF, loading a sound never changes a track's LATCH (it stays off unless you latch the
+        track by hand, SEL + OCT+). The same on the FM-1: SYSTEM's KNOB 2, SYSTEM 2's KNOB 4, SYSTEM 3's
         KNOB 1. READ first; WRITE changes only these three (the FM-1 stopped and silent). GR!MM 1.0 has no CLOCK, and
         no LATCH setting.</p>
     </section>

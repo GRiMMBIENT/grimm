@@ -315,6 +315,8 @@ static int snd_save(uint32_t i, uint32_t t, uint32_t cat)   /* track t's sound i
     return snd_put(i, r);
 }
 static int snd_clear(uint32_t i) { return snd_put(i, 0); }
+static uint8_t snd_latch_off;                   /* (V2) SYSTEM 3's LATCH ALWAYS OFF: a sound loaded leaves the track's
+                                                 * LATCH as it is (grimm.c's sys_sync) */
 static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into track t (a new source: its notes go over) */
 {
     uint32_t k, e = r[3];
@@ -322,8 +324,10 @@ static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into tra
         trk[t].p[e][k] = r[4 + k];
         trk[t].env[k] = r[8 + k];
     }
-    if (trk[t].latch && !r[12]) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
-    trk[t].latch = r[12];
+    if (!snd_latch_off) {                       /* (V2: SYSTEM 3's ALWAYS OFF: the track's LATCH as it is) */
+        if (trk[t].latch && !r[12]) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
+        trk[t].latch = r[12];
+    }
     ch_unpack(t, r[13]);
     lfo_uk(r + 14, t);                          /* (saved before the LFO: zeros, DEPTH 0) */
     if (e == ENG_FM) uk_fm(snd_fname(r) ? 0 : r + 18, t);   /* (FM: its patch; a factory sound's: the PATCH as built) */
@@ -762,7 +766,6 @@ static void slot_apply_isr(uint32_t s)          /* the audio ISR, at the bar (se
     uk_slot(slots[s & 3u], 1);
     slot_cur = (int32_t)(s & 3u);
 }
-static uint8_t new_latch;                       /* (V2) SYSTEM 3's LATCH: a NEW project's tracks' (grimm.c's sys_sync) */
 static void project_new(void)                   /* NEW: the four tracks' power-on sounds, empty sequences */
 {
     static const track_t T0 = TRK_DEF;
@@ -772,7 +775,7 @@ static void project_new(void)                   /* NEW: the four tracks' power-o
             for (k = 0; k < 4u; k++) trk[t].p[e][k] = T0.p[e][k];
         for (k = 0; k < 4u; k++) trk[t].env[k] = T0.env[k];
         if (trk[t].latch) nq_put(NQ_RELEASE, t, 0);
-        trk[t].latch = new_latch;               /* (V2: SYSTEM 3's LATCH; OFF as TRK_DEF's, as V1.0's NEW) */
+        trk[t].latch = T0.latch;
         trk[t].chord = T0.chord, trk[t].ch_type = T0.ch_type, trk[t].ch_voice = T0.ch_voice;
         trk[t].arp = T0.arp, trk[t].arp_mode = T0.arp_mode, trk[t].arp_rate = T0.arp_rate;
         trk[t].arp_oct = T0.arp_oct, trk[t].arp_gate = T0.arp_gate;

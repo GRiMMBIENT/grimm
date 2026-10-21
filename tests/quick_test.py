@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (a NEW project's tracks; saved with the
-settings; older settings: OFF), SEL + OCT+ (the selected track's LATCH on, off: its latched notes released), REC held
-~1 s (the selected track's pattern cleared, undoable; REC as before; a short press as ever), SAVES WHEN SILENT said
-~2 s, then out of the way. Prints a line a check, exit 1 on a failure.
+"""GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (FROM SOUND: a sound loaded brings its
+own, as 1.0; ALWAYS OFF: loading never changes it; saved with the settings; older settings: FROM SOUND), SEL + OCT+
+(the selected track's LATCH on, off: its latched notes released), REC held ~1 s (the selected track's pattern cleared,
+undoable; REC as before; a short press as ever), SAVES WHEN SILENT said ~2 s, then out of the way. Prints a line a check, exit 1 on a
+failure.
   python3 tests/quick_test.py [build/host/grimm]"""
 import os
 import subprocess
@@ -53,32 +54,42 @@ def probes(*ts):
     return [(t, "probe") for t in ts]
 
 
-# SYSTEM 3: HOME held (SYSTEM), HOME, HOME; LATCH ON (saved: 170 B); HOME: SYSTEM again. Then NEW (SAVE, SAVE:
-# PROJECTS; ACTION NEW; OCT+): the four tracks LATCH ON
-ev = [(300, "down 8"), (1000, "up 8"), (1200, "btn 8"), (1400, "btn 8"), (1600, "enc 2 1"), (4000, "btn 8"),
-      (4500, "btn 9"), (4700, "btn 9"), (4900, "enc 5 3"), (5100, "btn 1")] + probes(1100, 1300, 1500, 1700, 4100, 4800, 5300)
-pr, out = run("sys3", ev, 5400)
+# SYSTEM 3: HOME held (SYSTEM), HOME, HOME; LATCH turned to ALWAYS OFF (saved: 170 B); HOME: SYSTEM again
+ev = [(300, "down 8"), (1000, "up 8"), (1200, "btn 8"), (1400, "btn 8"), (1600, "enc 2 1"), (4000, "btn 8")]
+pr, out = run("sys3", ev + probes(1100, 1300, 1500, 1700, 4100), 4200)
 check("HOME held, HOME, HOME: SYSTEM, SYSTEM 2, SYSTEM 3; HOME again: SYSTEM",
       [pr[t]["page"] for t in (1100, 1300, 1500, 4100)] == [PG_SYSTEM, PG_SYS2, PG_SYS3, PG_SYSTEM],
       [pr[t]["page"] for t in (1100, 1300, 1500, 4100)])
-check("SYSTEM 3's LATCH turned ON: set, saved with the settings (170 B)",
+check("SYSTEM 3's LATCH: FROM SOUND as set out; turned to ALWAYS OFF, saved with the settings (170 B)",
       pr[1500]["new"] == 0 and pr[1700]["new"] == 1 and "settings saved (170 B)" in out)
-check("LATCH ON: a project's tracks as they were until NEW", pr[4800]["latch"] == [0, 0, 0, 0], pr[4800]["latch"])
-check("NEW: the four tracks LATCH ON", pr[5300]["page"] == PG_PROJECTS and pr[5300]["latch"] == [1, 1, 1, 1],
-      f"page {pr[5300]['page']} latch {pr[5300]['latch']}")
-pr, _ = run("new_off", [(4500, "btn 9"), (4700, "btn 9"), (4900, "enc 5 3"), (5100, "btn 1")] + probes(5300), 5400)
-check("LATCH OFF (as set out): NEW's tracks LATCH OFF, as in 1.0", pr[5300]["latch"] == [0, 0, 0, 0], pr[5300]["latch"])
+# a sound loaded (PRESETS: CRYPT PAD, saved with LATCH ON)
+PRESET = [(300, "enc 6 1")]
+pr, _ = run("snd_from", PRESET + probes(500), 600)
+check("FROM SOUND (as 1.0): a sound loaded brings its LATCH (CRYPT PAD: ON)", pr[500]["latch"][0] == 1, pr[500]["latch"])
+pr, _ = run("snd_off", PRESET + probes(500), 600, settings("off", latch=1))
+check("ALWAYS OFF: CRYPT PAD loaded, the track's LATCH stays OFF", pr[500]["latch"][0] == 0, pr[500]["latch"])
+pr, _ = run("snd_hand", [(300, "down 3"), (400, "btn 1"), (500, "up 3"), (700, "enc 6 1"), (900, "enc 6 1"),
+                         (1100, "enc 6 -1")] + probes(600, 1200), 1300, settings("off", latch=1))
+check("ALWAYS OFF: latched by hand (SEL + OCT+), sounds loaded: still latched (loading never changes it)",
+      pr[600]["latch"][0] == 1 and pr[1200]["latch"][0] == 1, f"{pr[600]['latch']} {pr[1200]['latch']}")
+NEW = [(1500, "btn 9"), (1700, "btn 9"), (1900, "enc 5 3"), (2100, "btn 1")]
+for name, env in (("from", None), ("off", settings("off", latch=1))):
+    pr, _ = run(f"new_{name}", [(300, "down 3"), (400, "btn 1"), (500, "up 3")] + NEW + probes(600, 2300), 2400, env)
+    check(f"{'ALWAYS OFF' if env else 'FROM SOUND'}: NEW's tracks LATCH OFF, as in 1.0",
+          pr[600]["latch"][0] == 1 and pr[2300]["page"] == PG_PROJECTS and pr[2300]["latch"] == [0, 0, 0, 0],
+          f"{pr[600]['latch']} {pr[2300]['latch']}")
 
-# the settings saved before: V2's version 2 (169 B) and V1.0's (168 B) load with LATCH OFF; version 3's as saved
+# the settings saved before: V2's version 2 (169 B) and V1.0's (168 B) load as FROM SOUND; version 3's as saved
 v1 = bytearray(168)
 v1[0:7] = bytes([1, 256 - 12, 2, 5, 1, 1, 0])
 v1[167] = 1
 for name, blob, want in (("v1", bytes(v1), 0), ("v2", bytes(v1[:167]) + bytes([2, 2]), 0),
-                         ("v3", bytes(v1[:167]) + bytes([3, 2, 1]), 1), ("v3off", bytes(v1[:167]) + bytes([3, 2, 0]), 0)):
+                         ("v3", bytes(v1[:167]) + bytes([3, 2, 1]), 1), ("v3from", bytes(v1[:167]) + bytes([3, 2, 0]), 0)):
     f = OUT / f"settings_{name}.bin"
     f.write_bytes(blob)
     pr, out = run(f"settings_{name}", probes(1000), 1100, dict(os.environ, GRIMM_SETTINGS_IN=str(f)))
-    check(f"settings {name} ({len(blob)} B): LATCH {'ON' if want else 'OFF'}", pr[1000]["new"] == want, pr[1000]["new"])
+    check(f"settings {name} ({len(blob)} B): LATCH {'ALWAYS OFF' if want else 'FROM SOUND'}", pr[1000]["new"] == want,
+          pr[1000]["new"])
 
 # SEL held + OCT+: T1's LATCH ON (no page change, no chord mode); a key then latches its note; again: OFF, the note let go
 ev = [(300, "down 3"), (400, "btn 1"), (500, "up 3"), (700, "keys 0x80"), (800, "keys 0"), (1000, "down 3"),
@@ -131,5 +142,7 @@ check("~2 s on: still waiting (no save), the header given back",
 w2 = [t for t in sorted(pr) if t > 9400 and pr[t]["wait"]]
 check("PLAY, STOP: a new wait, said again (~2 s)", bool(w2) and pr[w2[0]]["said"] == 1 and
       not pr[min(14900, w2[0] + 2200)]["said"], w2[:1])
+
+
 print("quick test: passed" if not bad else "quick test: FAILED")
 sys.exit(1 if bad else 0)
