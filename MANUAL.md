@@ -376,6 +376,7 @@ Turn **PRESETS** to step through them by category, then your own.
 ## 14. Good to know
 
 - **Six voices** are shared by all tracks. A new note beyond six takes the oldest one, faded out.
+- **PHYS plays at most four notes at once** (it's the heaviest source). A fifth PHYS note takes the voice of a PHYS note that is fading out (released) if there is one; only when four PHYS notes are all on (held or latched) does it take the oldest of them.
 - **Looping MIDI from a DAW:** if a note arrives again before its note-off (a loop point), the note simply goes on: the arp isn't restarted, and the late note-off of the earlier one doesn't stop the new one. ALL NOTES OFF (CC 123, which DAWs send on stop) lets go of every note MIDI is holding; latched notes stay.
 - **Your sounds, slots A–D, settings and samples survive firmware updates.**
 - **MIDI IN:** over USB, and on the **TRS jack** (3.5 mm, MIDI IN only) with a TRS-to-DIN adapter. Gear and adapters use two wirings, Type A and Type B: if nothing arrives, try the other adapter. Notes and CCs from the jack go exactly where USB's do (MIDI CHANNEL, MIDI LEARN); SysEx from the jack is ignored.

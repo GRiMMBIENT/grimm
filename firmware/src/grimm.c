@@ -478,7 +478,8 @@ static uint32_t drop_at(uint32_t i)             /* note i out of the list (its t
 }
 static uint32_t drop_oldest(void) { return drop_at(0); }   /* the oldest note out of the list: its voice */
 /* PHYS at most PHYS_MAX voices at once (V2.0: six of them, with every effect, came to ~90 % of the FM-1's audio time):
- * a new PHYS note past it takes the oldest PHYS note's voice (it fades, as the 7th note's does), or a PHYS release's */
+ * a new PHYS note past it takes a PHYS release's voice (the quietest), or, all of them notes on (held or latched), the
+ * oldest PHYS note's (it fades, as the 7th note's does) */
 #define PHYS_MAX 4u
 static uint32_t phys_count(void)                /* PHYS voices sounding: its notes on, its releases (a fade: going) */
 {
@@ -490,12 +491,16 @@ static uint32_t phys_count(void)                /* PHYS voices sounding: its not
 }
 static int phys_steal(uint32_t *v)              /* PHYS_MAX sound: the voice a new PHYS note takes; 0 none needed */
 {
-    uint32_t i, w;
+    uint32_t i, w, best = NV;
+    int32_t lv = 0x7FFFFFFF;
     if (phys_count() < PHYS_MAX) return 0;
-    for (i = 0; i < nlat; i++)                  /* the oldest PHYS note */
+    for (w = 0; w < NV; w++)                    /* a PHYS release first, the quietest (as free_voice: a note on, held
+                                                 * or latched, goes only when there is none) */
+        if (vc[w].stage == ST_REL && vc[w].eng == ENG_PHYS && !voice_latched(w) && voice_level(w) < lv)
+            lv = voice_level(w), best = w;
+    if (best < NV) { *v = best; return 1; }
+    for (i = 0; i < nlat; i++)                  /* (all of them notes on: the oldest PHYS note) */
         if (trk[lat_trk[i]].eng == ENG_PHYS) { *v = drop_at(i); return 1; }
-    for (w = 0; w < NV; w++)                    /* (all of them releases: one of those) */
-        if (vc[w].stage == ST_REL && vc[w].eng == ENG_PHYS && !voice_latched(w)) { *v = w; return 1; }
     return 0;
 }
 static void note_off(uint32_t t, uint32_t id, uint32_t src, int echo)   /* origin id's voices released (its chord) */
@@ -530,7 +535,7 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
         if (i < no)                             /* its own voice again */
             v = own[i];
         else if (trk[t].eng == ENG_PHYS && phys_steal(&v))
-            ;                                   /* (PHYS_MAX PHYS voices: the oldest's) */
+            ;                                   /* (PHYS_MAX PHYS voices: a release's, else the oldest's) */
         else if (nlat == NV)                    /* all voices on: the oldest note goes, its voice fades and takes
                                                  * the new one */
             v = drop_oldest();
