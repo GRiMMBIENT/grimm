@@ -1044,6 +1044,34 @@ static void pic_env(void)                       /* Env: the shape of the track's
     ui_cell(wa - 1, 3, ui_acc), ui_cell(wa, 3, ui_acc), ui_cell(wa - 1, 4, ui_acc), ui_cell(wa, 4, ui_acc);
 }
 
+/* (V2) MIXER 1's LEVEL column: the track's sound now (its peak, as HOME's candles, after its LEVEL: up at once, down
+ * over ~0.3 s; muted: none), its colour the LEVEL set (mid .. white); a frame every UI_ANIM_MS, a column drawn when
+ * it moved */
+static uint8_t mx_h[NT];                        /* each track's level now: cells lit, 0 .. 8 */
+static uint32_t mx_e[NT];
+static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W */
+{
+    int32_t a = clamp(lv, 0, 127);
+    return RGB(0x5e + (0xe8 - 0x5e) * a / 127, 0x5b + (0xe4 - 0x5b) * a / 127, 0x54 + (0xd8 - 0x54) * a / 127);
+}
+static void ui_pic_draw(void);
+static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
+{
+    static const uint8_t CELL[8] = {3, 8, 16, 32, 48, 72, 104, 150};   /* (a cell lit from: ~-38 .. -4 dB of full) */
+    uint32_t t, e, h;
+    for (t = 0; t < NT; t++) {
+        e = vis_pk[t] / 96u, vis_pk[t] = 0;
+        e = e > 256u ? 256u : e;
+        e = trk_quiet >> t & 1u ? 0u : e * (uint32_t)clamp(trk[t].level, 0, 127) / 127u;
+        mx_e[t] = e >= mx_e[t] ? e : mx_e[t] - (mx_e[t] + 5u) / 6u;
+        for (h = 0; h < 8u && mx_e[t] >= CELL[h]; h++)
+            ;
+        if (h != mx_h[t]) {
+            mx_h[t] = (uint8_t)h;
+            if (draw) ui_region(PX0 + (int32_t)t * 54 + 4, 44, 9, 94, UI_K, ui_pic_draw);
+        }
+    }
+}
 static void pic_mix(void)                       /* FxTrack: the four tracks' columns, LEVEL and the sends (MIXER 2: PAN) */
 {
     int32_t t, m, j;
@@ -1053,10 +1081,11 @@ static void pic_mix(void)                       /* FxTrack: the four tracks' col
         char lab[3] = {'T', (char)('1' + t), 0};
         if (page == PG_MIX1) {
             volatile int32_t *const V[4] = {&trk[t].level, &trk[t].dly, &trk[t].rev, &trk[t].grn};
-            for (m = 0; m < 4; m++) {
-                int32_t n = (clamp(*V[m], 0, 127) * 8 + 63) / 127;
+            uint16_t lc = mx_col(trk[t].level);
+            for (m = 0; m < 4; m++) {           /* (LEVEL: the sound now, in LEVEL's colour; the sends: as set) */
+                int32_t n = m ? (clamp(*V[m], 0, 127) * 8 + 63) / 127 : mx_h[t];
                 for (j = 0; j < 8; j++)
-                    ui_rect(x0 + m * 12, 44 + j * 12, 9, 10, 7 - j < n ? (m ? UI_M : UI_L) : UI_D);
+                    ui_rect(x0 + m * 12, 44 + j * 12, 9, 10, 7 - j < n ? (m ? UI_M : lc) : UI_D);
             }
         } else {
             int32_t pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
@@ -1750,6 +1779,10 @@ static void ui_update(int32_t oct)
                                                  * unless all of it is about to be) */
         an_t = fm1_ms;
         ui_home_frame(!all);
+    }
+    if (page == PG_MIX1 && fm1_ms - an_t >= UI_ANIM_MS) {   /* (V2) MIXER 1: its LEVEL columns, the sound now */
+        an_t = fm1_ms;
+        ui_mix_frame(!all);
     }
     key = ui_pic_key();
     if (key != pic_key && (all || fm1_ms - pic_t >= UI_PIC_MS)) {
