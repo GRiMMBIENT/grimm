@@ -78,10 +78,13 @@ export class Client {
   }
 
   async info() {
-    let r;
-    for (let i = 0; ; i++) {                                 // (the first message after opening a port can be lost)
-      try { r = await this.req(CMD.INFO, [], 1500); break; } catch (e) { if (i >= 2) throw e; }
+    let r, k = 0;
+    for (; ; k++) {                                          // (the first message after opening a port can be lost)
+      try { r = await this.req(CMD.INFO, [], 1500); break; } catch (e) { if (k >= 2) throw e; }
     }
+    if (k) await this.wait(300);                             // (asked again: the first may only have been slow, and the
+                                                             // FM-1, one request at a time, still answering the next; a
+                                                             // request now would be dropped: its answer let come first)
     const j = r.indexOf(0, 2), i = j + 1;
     if (j < 0 || r.length < i + 15) throw new EditorError(`a short INFO from the FM-1 (${r.length} bytes): see the MIDI LOG`, 95);
     return { proto: r[0], fmt: r[1], firmware: String.fromCharCode(...r.slice(2, j)), sounds: r[i], soundSize: r[i + 1],

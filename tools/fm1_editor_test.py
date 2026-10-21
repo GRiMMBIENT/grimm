@@ -38,7 +38,7 @@ SET_V1, SET_V2 = 168, 169                       # the settings of GR!MM 1.0 (ver
 SMP_RC = {1: "bad arguments", 2: "flash erase failed", 3: "flash write failed", 4: "out of order", 5: "header or CRC",
           7: "no flash"}
 missed = 0                                      # GET replies that did not come (or not for the offset asked): asked
-                                                # again, counted (a healthy link: 0)
+missed_at = []                                  # again, counted (a healthy link: 0); where, why
 RC = {1: "bad arguments", 2: "refused (CRC or contents)", 3: "stop the sequencer and let every sound end first",
       4: "the flash write failed", 5: "no BEGIN (or it timed out)"}
 
@@ -61,7 +61,7 @@ def unpack7(b):
 
 
 def info(link):
-    for _ in range(3):                          # (the first message after opening a port can be lost)
+    for k in range(3):                          # (the first message after opening a port can be lost, or slow)
         try:
             r = link.req(INFO, [], 1.5)
             break
@@ -69,6 +69,10 @@ def info(link):
             pass
     else:
         raise TimeoutError("no answer from GR!MM to INFO (a firmware before step 26a?)")
+    if k:                                       # (asked again: the first one may only have been slow, and the FM-1,
+        time.sleep(0.3)                         # one request at a time, still answering the second; a request now
+        for _ in link.i.iter_pending():         # would be dropped. Its answer let come, and gone)
+            pass
     j = r.index(0, 2)
     i = j + 1
     d = dict(proto=r[0], fmt=r[1], firmware=bytes(r[2:j]).decode("ascii", "replace"), sounds=r[i],
@@ -101,7 +105,9 @@ def get(link, o, size, at=0, missing=False):
             except TimeoutError:
                 if tries == 2:
                     raise
+                r = None
             missed += 1
+            missed_at.append(f"object {o} at {off}: " + ("no reply in 3 s" if r is None else "a reply for another"))
         else:
             sys.exit(f"GET {o} at {off}: no reply for that offset, three times")
         if missing and off == at and r[0] == o and r[1] == 1:
@@ -150,7 +156,7 @@ def backup(link, inf):
     smp = samples(link, inf)
     print("\r  read: settings, slots A-D, " + f"{inf['sounds']} sounds" +
           (", the sample slots" if smp is not None else " (not the samples: this GR!MM cannot read them back)") +
-          f"; replies missed and asked again: {missed}")
+          f"; replies missed and asked again: {missed}" + "".join(f"\n    ({m})" for m in missed_at))
     b = dict(format="grimm-backup", version=1, proto=inf["proto"], fmt=inf["fmt"], firmware=inf["firmware"],
              date=time.strftime("%Y-%m-%d %H:%M:%S"), objects=objs)
     if smp is not None:
