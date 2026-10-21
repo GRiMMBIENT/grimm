@@ -879,6 +879,10 @@ static void ep1_tx(void)
 #if FELUCCA_OTA
     if (mo_w == mo_r && so_w == so_r)
         return;
+#ifdef MIDI_RT_SOON
+    if (MIDI_RT_SOON())
+        return;                                         /* (GR!MM: a clock message due: the endpoint kept free for it) */
+#endif
 #else
     if (mo_w == mo_r)
         return;

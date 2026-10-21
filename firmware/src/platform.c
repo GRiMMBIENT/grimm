@@ -101,6 +101,8 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #define FELUCCA_UAC 1
 #define FELUCCA_UART 1                          /* GR!MM V2: TRS MIDI IN (midi_uart.c) */
 #define MIDI_RT_IN(st) rt_in(st, RT_USB)        /* (usb.c: the clock and START / CONTINUE / STOP, timed) */
+#define MIDI_RT_SOON() (ro_r != ro_w && (int32_t)(ro_t[ro_r % RTQ] - fm1_ticks()) < 28800)   /* (usb.c: a clock message
+                                                 * out due within 1.2 ms: EP1 left free for it, rt_flush) */
 static uint32_t rt_now(void) { return fm1_ticks(); }
 #include "usb.c"
 #if FELUCCA_UART
