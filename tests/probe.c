@@ -10,7 +10,8 @@
  * TONE,MIX ft T1 T2 T3 T4": MASTER's and DRIVE's knobs, the tracks' filter TYPE | POS << 2; "ui page P sel T rec R
  * latch L1,L2,L3,L4 new N steps S wait W said A": the page (PG_), the selected track (0..3), REC, the tracks' LATCH,
  * SYSTEM 3's LATCH (0 FROM SOUND, 1 ALWAYS OFF), the selected track's steps with a note, a save waiting for silence,
- * the header saying so (tests/quick_test.py) */
+ * the header saying so (tests/quick_test.py); "eng E slatch L": the selected track's source, the LATCH saved in the
+ * sound PRESETS last loaded on it (-1: none) (tests/latch_test.py) */
 static void host_probe(void)
 {
     uint32_t i;
@@ -24,11 +25,14 @@ static void host_probe(void)
     {                                           /* (V2: the page, the track, REC, the tracks' LATCH, SYSTEM 3's, the
                                                  * selected track's steps with a note) */
         const seq_pat_t *P = &seq[sel].pat[clamp(seq[sel].cur, 0, SEQ_NPAT - 1)];
+        const uint8_t *P2;
         uint32_t n = 0;
         for (i = 0; i < SEQ_N; i++) n += P->st[i].note != 0;
         printf(" ui page %u sel %u rec %u latch %d,%d,%d,%d new %u steps %u wait %u said %u", page, sel, rec_on,
                (int)trk[0].latch, (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch, n, sv_wait,
                sv_wait && fm1_ms - sv_said < SV_SAY_MS);
+        P2 = brw_pos[sel] >= 0 ? cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel]) : 0;
+        printf(" eng %d slatch %d", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
     }
     printf("\n");
 }

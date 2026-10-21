@@ -34,3 +34,5 @@ python3 tests/clock_test.py build/host/grimm
 python3 tests/fx_test.py build/host/grimm
 # GR!MM V2: the quick wins (tests/quick_test.py)
 python3 tests/quick_test.py build/host/grimm
+# LATCH: every factory sound, SYSTEM 3 both ways, EDIT, SEL + OCT+, slots, the project, PHYS (tests/latch_test.py)
+python3 tests/latch_test.py build/host/grimm

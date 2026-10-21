@@ -315,19 +315,18 @@ static int snd_save(uint32_t i, uint32_t t, uint32_t cat)   /* track t's sound i
     return snd_put(i, r);
 }
 static int snd_clear(uint32_t i) { return snd_put(i, 0); }
-static uint8_t snd_latch_off;                   /* (V2) SYSTEM 3's LATCH ALWAYS OFF: a sound loaded leaves the track's
-                                                 * LATCH as it is (grimm.c's sys_sync) */
+static uint8_t snd_latch_off;                   /* (V2) SYSTEM 3's LATCH ALWAYS OFF: a sound loaded sets the track's
+                                                 * LATCH OFF (grimm.c's sys_sync) */
 static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into track t (a new source: its notes go over) */
 {
-    uint32_t k, e = r[3];
+    uint32_t k, e = r[3], la;
     for (k = 0; k < 4u; k++) {
         trk[t].p[e][k] = r[4 + k];
         trk[t].env[k] = r[8 + k];
     }
-    if (!snd_latch_off) {                       /* (V2: SYSTEM 3's ALWAYS OFF: the track's LATCH as it is) */
-        if (trk[t].latch && !r[12]) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
-        trk[t].latch = r[12];
-    }
+    la = snd_latch_off ? 0u : r[12];            /* (V2: SYSTEM 3's ALWAYS OFF: LATCH OFF, whatever the sound's) */
+    if (trk[t].latch && !la) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
+    trk[t].latch = (int32_t)la;
     ch_unpack(t, r[13]);
     lfo_uk(r + 14, t);                          /* (saved before the LFO: zeros, DEPTH 0) */
     if (e == ENG_FM) uk_fm(snd_fname(r) ? 0 : r + 18, t);   /* (FM: its patch; a factory sound's: the PATCH as built) */

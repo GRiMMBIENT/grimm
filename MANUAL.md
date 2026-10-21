@@ -76,7 +76,7 @@ Press **HOME** again for the mixer pages:
 - **LATCH OFF:** a note sounds while you hold the key, like a normal keyboard.
 - **LATCH ON:** press once to start a note, press again to stop it. For drones.
 - **Hold SEL + OCT+** switches the selected track's LATCH on or off from any page, while you play. Switching it off lets go of the latched notes.
-- A sound you load brings its own LATCH, as in GR!MM 1.0, unless SYSTEM 3's LATCH is set to ALWAYS OFF: then loading a sound never changes the track's LATCH.
+- A sound you load brings its own LATCH, as in GR!MM 1.0, unless SYSTEM 3's LATCH is set to ALWAYS OFF: then a sound you load sets the track's LATCH off. Either way, EDIT's LATCH and SEL + OCT+ work at any time.
 
 ### SOUND page: the source's four knobs
 
@@ -330,7 +330,7 @@ FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
 - SYSTEM 2 also shows the processor load (CPU NOW / PEAK). OCT− + OCT+ together resets PEAK.
 - **LATCH** (SYSTEM 3): what loading a sound does to a track's LATCH.
   - `FROM SOUND` (`SOUND` on the knob; the default, as GR!MM 1.0): the sound brings the LATCH it was saved with.
-  - `ALWAYS OFF` (`OFF` on the knob): loading a sound never changes the track's LATCH, so every sound plays unlatched, whatever was saved in it. You can still latch a track by hand with **SEL + OCT+** (it then stays latched when you load another sound).
+  - `ALWAYS OFF` (`OFF` on the knob): loading a sound sets the track's LATCH off (latched notes stop), so every sound starts unlatched, whatever was saved in it. You can still latch it by hand any time, with EDIT's LATCH or **SEL + OCT+**.
   - Projects and slots A–D keep the LATCH they were saved with, and a NEW project's tracks start unlatched.
 
 ---

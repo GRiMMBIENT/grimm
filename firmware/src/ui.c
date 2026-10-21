@@ -1575,8 +1575,8 @@ static void pic_sys3(void)                      /* (V2) SYSTEM 3: LATCH, what it
 {
     ui_caption("LOADING A SOUND", 0);
     sys_row(0, "LATCH", set.latch ? "ALWAYS OFF" : "FROM SOUND");
-    ui_text(PX0 + 6, 98, set.latch ? "LOADING A SOUND NEVER" : "A SOUND BRINGS ITS OWN", 1, UI_M);
-    ui_text(PX0 + 6, 110, set.latch ? "CHANGES THE LATCH" : "LATCH (AS GR!MM 1.0)", 1, UI_M);
+    ui_text(PX0 + 6, 98, set.latch ? "A SOUND LOADED: THE" : "A SOUND BRINGS ITS OWN", 1, UI_M);
+    ui_text(PX0 + 6, 110, set.latch ? "TRACK'S LATCH OFF" : "LATCH (AS GR!MM 1.0)", 1, UI_M);
     ui_text(PX0 + 6, 140, "SEL + OCT+: THE TRACK'S", 1, UI_M);
     ui_text(PX0 + 6, 152, "LATCH ON, OFF", 1, UI_M);
 }

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
 """GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (FROM SOUND: a sound loaded brings its
-own, as 1.0; ALWAYS OFF: loading never changes it; saved with the settings; older settings: FROM SOUND), SEL + OCT+
+own, as 1.0; ALWAYS OFF: a sound loaded sets it OFF; saved with the settings; older settings: FROM SOUND), SEL + OCT+
 (the selected track's LATCH on, off: its latched notes released), REC held ~1 s (the selected track's pattern cleared,
 undoable; REC as before; a short press as ever), SAVES WHEN SILENT said ~2 s, then out of the way; MIDI in from a
 looping DAW: a note-on again before its off neither restarts the arp nor is ended by the earlier one's late off, ALL
@@ -72,8 +72,8 @@ pr, _ = run("snd_off", PRESET + probes(500), 600, settings("off", latch=1))
 check("ALWAYS OFF: CRYPT PAD loaded, the track's LATCH stays OFF", pr[500]["latch"][0] == 0, pr[500]["latch"])
 pr, _ = run("snd_hand", [(300, "down 3"), (400, "btn 1"), (500, "up 3"), (700, "enc 6 1"), (900, "enc 6 1"),
                          (1100, "enc 6 -1")] + probes(600, 1200), 1300, settings("off", latch=1))
-check("ALWAYS OFF: latched by hand (SEL + OCT+), sounds loaded: still latched (loading never changes it)",
-      pr[600]["latch"][0] == 1 and pr[1200]["latch"][0] == 1, f"{pr[600]['latch']} {pr[1200]['latch']}")
+check("ALWAYS OFF: latched by hand (SEL + OCT+), then a sound loaded: LATCH OFF (at the load)",
+      pr[600]["latch"][0] == 1 and pr[1200]["latch"][0] == 0, f"{pr[600]['latch']} {pr[1200]['latch']}")
 NEW = [(1500, "btn 9"), (1700, "btn 9"), (1900, "enc 5 3"), (2100, "btn 1")]
 for name, env in (("from", None), ("off", settings("off", latch=1))):
     pr, _ = run(f"new_{name}", [(300, "down 3"), (400, "btn 1"), (500, "up 3")] + NEW + probes(600, 2300), 2400, env)

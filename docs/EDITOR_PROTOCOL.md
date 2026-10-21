@@ -207,7 +207,7 @@ step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd
 | 7–166 | 32 links of 5 bytes, the oldest first: CC, page, knob (0–3), track (0–3), x (SOUND: the source; GRID: the step; SONG: the section; FM ALGO's FINE, FM OP: the operator) |
 | 167 | the settings' version (3; GR!MM 1.0's: 1; V2's first builds': 2) |
 | 168 | CLOCK (V2): 0 INT, 1 INT+OUT, 2 USB, 3 TRS |
-| 169 | LATCH (V2, SYSTEM 3; version 3): 0 FROM SOUND (a sound loaded brings its own LATCH, as 1.0), 1 ALWAYS OFF (loading a sound never changes a track's LATCH) |
+| 169 | LATCH (V2, SYSTEM 3; version 3): 0 FROM SOUND (a sound loaded brings its own LATCH, as 1.0), 1 ALWAYS OFF (a sound loaded sets the track's LATCH off) |
 
 A PUT of the settings also takes GR!MM 1.0's 168 bytes (version 1): they apply with CLOCK INT and LATCH FROM SOUND,
 so a backup of then restores; and version 2's 169 bytes (LATCH FROM SOUND).
