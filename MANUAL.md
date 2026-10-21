@@ -13,6 +13,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
 - **Four choir sounds** made with the VOICE source: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Factory sounds](#12-factory-sounds).
+- **MIXER 1 as squares**, with a fourth send: each track can be sent to its own **DRIVE**. See [HOME](#2-home).
 - **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level on MIXER 1.
 - **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
 - **Cleaner and lighter:** samples uploaded with the editor no longer crackle, PHYS uses much less of the processor (at most four PHYS notes at once), and long backups, DAW loops, latched PHYS notes and the `SAVES WHEN SILENT` message all behave as they should.
@@ -32,7 +33,7 @@ GR!MM has **four tracks (T1–T4)**. Each track plays one sound, has its own seq
 |---|---|
 | **ALGORITHM** knob | Picks the track you're working on (T1–T4). Every page shows that track. |
 | **PRESETS** knob | Loads the next or previous sound into the selected track. (On the sequencer pages it sets the tempo instead.) |
-| **SELECT** knob | On HOME: tempo. On the sequencer: moves the cursor. |
+| **SELECT** knob | On HOME: tempo. On MIXER 1: picks the send. On the sequencer: moves the cursor. |
 | **KNOB 1–4** | The four values at the bottom of the screen, whatever page you're on. |
 | **MASTER** knob | Volume. |
 | **OCT− / OCT+** | Octave down / up. In save menus: back / confirm. |
@@ -63,18 +64,20 @@ The main screen: the eye, two spider webs in the top corners (dew glints on them
 | VOLUME | CUTOFF | RESONANCE | FX |
 
 - **CUTOFF / RESONANCE:** a filter at the end of the track, for every source: a low-pass unless MIXER 2 says otherwise. Fully open = no filtering.
-- **FX:** turns all three of the track's effect sends up or down together. 0 = dry, 100 % = as set on MIXER 1, 200 % = twice as wet.
+- **FX:** turns all four of the track's effect sends up or down together. 0 = dry, 100 % = as set on MIXER 1, 200 % = twice as wet.
 
 Press **HOME** again for the mixer pages:
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
-| MIXER 1 | LEVEL | DLY SEND | REV SEND | GRAIN SEND |
+| MIXER 1 | SEND (the square SELECT picks) | LEVEL | | |
 | MIXER 2 | PAN | TYPE | POS | |
 
 ![MIXER 1](docs/screens/mixer1.png)
 
-- **MIXER 1's picture:** for each track, its LEVEL column shows how loud it plays right now; its colour shows its VOLUME (dim grey at low VOLUME, white at full). The DLY, REV and GRAIN columns show the sends as set.
+- **MIXER 1:** each track has a LEVEL column and four squares, one per effect send: **DL** (DELAY), **RV** (SPACE), **GR** (GRAIN) and **DR** (DRIVE). Turn **SELECT** to pick a square (the selected track's lights up), then **KNOB 1** sets that send for the selected track; the square fills from the bottom as you turn it up. **KNOB 2** is the track's LEVEL. ALGORITHM picks the track, as everywhere.
+- **The LEVEL column** shows how loud the track plays right now; its colour shows its VOLUME (dim grey at low VOLUME, white at full).
+- **DRIVE send:** sends the track to a drive of its own, which joins the dry mix in the middle (not panned); the driven sound isn't sent on to GRAIN, DELAY or SPACE, but MASTER, the DRIVE page and TAPE still act on it. It uses the DRIVE page's **TYPE** and **TONE**; the send is how hard the track hits it. It works even when the DRIVE page's AMOUNT is 0, so you can drive one track and leave the others clean. All DRIVE sends at 0 = off completely.
 - **TYPE** (MIXER 2): the track filter is a low-pass (`LP`), high-pass (`HP`) or band-pass (`BP`). `LP` open (CUTOFF at the top) or `HP` open (CUTOFF at the bottom) means no filtering. A band-pass is gentle at RESONANCE 0 and narrows as you turn it up.
 - **POS** (MIXER 2): `PRE`: the effect sends hear the filtered sound (as GR!MM 1.0). `POST`: only the track's dry sound is filtered; GRAIN, DELAY and SPACE hear it unfiltered (a dark track with a bright reverb, say).
 
@@ -288,7 +291,7 @@ A saved sound is called by its category and number (`PAD 03`), or by the name yo
 
 ![FX > TAPE](docs/screens/tape.png)
 
-**FX** steps through **TAPE → GRAIN → DELAY → SPACE → MASTER → DRIVE**. Tracks feed GRAIN, DELAY and SPACE through their sends (MIXER 1, or FX on HOME). TAPE colours everything near the end.
+**FX** steps through **TAPE → GRAIN → DELAY → SPACE → MASTER → DRIVE**. Tracks feed GRAIN, DELAY and SPACE through their sends (MIXER 1, or FX on HOME), and MIXER 1's DRIVE send feeds a drive of their own (see [HOME](#2-home)). TAPE colours everything near the end.
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
@@ -392,7 +395,7 @@ Turn **PRESETS** to step through them by category, then your own.
 
 ## 14. Good to know
 
-- **Six voices** are shared by all tracks. A new note beyond six takes the oldest one, faded out.
+- **Six voices** are shared by all tracks. A track never takes a voice another track is using: when all six are busy, a new note on a track takes one of that track's own fading (released) notes; if it has none, the extra note isn't played. So a latched drone on one track keeps sounding however many keys you press on another. Only a track with no voice at all may take one, from the track holding the most, so no track is ever locked out.
 - **PHYS plays at most four notes at once** (it's the heaviest source). A fifth PHYS note takes the voice of a PHYS note that is fading out (released) if there is one; only when four PHYS notes are all on (held or latched) does it take the oldest of them.
 - **Looping MIDI from a DAW:** if a note arrives again before its note-off (a loop point), the note simply goes on: the arp isn't restarted, and the late note-off of the earlier one doesn't stop the new one. ALL NOTES OFF (CC 123, which DAWs send on stop) lets go of every note MIDI is holding; latched notes stay.
 - **Your sounds, slots A–D, settings and samples survive firmware updates.**
@@ -409,7 +412,7 @@ Turn **PRESETS** to step through them by category, then your own.
 - **SOUND EDITOR:** the four tracks' sounds (T1–T4), every setting on screen with the FM-1's names. Every move plays on the FM-1 at once, like turning its knobs, and in the page's own GR!MM, whose screen and keys are beside the sliders (play them with the mouse or the computer keyboard: `Z`–`/`, `S`–`'`, `Q`–`O`). **STORE IN SLOT** saves the sound into one of your 64 slots, with the name you give it.
 - **SOUNDS:** your 64 slots and the 44 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
 - **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**. **NORMALISE** (on unless you untick it) brings every WAV to the same loudness; off, a sample keeps its own level.
-- **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE) and each track's filter TYPE and POS, live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
+- **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE), each track's filter TYPE and POS, and each track's four sends (MIXER 1), live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
 - **SETTINGS:** MIDI CHANNEL, CLOCK and LATCH (FROM SOUND / ALWAYS OFF), read from the FM-1 and written back (the rest of the settings stay as they are).
 - **BACKUP:** one file with all your sounds, slots A–D, settings and the four sample slots, and a restore that makes a backup of what's there first. A restore puts the samples back too; a slot that already holds the same sample isn't written again, and a slot that was empty in the backup is emptied. Backups from GR!MM 1.0 (they have no samples) restore too and leave your samples as they are.
 
