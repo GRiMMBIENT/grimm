@@ -57,9 +57,12 @@ Request: none. Reply, in order:
 | --- | --- | --- | --- | --- |
 | 0 | the settings | 170 (1.0: 168) | yes | yes |
 | 1–4 | slots A–D | 2532 | yes | yes |
+| 5–8 | sample slots 1–4 (GR!MM V2) | 512 + the data's length | yes | no |
 | 16–79 | user sounds 1–64 (id 16 + slot) | 64 | yes | yes |
-| 80–119 | factory sounds 1–40 (id 80 + index, in the firmware's order) | 64 | yes | no |
-| 120–123 | sample slots 1–4 (GR!MM V2) | 512 + the data's length | yes | no |
+| 80–123 | factory sounds 1–44 (id 80 + index, in the firmware's order; GR!MM 1.0: 80–119) | 64 | yes | no |
+
+An object is one 7-bit byte (0–127). V2's test builds before 2.0 had the sample slots at 120–123: backups store
+samples by slot, not by object, so theirs restore.
 
 A factory sound reads as a user sound's record, so it can be written into a user slot as it comes.
 
@@ -264,7 +267,7 @@ four.
 ## A backup
 
 All sounds, slots and settings: GET objects 0, 1–4, 16–79 (256 bytes a GET); GR!MM V2: the sample slots too, objects
-120–123 (an empty slot: none). To restore, PUT each one (an empty sound as 64 × `0xFF`), each COMMIT while stopped
+5–8 (an empty slot: none). To restore, PUT each one (an empty sound as 64 × `0xFF`), each COMMIT while stopped
 and silent; then each sample slot as an upload (11–13; one whose header already matches, its data's CRC in it, need
 not be written again; one empty in the backup: 14 ERASE). `tools/fm1_editor_test.py` and the editor page do both
 and check the result. The backup file (theirs): JSON, `{"format": "grimm-backup", "version": 1, "proto", "fmt",

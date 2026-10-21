@@ -12,7 +12,9 @@ Version 2.0 · for the M-VAVE FM-1
 - **Each track's filter** can be a low-pass, high-pass or band-pass, and can sit before or after the effect sends: MIXER 2's **TYPE** and **POS**. See [HOME](#2-home).
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
-- **The editor:** new FX and SETTINGS sections, and backups now hold the four samples too. See [The editor](#15-the-editor).
+- **Four choir sounds** made with the VOICE source: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Factory sounds](#12-factory-sounds).
+- **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level on MIXER 1.
+- **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
 - **Cleaner and lighter:** samples uploaded with the editor no longer crackle, PHYS uses much less of the processor (at most four PHYS notes at once), and long backups, DAW loops, latched PHYS notes and the `SAVES WHEN SILENT` message all behave as they should.
 - **Nothing is lost when you update:** your sounds, slots A–D, settings, MIDI LEARN links and samples carry over, and backups from 1.0 restore.
 
@@ -50,7 +52,7 @@ GR!MM has **four tracks (T1–T4)**. Each track plays one sound, has its own seq
 
 ## 2. HOME
 
-The main screen: the eye, a candle per track (its flame follows the track's volume and what it's playing) and the four tracks along the bottom. The header shows the selected track and its sound (the factory or saved sound you loaded, by name), with the tempo and the battery level on the right.
+The main screen: the eye, two spider webs in the top corners (dew glints on them, more the louder it plays), a candle per track (its flame follows the track's volume and what it's playing) and the four tracks along the bottom. The header shows the selected track and its sound (the factory or saved sound you loaded, by name), with the tempo and the battery level on the right.
 
 ![HOME](docs/screens/home.png)
 
@@ -70,6 +72,9 @@ Press **HOME** again for the mixer pages:
 | MIXER 1 | LEVEL | DLY SEND | REV SEND | GRAIN SEND |
 | MIXER 2 | PAN | TYPE | POS | |
 
+![MIXER 1](docs/screens/mixer1.png)
+
+- **MIXER 1's picture:** for each track, its LEVEL column shows how loud it plays right now; its colour shows its VOLUME (dim grey at low VOLUME, white at full). The DLY, REV and GRAIN columns show the sends as set.
 - **TYPE** (MIXER 2): the track filter is a low-pass (`LP`), high-pass (`HP`) or band-pass (`BP`). `LP` open (CUTOFF at the top) or `HP` open (CUTOFF at the bottom) means no filtering. A band-pass is gentle at RESONANCE 0 and narrows as you turn it up.
 - **POS** (MIXER 2): `PRE`: the effect sends hear the filtered sound (as GR!MM 1.0). `POST`: only the track's dry sound is filtered; GRAIN, DELAY and SPACE hear it unfiltered (a dark track with a bright reverb, say).
 
@@ -356,7 +361,7 @@ Turn **PRESETS** to step through them by category, then your own.
 | PAD | Crypt Pad, Ash Veil, Frozen Hall, Last Light, Moss, Black Velvet |
 | DRONE | Monk Drone, Abyss, Iron Lung, Tomb Hum, Static Prayer, Deep Well |
 | BELL | Iron Bell, Funeral Chime, Rust Gong, Glass Harp, Bowed Bell, Shrine |
-| VOICE | Choir of Ghosts, Monks, Whisper Chorus, Vigil, Hollow Hymn |
+| VOICE | Choir of Ghosts, Monks, Whisper Chorus, Vigil, Hollow Hymn, Gregorian, Plainchant, Cathedral Choir, Nuns |
 | ORGAN | Funeral Organ, Chapel |
 | KEYS | Dead Harpsichord, Music Box, Cathedral Keys, Bone Piano, Wraith, Lantern, Spider Pluck, Lute, Candle |
 | OTHER | Haunted Strings, Dungeon Brass, War Horn, Cello Grave, Sorrow Strings |
@@ -402,8 +407,8 @@ Turn **PRESETS** to step through them by category, then your own.
 **[grimmbient.github.io/grimm/editor.html](https://grimmbient.github.io/grimm/editor.html)**, in Chrome or Edge on a computer. Connect the FM-1 over USB, press **CONNECT FM-1 (USB)** and allow MIDI when the browser asks. **TRY WITHOUT AN FM-1** runs GR!MM's own code in the page instead.
 
 - **SOUND EDITOR:** the four tracks' sounds (T1–T4), every setting on screen with the FM-1's names. Every move plays on the FM-1 at once, like turning its knobs, and in the page's own GR!MM, whose screen and keys are beside the sliders (play them with the mouse or the computer keyboard: `Z`–`/`, `S`–`'`, `Q`–`O`). **STORE IN SLOT** saves the sound into one of your 64 slots, with the name you give it.
-- **SOUNDS:** your 64 slots and the 40 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
-- **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**.
+- **SOUNDS:** your 64 slots and the 44 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
+- **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**. **NORMALISE** (on unless you untick it) brings every WAV to the same loudness; off, a sample keeps its own level.
 - **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE) and each track's filter TYPE and POS, live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
 - **SETTINGS:** MIDI CHANNEL, CLOCK and LATCH (FROM SOUND / ALWAYS OFF), read from the FM-1 and written back (the rest of the settings stay as they are).
 - **BACKUP:** one file with all your sounds, slots A–D, settings and the four sample slots, and a restore that makes a backup of what's there first. A restore puts the samples back too; a slot that already holds the same sample isn't written again, and a slot that was empty in the backup is emptied. Backups from GR!MM 1.0 (they have no samples) restore too and leave your samples as they are.
