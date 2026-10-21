@@ -221,12 +221,15 @@ a.lnk { color: var(--l); }
       <div class="row"><button id="b-setread" class="go">READ FROM FM-1</button><button id="b-setwrite">WRITE TO FM-1</button></div>
       <div class="row"><label class="px" for="set-mch">MIDI CHANNEL</label><select id="set-mch"></select></div>
       <div class="row"><label class="px" for="set-clk">CLOCK</label><select id="set-clk"></select></div>
-      <p class="note">The FM-1's own settings (SYSTEM, SYSTEM 2), not the project's. MIDI CHANNEL: 1-4 puts T1–T4 on
+      <div class="row"><label class="px" for="set-latch">LATCH (NEW PROJECTS)</label><select id="set-latch"></select></div>
+      <p class="note">The FM-1's own settings (SYSTEM, SYSTEM 2, SYSTEM 3), not the project's. MIDI CHANNEL: 1-4 puts T1–T4 on
         channels 1–4 (up to 13-16); ALL &gt; SEL plays every channel on the selected track; CH n &gt; SEL plays only
         channel n on the selected track and ignores the others. CLOCK: INT, the FM-1's own tempo; INT+OUT, the same
         and its MIDI clock out over USB (START, STOP and 24 pulses a beat); USB or TRS, it follows the MIDI clock from
-        there (START, CONTINUE, STOP; the jack is MIDI IN only). The same on the FM-1: SYSTEM's KNOB 2, SYSTEM 2's KNOB 4.
-        READ first; WRITE changes only these two (the FM-1 stopped and silent). GR!MM 1.0 has no CLOCK.</p>
+        there (START, CONTINUE, STOP; the jack is MIDI IN only). LATCH: OFF or ON for the four tracks of a NEW project
+        (a sound you load brings its own LATCH). The same on the FM-1: SYSTEM's KNOB 2, SYSTEM 2's KNOB 4, SYSTEM 3's
+        KNOB 1. READ first; WRITE changes only these three (the FM-1 stopped and silent). GR!MM 1.0 has no CLOCK, and
+        no LATCH setting.</p>
     </section>
 
     <section id="s-backup">
@@ -236,10 +239,11 @@ a.lnk { color: var(--l); }
         <button id="b-restore">RESTORE FROM A FILE…</button>
         <input type="file" id="f-restore" accept=".json" hidden>
       </div>
-      <p class="note">A backup holds all 64 user sounds, slots A–D and the settings (the same file as
-        tools/fm1_editor_test.py makes). Restoring first makes a backup of what the FM-1 has now (downloaded), then
-        writes everything, then reads it back to check. Samples are not in it: the FM-1 cannot send them back yet; keep
-        their WAV files.</p>
+      <p class="note">A backup holds all 64 user sounds, slots A–D, the settings and the four sample slots (the same
+        file as tools/fm1_editor_test.py makes). Restoring first makes a backup of what the FM-1 has now (downloaded),
+        then writes everything, then reads it back to check; a sample slot that already holds the same sample is not
+        written again, one empty in the backup is emptied. An older backup (GR!MM 1.0's, without samples) restores the
+        rest and leaves the sample slots as they are. GR!MM 1.0 cannot send its samples back: keep their WAV files.</p>
     </section>
     <footer class="note">
       <p><b><a class="lnk" href="index.html">Try the GR!MM demo</a></b>: the FM-1's panel in your browser, the same firmware.</p>

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""Test GR!MM's editor mailbox on the FM-1 (docs/EDITOR_PROTOCOL.md): read INFO, back up all user sounds, slots A-D
-and the settings to a file, write it all back, read it again and check that it matches.
+"""Test GR!MM's editor mailbox on the FM-1 (docs/EDITOR_PROTOCOL.md): read INFO, back up all user sounds, slots A-D,
+the settings and (GR!MM V2) the four sample slots to a file, write it all back, read it again and check that it matches.
 
   py tools\\fm1_editor_test.py                     the whole test (backup, write back, compare)
   py tools\\fm1_editor_test.py --backup FILE       only a backup into FILE
@@ -13,7 +13,10 @@ and the settings to a file, write it all back, read it again and check that it m
 
 Writing needs the FM-1 stopped and silent (no note, no release, no DELAY or SPACE tail). The backup file is JSON:
 {"format": "grimm-backup", "version": 1, "proto", "fmt", "firmware", "objects": [{"id", "len", "crc", "data"
-(base64)}]}. Needs mido and python-rtmidi (py -m pip install mido python-rtmidi), as tools\\fm1_install.py.
+(base64)}], "samples": [4 x null (empty) or {"slot", "name", "len", "crc", "data" (base64: the slot's header,
+data)}]}. "samples" is GR!MM V2's: a backup without it (made with or of GR!MM 1.0) restores and leaves the sample slots as
+they are; with it, a restore makes the four slots as in the file (an empty one emptied; one already so: not written
+again). Needs mido and python-rtmidi (py -m pip install mido python-rtmidi), as tools\\fm1_install.py.
 """
 import argparse
 import base64
@@ -24,11 +27,16 @@ import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fm1_sample_upload import HDR, Link, pack7  # noqa: E402  (the FM-1's MIDI ports, GR!MM's identity checked)
+from fm1_sample_upload import (BUSY, BUSY_TEXT, CMD_BEGIN, CMD_END, CMD_ERASE, CMD_WRITE, DATA_OFF, HDR,  # noqa: E402
+                               HDR_LEN, MAGIC, MAX_DATA, Link, pack7, printable)   # (the FM-1's MIDI ports, GR!MM's
+                                                                                   # identity checked)
 
 INFO, GET, PUT, TRACK = 20, 21, 22, 23
 BEGIN, DATA, COMMIT, ABORT = 0, 1, 2, 3
-O_SET, O_SLOT, O_SND, O_FACT = 0, 1, 16, 80
+O_SET, O_SLOT, O_SND, O_FACT, O_SMP = 0, 1, 16, 80, 120   # (O_SMP: GR!MM V2, the sample slots, GET only)
+SET_V1, SET_V2 = 168, 169                       # the settings of GR!MM 1.0 (version 1), of V2's version 2: a V2 takes them
+SMP_RC = {1: "bad arguments", 2: "flash erase failed", 3: "flash write failed", 4: "out of order", 5: "header or CRC",
+          7: "no flash"}
 RC = {1: "bad arguments", 2: "refused (CRC or contents)", 3: "stop the sequencer and let every sound end first",
       4: "the flash write failed", 5: "no BEGIN (or it timed out)"}
 
@@ -77,11 +85,14 @@ def objects(inf):
     return out
 
 
-def get(link, o, size):
+def get(link, o, size, at=0, missing=False):
+    """size bytes of object o from offset at; missing: None if it is not there (rc 1 at the first)"""
     data = b""
-    for off in range(0, size, 256):
-        c = min(256, size - off)
+    for off in range(at, at + size, 256):
+        c = min(256, at + size - off)
         r = link.req(GET, [o] + u35(off) + [c & 0x7F, c >> 7])
+        if missing and off == at and r[0] == o and r[1] == 1:
+            return None
         if r[0] != o or r[1]:
             sys.exit(f"GET {o} at {off}: {RC.get(r[1], f'rc {r[1]}')}")
         chunk = unpack7(r[9:])
@@ -106,15 +117,38 @@ def put(link, o, data, fmt, what):
     step([COMMIT, o], 10.0)
 
 
+def samples(link, inf):
+    """the sample slots as the flash holds them: each its bytes (header, data) or None (empty); None for them all: a
+    GR!MM before V2 (it cannot read them back)"""
+    out = []
+    for k in range(inf["sample_slots"]):
+        print(f"\r  reading sample {k + 1}   ", end="", flush=True)
+        h = get(link, O_SMP + k, DATA_OFF, missing=True)
+        out.append(h and h + get(link, O_SMP + k, int.from_bytes(h[16:20], "little"), DATA_OFF))
+    return None if inf["samples_used"] and not any(out) else out
+
+
 def backup(link, inf):
     objs = []
     for o, size, what in objects(inf):
         print(f"\r  reading {what:<12}", end="", flush=True)
         d = get(link, o, size)
         objs.append(dict(id=o, len=size, crc=zlib.crc32(d), data=base64.b64encode(d).decode()))
-    print("\r  read: settings, slots A-D, " + f"{inf['sounds']} sounds          ")
-    return dict(format="grimm-backup", version=1, proto=inf["proto"], fmt=inf["fmt"], firmware=inf["firmware"],
-                date=time.strftime("%Y-%m-%d %H:%M:%S"), objects=objs)
+    smp = samples(link, inf)
+    print("\r  read: settings, slots A-D, " + f"{inf['sounds']} sounds" +
+          (", the sample slots" if smp is not None else " (not the samples: this GR!MM cannot read them back)"))
+    b = dict(format="grimm-backup", version=1, proto=inf["proto"], fmt=inf["fmt"], firmware=inf["firmware"],
+             date=time.strftime("%Y-%m-%d %H:%M:%S"), objects=objs)
+    if smp is not None:
+        b["samples"] = [d and dict(slot=k + 1, name=printable(d[8:16].rstrip(b"\0")), len=len(d), crc=zlib.crc32(d),
+                                   data=base64.b64encode(d).decode()) for k, d in enumerate(smp)]
+    return b
+
+
+def sample_ok(d):                               # a slot's bytes: its header good, its length and data's CRC as it says
+    n = int.from_bytes(d[16:20], "little")
+    return (len(d) > DATA_OFF and int.from_bytes(d[:4], "little") == MAGIC and n == len(d) - DATA_OFF and
+            n <= MAX_DATA and int.from_bytes(d[20:24], "little") == zlib.crc32(d[DATA_OFF:]))
 
 
 def load(path, inf):
@@ -126,9 +160,60 @@ def load(path, inf):
     sizes = {o: s for o, s, _ in objects(inf)}
     for ob in b["objects"]:
         d = base64.b64decode(ob["data"])
-        if ob["id"] not in sizes or len(d) != sizes[ob["id"]] or zlib.crc32(d) != ob["crc"]:
+        old = ob["id"] == O_SET and len(d) in (SET_V1, SET_V2) and len(d) < sizes[O_SET]   # (an older GR!MM's
+        if ob["id"] not in sizes or (len(d) != sizes[ob["id"]] and not old) or zlib.crc32(d) != ob["crc"]:   # settings)
             sys.exit(f"{path}: object {ob['id']} is damaged or not this firmware's")
+    smp = b.get("samples")
+    if smp is not None:
+        if not isinstance(smp, list) or len(smp) != inf["sample_slots"]:
+            sys.exit(f"{path}: its samples are damaged")
+        for k, s in enumerate(smp):
+            d = s and base64.b64decode(s["data"])
+            if s and (zlib.crc32(d) != s["crc"] or not sample_ok(d)):
+                sys.exit(f"{path}: sample {k + 1} is damaged")
     return b
+
+
+def smp_step(link, cmd, args, what, timeout=3.0):
+    rc = link.req(cmd, args, timeout)[-1]
+    if rc == BUSY:
+        sys.exit(f"{what}: {BUSY_TEXT}")
+    if rc:
+        sys.exit(f"{what}: {SMP_RC.get(rc, f'rc {rc}')}")
+
+
+def restore_samples(link, smp):
+    """the sample slots as in the backup: an empty one emptied, one with the same header (its data's CRC in it) left
+    as it is, the others written as an upload (BEGIN, WRITE, END), then checked"""
+    slots, done = link.info(), []
+    for k, s in enumerate(smp):
+        if not s:
+            if slots[k][0] == 0:
+                done.append("empty")
+                continue
+            print(f"\r  emptying sample {k + 1}   ", end="", flush=True)
+            smp_step(link, CMD_ERASE, [k], f"sample {k + 1}", 10.0)
+            done.append("emptied")
+            continue
+        d = base64.b64decode(s["data"])
+        if get(link, O_SMP + k, HDR_LEN, missing=True) == d[:HDR_LEN]:
+            done.append("as it was")
+            continue
+        smp_step(link, CMD_BEGIN, [k], f"sample {k + 1}", 5.0)
+        for off in range(DATA_OFF, len(d), 256):
+            print(f"\r  writing sample {k + 1}: {off - DATA_OFF} / {len(d) - DATA_OFF} B   ", end="", flush=True)
+            smp_step(link, CMD_WRITE, [k, off & 0x7F, (off >> 7) & 0x7F, (off >> 14) & 0x7F] + pack7(d[off:off + 256]),
+                     f"sample {k + 1} at {off}")
+        smp_step(link, CMD_END, [k] + pack7(d[:HDR_LEN]), f"sample {k + 1}", 5.0)
+        for _ in range(50):                     # (the FM-1 checks and indexes it: well under a second)
+            st = link.info()[k][0]
+            if st != 2:
+                break
+            time.sleep(0.1)
+        if st != 1:
+            sys.exit(f"sample {k + 1} did not check out on the FM-1: restore again")
+        done.append("written")
+    print("\r  samples: " + ", ".join(f"{k + 1} {w}" for k, w in enumerate(done)) + "              ")
 
 
 def restore(link, b, inf):
@@ -137,6 +222,10 @@ def restore(link, b, inf):
         print(f"\r  writing {whats[ob['id']]:<12}", end="", flush=True)
         put(link, ob["id"], base64.b64decode(ob["data"]), inf["fmt"], whats[ob["id"]])
     print("\r  written: settings, slots A-D, " + f"{inf['sounds']} sounds          ")
+    if b.get("samples") is None:
+        print("  (no samples in this backup: the sample slots left as they are)")
+    else:
+        restore_samples(link, b["samples"])
 
 
 def store(link, inf, n):
@@ -251,6 +340,8 @@ def main():
     print(f"  ({time.time() - t0:.1f} s)")
     again = backup(link, inf)
     bad = [ob["id"] for ob, nb in zip(b["objects"], again["objects"]) if ob["data"] != nb["data"]]
+    bad += [f"sample {k + 1}" for k, (s, t) in enumerate(zip(b.get("samples") or [], again.get("samples") or []))
+            if (s and s["data"]) != (t and t["data"])]
     if bad:
         sys.exit(f"MISMATCH after writing back: objects {bad}")
     print("OK: everything read back as it was written")
