@@ -204,8 +204,8 @@ static void stress_factory(void)                /* "factory" */
         n += cat_len(c);
     }
     for (i = 0; i < SND_N; i++) u += snd_rec(i) != 0;
-    if (SND_NFACT != 40u || !u || n != SND_NFACT + u)
-        stress_fail("factory: PRESETS' lists not the 40 factory sounds and the user's (sounds listed)", n);
+    if (SND_NFACT != 44u || !u || n != SND_NFACT + u)   /* (V2: 44, the four choirs) */
+        stress_fail("factory: PRESETS' lists not the 44 factory sounds and the user's (sounds listed)", n);
     if (!(r = cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel])))
         stress_fail("factory: PRESETS browsed to nothing (place)", (uint32_t)brw_pos[sel]);
     e = r[3];
