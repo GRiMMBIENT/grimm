@@ -416,3 +416,5 @@ The FM-1 only writes to its memory (store, upload, restore) while the sequencer 
 | `←` `→` | ALGORITHM (the track) |
 
 **Combos:** hold a button's key and press other keys, as on the FM-1 (for example hold `8` for SAVE and press `Z`). With the mouse, right-click or Shift-click a button to keep it held until you click it again. Drag or scroll a knob to turn it.
+
+**MIDI in:** the demo plays notes and CCs from a MIDI keyboard or controller through Web MIDI (pick the input under the panel). It has no MIDI clock: CLOCK USB / TRS and INT+OUT only work on the FM-1 itself.
