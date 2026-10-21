@@ -75,6 +75,8 @@ Press **HOME** again for the mixer pages:
 
 - **LATCH OFF:** a note sounds while you hold the key, like a normal keyboard.
 - **LATCH ON:** press once to start a note, press again to stop it. For drones.
+- **Hold SEL + OCT+** switches the selected track's LATCH on or off from any page, while you play. Switching it off lets go of the latched notes.
+- A NEW project's tracks start with SYSTEM 3's LATCH (OFF unless you change it). A sound you load brings its own LATCH.
 
 ### SOUND page: the source's four knobs
 
@@ -209,6 +211,7 @@ Every track has its own 64-step pattern. All four play together on one tempo.
 - **Stopped + REC:** each key writes its note into the selected step and moves on.
 - **Playing + REC:** what you play lands on the nearest step.
 - With chord mode on, recorded steps keep their chord (shown in colour).
+- **Hold REC** (about 1 second) clears the selected track's pattern; the screen says `T1 CLEARED`. REC stays as it was before you pressed it, so you can clear and keep recording. EDIT + OCT− brings the pattern back. A short press of REC works as always. (On the SONG page REC only arms song recording.)
 
 **Step locks:** on the sequencer pages, **hold SEL** and the four knobs become the track's sound knobs. Turn one to lock that value to the selected step (a small mark appears). **Hold SEL + OCT−** clears the step's locks.
 
@@ -303,16 +306,17 @@ FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
 
 ## 11. System: hold HOME
 
-**Hold HOME** opens **SYSTEM**; press HOME again for **SYSTEM 2**. These are settings for the device, not the project.
+**Hold HOME** opens **SYSTEM**; press HOME again for **SYSTEM 2**, again for **SYSTEM 3**, and again to go back to SYSTEM. These are settings for the device, not the project.
 
-| SYSTEM | SYSTEM 2 |
-|---|---|
-| ![SYSTEM](docs/screens/system.png) | ![SYSTEM 2](docs/screens/system2.png) |
+| SYSTEM | SYSTEM 2 | SYSTEM 3 |
+|---|---|---|
+| ![SYSTEM](docs/screens/system.png) | ![SYSTEM 2](docs/screens/system2.png) | ![SYSTEM 3](docs/screens/system3.png) |
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
 | SYSTEM | COLOUR (red, amber, teal, violet) | MIDI CHANNEL | TUNE (±50 cents) | SCREEN OFF |
 | SYSTEM 2 | MIDI LEARN | SEQ MIDI OUT | SAMPLES | CLOCK |
+| SYSTEM 3 | LATCH | – | – | – |
 
 - **MIDI CHANNEL:** `1-4` puts T1–T4 on channels 1–4 (or start higher, up to `13-16`); `ALL > SEL` sends every channel to the selected track; `CH 1 > SEL` … `CH 16 > SEL` sends only that channel to the selected track and ignores the others (notes and CCs). The same for USB and the TRS jack.
 - **SCREEN OFF:** the screen goes dark after the chosen time; the music keeps going. Your first touch only wakes it.
@@ -324,6 +328,7 @@ FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
   - `INT+OUT` (`I+OUT` on the knob): the same, and the FM-1 sends MIDI clock over USB: 24 pulses a beat (also while stopped), START when you press PLAY (it starts on the next pulse), STOP when it stops. Set your DAW to follow it.
   - `USB` or `TRS`: the FM-1 follows the MIDI clock coming in over USB or the TRS jack. START plays from step 1, CONTINUE carries on where STOP left it, STOP stops; PLAY and STOP on the FM-1 still work (PLAY starts on the next pulse). HOME shows `EXT` and the tempo it measures; SELECT and PRESETS don't change the tempo meanwhile. The arp, song mode and slots changed "at the next bar" all follow the clock. If the clock stops for half a second, the FM-1 carries on at its own tempo.
 - SYSTEM 2 also shows the processor load (CPU NOW / PEAK). OCT− + OCT+ together resets PEAK.
+- **LATCH** (SYSTEM 3): OFF or ON, the LATCH that a NEW project's four tracks start with. Tracks you already have keep theirs, and a sound you load brings its own. To switch the selected track's LATCH while you play, hold **SEL + OCT+**.
 
 ---
 
@@ -353,11 +358,13 @@ Turn **PRESETS** to step through them by category, then your own.
 | SEL | (alone, let go) | Chord mode on/off |
 | SEL | a knob (sequencer pages) | Lock that value to the selected step |
 | SEL | OCT− (sequencer pages) | Clear the step's locks |
+| SEL | OCT+ | The selected track's LATCH on/off |
 | SEQ | white keys F3–F4 | Sequencer tools |
 | SEQ | turn SELECT | Pattern length |
 | SAVE | F3–B3 / C4–F4 | Recall / save slots A–D |
 | GLO | F3–B3 / C4–F4 | Mute / solo T1–T4 |
 | ARP | (alone) | Arpeggiator on/off |
+| REC | (alone, ~1 s) | Clear the selected track's pattern |
 | HOME | (alone) | System settings |
 | — | OCT− + OCT+ together | Reset CPU PEAK |
 
@@ -381,8 +388,8 @@ Turn **PRESETS** to step through them by category, then your own.
 - **SOUNDS:** your 64 slots and the 40 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
 - **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**.
 - **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE) and each track's filter TYPE and POS, live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
-- **SETTINGS:** MIDI CHANNEL and CLOCK, read from the FM-1 and written back (the rest of the settings stay as they are).
-- **BACKUP:** one file with all your sounds, slots A–D and settings, and a restore that makes a backup of what's there first. (Samples aren't in it: keep their WAV files.) Backups from GR!MM 1.0 restore too.
+- **SETTINGS:** MIDI CHANNEL, CLOCK and LATCH (for new projects), read from the FM-1 and written back (the rest of the settings stay as they are).
+- **BACKUP:** one file with all your sounds, slots A–D, settings and the four sample slots, and a restore that makes a backup of what's there first. A restore puts the samples back too; a slot that already holds the same sample isn't written again, and a slot that was empty in the backup is emptied. Backups from GR!MM 1.0 (they have no samples) restore too and leave your samples as they are.
 
 The FM-1 only writes to its memory (store, upload, restore) while the sequencer is stopped and nothing sounds; the editor tells you when to wait. Nothing is written without you pressing a button.
 

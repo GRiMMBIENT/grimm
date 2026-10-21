@@ -2,7 +2,7 @@
 
 How an editor (a web page, `tools/fm1_editor_test.py`) talks to GR!MM on the FM-1 over USB-MIDI SysEx: read and
 write the user's sounds, the slots A–D and the settings, read the factory sounds, set the tracks' sounds live, and
-upload samples. The device side is `firmware/src/editor.c` (commands 20–25) and `firmware/src/samples.c` (11–15). The
+upload samples (and, GR!MM V2, read them back). The device side is `firmware/src/editor.c` (commands 20–25) and `firmware/src/samples.c` (11–15). The
 read/write scheme follows SLOOP's editor backup ([sloop-fm1](https://github.com/isod89/sloop-fm1)
 `web/EDITOR_PROTOCOL.md`, commands 34–36, GPL-3.0): objects by id, read by offset and count, written as BEGIN → DATA →
 COMMIT. The live one (23 TRACK) follows SLOOP's live SET: values at once, while playing, never saved.
@@ -47,7 +47,7 @@ Request: none. Reply, in order:
 | 1 | a sound's size (64) |
 | 1 | factory sounds (40) |
 | 5 | a slot's size, u35 (2532) |
-| 5 | the settings' size, u35 (169; GR!MM 1.0: 168) |
+| 5 | the settings' size, u35 (170; GR!MM 1.0: 168) |
 | 1 | sample slots (4) |
 | 1 | sample slots in use (holding a good sample) |
 
@@ -55,12 +55,18 @@ Request: none. Reply, in order:
 
 | id | Object | Size | GET | PUT |
 | --- | --- | --- | --- | --- |
-| 0 | the settings | 169 (1.0: 168) | yes | yes |
+| 0 | the settings | 170 (1.0: 168) | yes | yes |
 | 1–4 | slots A–D | 2532 | yes | yes |
 | 16–79 | user sounds 1–64 (id 16 + slot) | 64 | yes | yes |
 | 80–119 | factory sounds 1–40 (id 80 + index, in the firmware's order) | 64 | yes | no |
+| 120–123 | sample slots 1–4 (GR!MM V2) | 512 + the data's length | yes | no |
 
 A factory sound reads as a user sound's record, so it can be written into a user slot as it comes.
+
+A sample slot reads as the flash holds it: the header (480 bytes, as an upload's END sends it), 32 bytes of nothing
+(`0xFF`), then the ADPCM data; its length is the header's u32 at byte 16. Only a ready slot (INFO 15: state 1) is
+there; an empty one, or one being checked, answers rc 1, as does a GR!MM before V2. Read the first 512 bytes, then the
+data from 512. It is written back as an upload (11 BEGIN, 12 WRITE from 512, 13 END with the header), not by PUT.
 
 ## 21 GET
 
@@ -187,7 +193,7 @@ then the step's chord byte (0: a plain note; bit 7 set: a chord step).
 **Step locks (288 bytes):** 64 × 4 values (step n's lock of the source's knob k at 4 n + k), then 32 bytes of masks:
 step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd (bit k: knob k locked).
 
-## The settings (169 bytes; GR!MM 1.0: 168)
+## The settings (170 bytes; GR!MM 1.0: 168)
 
 | Byte | |
 | --- | --- |
@@ -199,15 +205,16 @@ step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd
 | 5 | SEQ MIDI OUT (0 / 1) |
 | 6 | MIDI LEARN's links in use (0–32) |
 | 7–166 | 32 links of 5 bytes, the oldest first: CC, page, knob (0–3), track (0–3), x (SOUND: the source; GRID: the step; SONG: the section; FM ALGO's FINE, FM OP: the operator) |
-| 167 | the settings' version (2; GR!MM 1.0's: 1) |
+| 167 | the settings' version (3; GR!MM 1.0's: 1; V2's first builds': 2) |
 | 168 | CLOCK (V2): 0 INT, 1 INT+OUT, 2 USB, 3 TRS |
+| 169 | LATCH (V2, SYSTEM 3; version 3): 0 OFF, 1 ON, the LATCH a NEW project's tracks start with |
 
-A PUT of the settings also takes GR!MM 1.0's 168 bytes (version 1): they apply with CLOCK INT, so a backup of then
-restores.
+A PUT of the settings also takes GR!MM 1.0's 168 bytes (version 1): they apply with CLOCK INT and LATCH OFF, so a
+backup of then restores; and version 2's 169 bytes (LATCH OFF).
 
 Pages (a link's page): 0 SOUND, 1 SOURCE, 2 ENV, 3 LFO, 4 SCALE, 5 CHORD, 6 SONG, 7 HOME, 8 MIXER 1, 9 MIXER 2,
-14 ARP, 15 GRID, 16 PATTERN SETTINGS, 17 TAPE, 18 GRAIN, 19 DELAY, 20 SPACE, 23 FM ALGO, 24 FM OP (the others can't be
-learned).
+14 ARP, 15 GRID, 16 PATTERN SETTINGS, 17 TAPE, 18 GRAIN, 19 DELAY, 20 SPACE, 23 FM ALGO, 24 FM OP, 25 MASTER, 26 DRIVE
+(the others can't be learned; 27 is SYSTEM 3).
 
 ## 24 CPU (GR!MM V2, a diagnostic)
 
@@ -256,5 +263,11 @@ four.
 
 ## A backup
 
-All sounds, slots and settings: GET objects 0, 1–4, 16–79 (256 bytes a GET). To restore, PUT each one (an empty sound
-as 64 × `0xFF`), each COMMIT while stopped and silent. `tools/fm1_editor_test.py` does both and checks the result.
+All sounds, slots and settings: GET objects 0, 1–4, 16–79 (256 bytes a GET); GR!MM V2: the sample slots too, objects
+120–123 (an empty slot: none). To restore, PUT each one (an empty sound as 64 × `0xFF`), each COMMIT while stopped
+and silent; then each sample slot as an upload (11–13; one whose header already matches, its data's CRC in it, need
+not be written again; one empty in the backup: 14 ERASE). `tools/fm1_editor_test.py` and the editor page do both
+and check the result. The backup file (theirs): JSON, `{"format": "grimm-backup", "version": 1, "proto", "fmt",
+"firmware", "date", "objects": [{"id", "len", "crc", "data"}], "samples": [4 × null or {"slot", "name", "len", "crc",
+"data"}]}`, data in base64, `crc` the CRC-32 of the bytes. `samples` is V2's: a file without it restores everything
+else and leaves the sample slots alone.
