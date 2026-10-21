@@ -20,9 +20,9 @@
  *                              (GR!MM V2, the editor page's FX; no protocol number of its own either)
  * TRACK is live (protocol 2): a track's sound as it plays, read or set at once, as PRESETS loads one (snd_apply), never
  * saved; at any time, also while playing (the editor page's sliders, SLOOP's live SET). The page sends one at a time.
- * Objects: 0 the settings; 1..4 slots A..D; 16..79 the user's sounds 1..64; 80..119 the factory sounds (GET only);
- * (V2) 120..123 the sample slots 1..4 as the flash holds them, a ready one's header, data and all (GET only: a backup's;
- * a restore writes them as an upload, 11..13).
+ * Objects: 0 the settings; 1..4 slots A..D; (V2) 5..8 the sample slots 1..4 as the flash holds them, a ready one's
+ * header, data and all (GET only: a backup's; a restore writes them as an upload, 11..13); 16..79 the user's sounds
+ * 1..64; 80.. the factory sounds (GET only; up to 127: an object is one 7-bit byte).
  * A PUT's bytes gather in store.c's sector image (st_img: free between saves; a reply is made in its last KiB); it
  * commits only when the sequencer stands and nothing sounds, its CRC, size, format and contents checked, through
  * store.c's saves (each written sector read back); refused, nothing changes. While a PUT is open (15 s after its last
@@ -34,7 +34,8 @@
 enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24, ED_EFFECTS = 25 };
 static const uint8_t ED_FXPG[6] = {PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_MASTER, PG_DRIVE};   /* (FX's i / 4) */
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
-enum { EO_SET = 0, EO_SLOT = 1, EO_SND = 16, EO_FACT = 80, EO_SMP = 120 };
+enum { EO_SET = 0, EO_SLOT = 1, EO_SMP = 5, EO_SND = 16, EO_FACT = 80 };
+_Static_assert(EO_SMP + SMP_SLOTS <= EO_SND && EO_FACT + SND_NFACT <= 128u, "the editor's objects: one 7-bit byte each");
 enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: arguments, the object (CRC, size, format,
                                                  * contents), stop / silence first, the flash, no BEGIN (or 15 s old) */
 #define ED_RX (st_img)                          /* a PUT's bytes (up to SLOT_ALL) */
@@ -57,9 +58,9 @@ static const uint8_t *ed_bytes(uint32_t o)      /* object o as it is now (0: no 
 {
     uint32_t k;
     if (o == EO_SET) return (const uint8_t *)&set;
+    if (o >= EO_SMP && o < EO_SND) return sample_flash() ? sample_flash() + (o - EO_SMP) * SMP_SLOT_SIZE : 0;
     if (o < EO_SND) return slots[o - EO_SLOT];
     if (o < EO_FACT) return save_flash(0) ? save_flash(0) + (o - EO_SND) * SND_SIZE : 0;
-    if (o >= EO_SMP) return sample_flash() ? sample_flash() + (o - EO_SMP) * SMP_SLOT_SIZE : 0;
     for (k = 0; k < SND_SIZE; k++)              /* (a factory sound: as a user's record, no FM patch of its own) */
         ED_FX[k] = k < SND_FSIZE && k < 18u ? SND_FACTORY[o - EO_FACT][k] : 0u;
     ED_FX[0] = SND_MAGIC;
@@ -247,7 +248,7 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         r[0] = (uint8_t)op, r[1] = (uint8_t)o;
         if (op == 0u) {                         /* BEGIN: fmt, len (5), crc (5) */
             uint32_t len = n >= 13u ? ed_rd35(f + 3) : 0u;
-            if (n < 13u || !ed_size(o) || o >= EO_FACT || f[2] != ED_FMT ||
+            if (n < 13u || !ed_size(o) || o >= EO_FACT || (o >= EO_SMP && o < EO_SND) || f[2] != ED_FMT ||
                 (len != ed_size(o) && !(o == EO_SET && len + 2u >= sizeof set && len < sizeof set))) rc = ER_ARGS;
                                                 /* (the settings: V1.0's, V2's version 2 too, a backup of then) */
             else if (!silent) rc = ER_STOP;

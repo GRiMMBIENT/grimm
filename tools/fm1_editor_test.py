@@ -33,7 +33,7 @@ from fm1_sample_upload import (BUSY, BUSY_TEXT, CMD_BEGIN, CMD_END, CMD_ERASE, C
 
 INFO, GET, PUT, TRACK = 20, 21, 22, 23
 BEGIN, DATA, COMMIT, ABORT = 0, 1, 2, 3
-O_SET, O_SLOT, O_SND, O_FACT, O_SMP = 0, 1, 16, 80, 120   # (O_SMP: GR!MM V2, the sample slots, GET only)
+O_SET, O_SLOT, O_SMP, O_SND, O_FACT = 0, 1, 5, 16, 80   # (O_SMP: GR!MM V2, the sample slots 5..8, GET only)
 SET_V1, SET_V2 = 168, 169                       # the settings of GR!MM 1.0 (version 1), of V2's version 2: a V2 takes them
 SMP_RC = {1: "bad arguments", 2: "flash erase failed", 3: "flash write failed", 4: "out of order", 5: "header or CRC",
           7: "no flash"}

@@ -136,6 +136,11 @@ static const uint8_t SND_FACTORY[][SND_FSIZE] = {
     FSND(CAT_KEYS, 9, ENG_PHASE, 3, 0, 40, 4, 80, 90, 70, 80, 0, 0x00, 100, 1, 0, 0),       /* CANDLE */
     /* TEXTURES */
     FSND(CAT_TEXTURE, 1, ENG_VOICE, 96, 12, 0, 127, 100, 90, 120, 105, 1, 0x00, 30, 90, 4, 0), /* WIND THRU STONE */
+    /* (V2) CHOIRS: VOICE, slow attacks, long releases; chord mode on (bit 7): parallel fifths (organum), minor chords */
+    FSND(CAT_VOICE, 6, ENG_VOICE, 100, 6, 25, 30, 95, 90, 50, 100, 0, 0x95, 20, 3, 0, 6),   /* GREGORIAN: FIFTH OPEN */
+    FSND(CAT_VOICE, 7, ENG_VOICE, 127, 8, 30, 20, 80, 90, 65, 95, 0, 0x00, 40, 2, 0, 0),    /* PLAINCHANT: one voice */
+    FSND(CAT_VOICE, 8, ENG_VOICE, 0, 12, 45, 25, 100, 90, 60, 110, 0, 0xA1, 25, 4, 0, 6),   /* CATHEDRAL CHOIR: MIN SPREAD */
+    FSND(CAT_VOICE, 9, ENG_VOICE, 40, 19, 35, 45, 95, 90, 75, 100, 0, 0x91, 40, 3, 0, 0),   /* NUNS: MIN OPEN */
 };
 static const char *const SND_FNAME[] = {
     "CRYPT PAD", "ASH VEIL", "FROZEN HALL", "LAST LIGHT", "MOSS", "BLACK VELVET",
@@ -146,6 +151,7 @@ static const char *const SND_FNAME[] = {
     "HAUNTED STRINGS", "DUNGEON BRASS", "WAR HORN", "CELLO GRAVE", "SORROW STRINGS",
     "WRAITH", "LANTERN", "SPIDER PLUCK", "LUTE", "CANDLE",
     "WIND THRU STONE",
+    "GREGORIAN", "PLAINCHANT", "CATHEDRAL CHOIR", "NUNS",
 };   /* (16 characters at most: the header beside HOME's tempo) */
 #define SND_NFACT (sizeof SND_FACTORY / sizeof SND_FACTORY[0])
 _Static_assert(SND_NFACT == sizeof SND_FNAME / sizeof SND_FNAME[0], "a name a factory sound");

@@ -146,11 +146,18 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const vf = await VirtualFM1.create(readFileSync("web/dist/grimm.wasm"));
   vf.warmUp();
   const cl = new Client(vf), info = await cl.info(), meta = vf.meta();
-  check(info.proto === 2 && info.sounds === 64 && info.slotSize === 2532 && info.setSize === 170 && info.factory === 40,
+  check(info.proto === 2 && info.sounds === 64 && info.slotSize === 2532 && info.setSize === 170 && info.factory === 44,
         `editor: INFO (GR!MM ${info.firmware}, protocol ${info.proto}, ${info.sounds} sounds, slots ${info.slotSize} B)`);
-  check(meta.factory.length === 40 && meta.engines.length === 7 && meta.fmAlg.length === 32, "editor: the page's names and tables from the firmware");
+  check(meta.factory.length === 44 && meta.engines.length === 7 && meta.fmAlg.length === 32, "editor: the page's names and tables from the firmware");
   const f2 = await cl.get(OBJ.FACT + 2, 64);
   check(eq([...f2], meta.factory[2].rec) && recordOk(f2), `editor: factory sound 3 (${meta.factory[2].name}) read as the page has it`);
+  {                                                          // (V2: the sample slots are objects 5..8, read only: a PUT
+    const a0 = await cl.get(OBJ.SLOT, info.slotSize);        // to one refused, slot A untouched)
+    let refused = false;
+    try { await cl.put(OBJ.SMP, new Uint8Array(512), info.fmt); } catch (e) { refused = e.rc === 1; }
+    const a1 = await cl.get(OBJ.SLOT, info.slotSize);
+    check(refused && a0.every((x, i) => x === a1[i]), "editor: a sample slot (objects 5..8) can't be written as an object");
+  }
   const b0 = await makeBackup(cl, info);
   check(b0.objects.length === 69, `editor: every object read (${b0.objects.length}: settings, slots A-D, 64 sounds)`);
   {                                                          // a reply missed (a real USB link): the GET asked again

@@ -10,7 +10,7 @@ export const HEAD = [0x7d, 0x47, 0x52];
 export const CMD = { SMP_BEGIN: 11, SMP_WRITE: 12, SMP_END: 13, SMP_ERASE: 14, SMP_INFO: 15, SMP_FACTORY: 16, INFO: 20, GET: 21, PUT: 22,
                      TRACK: 23, FX: 25 };
 export const PROTOS = [1, 2];                              // the editor protocols this page knows (2: TRACK)
-export const OBJ = { SET: 0, SLOT: 1, SND: 16, FACT: 80, SMP: 120 };   // (SMP: GR!MM V2, the sample slots, GET only)
+export const OBJ = { SET: 0, SLOT: 1, SMP: 5, SND: 16, FACT: 80 };   // (SMP: GR!MM V2, the sample slots 5..8, GET only)
 const BEGIN = 0, DATA = 1, COMMIT = 2, ABORT = 3;
 export const RC = {
   1: "the FM-1 did not accept the request (arguments)",

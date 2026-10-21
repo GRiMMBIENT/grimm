@@ -63,7 +63,7 @@ NAME = {0: "FROM SOUND", 1: "ALWAYS OFF"}
 
 # every factory sound (PRESETS 1 .. 40), each setting
 n_ok = 0
-for k in range(1, 41):
+for k in range(1, 45):
     eng = run("eng", [(300, f"enc 6 {k}"), (500, "probe")], 600, ENV[0])[500]["eng"]
     edit = [(700 + 100 * i, "btn 6") for i in range(4 if eng == ENG_FM else 2)]   # (FM: FM ALGO, FM OP before SOURCE)
     for s in (0, 1):
@@ -82,8 +82,8 @@ for k in range(1, 41):
               (bool(p[4500]["notes"]) == bool(nxt)))
         n_ok += ok
         check(f"{NAME[s]}, sound {k}", ok, {t: (p[t]["latch"], p[t]["notes"]) for t in sorted(p)}, quiet=True)
-check(f"all 40 factory sounds, both settings: loaded as set; EDIT's LATCH and SEL + OCT+ latch and let go ({n_ok}/80)",
-      n_ok == 80)
+check(f"all 44 factory sounds, both settings: loaded as set; EDIT's LATCH and SEL + OCT+ latch and let go ({n_ok}/88)",
+      n_ok == 88)
 
 # slots A..D and the project keep their tracks' LATCH (SYSTEM 3 acts on a sound's load only)
 for s in (0, 1):
@@ -102,7 +102,7 @@ for s in (0, 1):
           p[1400]["notes"], {t: (p[t]["latch"], p[t]["notes"]) for t in sorted(p)})
 
 # PHYS: three keys latched, two let go again (their release tails), two more: the third stays (a release's voice taken)
-for k in range(1, 41):
+for k in range(1, 45):
     if run("eng", [(300, f"enc 6 {k}"), (500, "probe")], 600, ENV[0])[500]["eng"] != ENG_PHYS:
         continue
     ev = [(300, f"enc 6 {k}"), (700, "btn 6"), (800, "btn 6"), (1200, "enc 3 1")]
