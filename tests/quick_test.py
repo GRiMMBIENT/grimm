@@ -4,8 +4,10 @@
 """GR!MM V2's quick wins in host mode (tests/run_host.sh): SYSTEM 3's LATCH (FROM SOUND: a sound loaded brings its
 own, as 1.0; ALWAYS OFF: loading never changes it; saved with the settings; older settings: FROM SOUND), SEL + OCT+
 (the selected track's LATCH on, off: its latched notes released), REC held ~1 s (the selected track's pattern cleared,
-undoable; REC as before; a short press as ever), SAVES WHEN SILENT said ~2 s, then out of the way. Prints a line a check, exit 1 on a
-failure.
+undoable; REC as before; a short press as ever), SAVES WHEN SILENT said ~2 s, then out of the way; MIDI in from a
+looping DAW: a note-on again before its off neither restarts the arp nor is ended by the earlier one's late off, ALL
+NOTES OFF lets go, and with CLOCK INT the clock's messages leave the arp's rate alone. Prints a line a check, exit 1
+on a failure.
   python3 tests/quick_test.py [build/host/grimm]"""
 import os
 import subprocess
@@ -144,5 +146,51 @@ check("PLAY, STOP: a new wait, said again (~2 s)", bool(w2) and pr[w2[0]]["said"
       not pr[min(14900, w2[0] + 2200)]["said"], w2[:1])
 
 
+# MIDI in from a looping DAW (T1, ARP on, SEQ MIDI OUT: the arp's notes out, timed)
+def arp_ons(name, ev, end=9000, env=None):
+    _, out = run(name, [(300, "down 10"), (1100, "up 10")] + ev, end, env or settings("mo", out=1))
+    return [int(ln.split()[0]) for ln in out.splitlines() if " MIDI out 90 " in ln and not ln.endswith(" 0")]
+
+
+N = lambda t, n: (t, f"midi 0x90 {n} 100")      # noqa: E731
+F = lambda t, n: (t, f"midi 0x80 {n} 0")        # noqa: E731
+LOOP = [3530, 5560, 7590]                       # (the DAW's loop points, mid-step)
+CH = (60, 64, 67)
+one = arp_ons("arp_one", [N(1500, 60)])
+chord = arp_ons("arp_chord", [N(1500, n) for n in CH])
+check("the arp steady (a note held): its steps ~125 ms apart", len(one) > 50 and
+      all(115 <= b - a <= 135 for a, b in zip(one, one[1:])))
+r = arp_ons("arp_onoff", [N(1500, 60)] + [e for t in LOOP for e in (N(t, 60), F(t + 3, 60))])
+check("a note-on again before its off, the off 3 ms late: the arp as if held (no restart, not stopped)", r == one,
+      f"{len(r)} steps, steady {len(one)}")
+r = arp_ons("arp_onon", [N(1500, 60)] + [N(t, 60) for t in LOOP])
+check("a note-on again, no off: the arp as if held", r == one, f"{len(r)} steps")
+r = arp_ons("arp_chordloop", [N(1500, n) for n in CH] + [N(t, n) for t in LOOP for n in CH] +
+            [F(t + 2, n) for t in LOOP for n in CH])
+check("a chord again before its offs: the arp as if held", r == chord, f"{len(r)} steps, steady {len(chord)}")
+r = arp_ons("arp_chordoff", [N(1500, n) for n in CH] + [F(4000, n) for n in CH])
+check("a chord let go: the arp stops (as ever)", r and r[-1] < 4130, r[-1:])
+for name, ev in (("START at the loops", [(t, "midi 0xFA 0 0") for t in LOOP]),
+                 ("STOP, START at the loops", [e for t in LOOP for e in ((t, "midi 0xFC 0 0"), (t + 1, "midi 0xFA 0 0"))]),
+                 ("a clock (120 BPM)", [(1400, "clock usb 1200 7000")]),
+                 ("a clock and START at the loops", [(1400, "clock usb 1200 7000")] + [(t, "midi 0xFA 0 0") for t in LOOP]),
+                 ("SONG POSITION at the loops", [(t, "midi 0xF2 0 0") for t in LOOP])):
+    r = arp_ons("arp_rt", [N(1500, 60)] + ev)
+    check(f"CLOCK INT, {name}: the arp's steps as without them", r == one, f"{len(r)} steps")
+P = [(1200, "btn 12")]
+play = arp_ons("arp_play", P + [N(1500, 60)])
+r = arp_ons("arp_play_rt", P + [N(1500, 60), (1400, "clock usb 1200 7000")] + [(t, "midi 0xFA 0 0") for t in LOOP])
+check("CLOCK INT, the sequencer playing, a clock and START at the loops: the arp's steps as without them", r == play,
+      f"{len(r)} steps, {len(play)}")
+r = arp_ons("arp_cc123", [N(1500, 60), N(1500, 64), (4000, "midi 0xB0 123 0")])
+check("ALL NOTES OFF (CC 123): the notes MIDI holds let go, the arp stops", r and r[-1] < 4130, r[-1:])
+# without the arp: a note-on again before its off sounds again; the earlier one's late off leaves it on
+pr, _ = run("midi_again", [N(1000, 60), N(2000, 60), F(2003, 60)] + probes(1500, 2500) + [F(3000, 60)] + probes(3500), 3600)
+check("no arp: a note-on again before its off; the earlier one's late off: the note goes on; its own off ends it",
+      pr[1500]["notes"] == ["1:60"] and pr[2500]["notes"] == ["1:60"] and pr[3500]["notes"] == [],
+      f"{pr[1500]['notes']} {pr[2500]['notes']} {pr[3500]['notes']}")
+pr, _ = run("midi_plain", [N(1000, 60), F(2000, 60), N(2000, 60), F(3000, 60)] + probes(1500, 2500, 3500), 3600)
+check("no arp, a note let go and played again: as ever", pr[2500]["notes"] == ["1:60"] and pr[3500]["notes"] == [],
+      f"{pr[2500]['notes']} {pr[3500]['notes']}")
 print("quick test: passed" if not bad else "quick test: FAILED")
 sys.exit(1 if bad else 0)

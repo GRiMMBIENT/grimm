@@ -377,7 +377,9 @@ static uint8_t lat_note[NV], lat_root[NV], lat_id[NV], lat_trk[NV], lat_voice[NV
 static volatile uint32_t nlat;
 static uint32_t sel;                            /* main loop: the selected track (ALGORITHM) */
 static uint16_t key_held[27];                   /* main loop, LATCH OFF: the track (<< 8, + 0x8000) a key holds */
-static uint8_t midi_held[128];                  /* .. the tracks a MIDI note holds (bit t) */
+static uint8_t midi_held[128];                  /* .. the tracks a MIDI note holds (bit t); (V2) bit 4 + t: on t it
+                                                 * came again before its off (a DAW's loop): its next off is the earlier
+                                                 * one's, passed over */
 static uint16_t echo_on[128];                   /* main loop: the notes on out there over USB-MIDI (bit: the channel),
                                                  * sent and not yet off */
 
@@ -1405,7 +1407,10 @@ static void sys_sync(void)
     if (mch != set.mch)
         for (n = 0; n < 128u; n++)
             for (t = 0; t < NT; t++)
-                if (midi_held[n] >> t & 1u) nq_note(NQ_OFF, t, 0, MIDI_ID(n)), midi_held[n] &= (uint8_t)~(1u << t);
+                if (midi_held[n] >> t & 1u) {
+                    nq_note(NQ_OFF, t, 0, MIDI_ID(n));
+                    midi_held[n] &= (uint8_t)~(0x11u << t);
+                }
     if (tn != set.tune || col != set.col || mch != set.mch || scr != set.scr || out != set.out || clk != set.clk ||
         la != set.latch) {
         set.tune = tn, set.col = col, set.mch = mch, set.scr = scr, set.out = out, set.clk = clk, set.latch = la;
@@ -1922,11 +1927,24 @@ static void app_main(void)
                                                  * selected track; CH n > SEL: channel n alone, the selected track); a
                                                  * CC: its link (MIDI LEARN) */
             uint32_t ty = st & 0xF0u, c = st & 15u, on = ty == 0x90u && d2, off = ty == 0x80u || (ty == 0x90u && !d2), t, m;
+            uint32_t again;
             t_touch = fm1_ms;
             d1 &= 0x7Fu;
             if (set.mch > MCH_ALL && c != (uint32_t)(set.mch - MCH_ALL - 1)) continue;   /* (CH n > SEL: another
                                                  * channel's, nothing; its CCs too) */
-            if (ty == 0xB0u) { midi_cc(d1, d2 & 0x7Fu); continue; }
+            if (ty == 0xB0u) {
+                if (d1 == 120u || d1 == 123u)   /* (V2) ALL SOUND OFF, ALL NOTES OFF (a DAW's stop): the notes MIDI
+                                                 * holds on that channel's track (ALL > SEL, CH n > SEL: all four) let
+                                                 * go; a latched note stays */
+                    for (n = 0; n < 128u; n++)
+                        for (m = 0; m < NT; m++)
+                            if ((midi_held[n] >> m & 1u) && (set.mch >= MCH_ALL || c - set.mch == m)) {
+                                nq_note(NQ_OFF, m, 0, MIDI_ID(n));
+                                midi_held[n] &= (uint8_t)~(0x11u << m);
+                            }
+                midi_cc(d1, d2 & 0x7Fu);
+                continue;
+            }
             if (!(on || off) || (echo_on[d1] >> c & 1u)) continue;   /* (our own notes come back: a computer's MIDI
                                                  * thru; never played again) */
             if (set.mch >= MCH_ALL) t = sel;
@@ -1934,17 +1952,28 @@ static void app_main(void)
             else continue;                      /* (not one of the tracks' channels) */
             n = sc_snap(d1);                    /* (a SCALE: its nearest note) */
             if (on && t == sel) ch_last = (int32_t)n;
+            if (off && (midi_held[d1] >> (4u + t) & 1u)) {   /* (V2) the off of a note that came again before it (a DAW's
+                                                 * loop: the earlier one's off, late): passed over, the note goes on */
+                midi_held[d1] &= (uint8_t)~(0x10u << t);
+                continue;
+            }
+            again = on && !trk[t].latch && (midi_held[d1] >> t & 1u);   /* (V2: a note-on again before its off) */
+            if (again && trk[t].arp) {          /* (the arp has it: kept as it is, no new start) */
+                midi_held[d1] |= (uint8_t)(0x10u << t);
+                continue;
+            }
             for (m = 0; m < NT; m++)            /* LATCH OFF: the voices it started released (a note-on again without
                                                  * its off: those first); ALL > SEL: whichever track it went to */
                 if ((midi_held[d1] >> m & 1u) && (m == t || set.mch >= MCH_ALL)) {
                     nq_note(NQ_OFF, m, 0, MIDI_ID(d1));
-                    midi_held[d1] &= (uint8_t)~(1u << m);
+                    midi_held[d1] &= (uint8_t)~(0x11u << m);
                 }
             if (on && trk[t].latch)
                 nq_note(NQ_TOGGLE, t, n, MIDI_ID(d1));
             else if (on) {
                 nq_note(NQ_ON, t, n, MIDI_ID(d1));
                 midi_held[d1] |= (uint8_t)(1u << t);
+                if (again) midi_held[d1] |= (uint8_t)(0x10u << t);
             }
         }
         midi_out();                             /* the notes out over USB-MIDI (the echoes from the audio ISR) */
