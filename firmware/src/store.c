@@ -295,9 +295,17 @@ static int snd_put(uint32_t i, const uint8_t *rec)   /* slot i := rec (0: cleare
     return st_write(0, st_img);
 }
 /* (V2) PHASE's LINE 2 and envelopes in a sound (bytes 18 .. 24, the FM patch's room: a PHASE sound's free; saved
- * before: 0, all as before): 18 bit 0 RING, bit 1 NOISE */
-static void pd_pk(uint8_t *r, uint32_t t) { r[0] = (uint8_t)((trk[t].pd_ring != 0) | (trk[t].pd_noise != 0) << 1); }
-static void pd_uk(const uint8_t *r, uint32_t t) { trk[t].pd_ring = r[0] & 1u, trk[t].pd_noise = r[0] >> 1 & 1u; }
+ * before: 0, all as before): 18 bit 0 RING, bit 1 NOISE; 19 LINE 2's WAVE (0 SAME, 1 .. 8); 20 its DCW (0 SAME, 1 .. 127) */
+static void pd_pk(uint8_t *r, uint32_t t)
+{
+    r[0] = (uint8_t)((trk[t].pd_ring != 0) | (trk[t].pd_noise != 0) << 1);
+    r[1] = (uint8_t)clamp(trk[t].pd_wav, 0, 8), r[2] = (uint8_t)clamp(trk[t].pd_dcw, 0, 127);
+}
+static void pd_uk(const uint8_t *r, uint32_t t)
+{
+    trk[t].pd_ring = r[0] & 1u, trk[t].pd_noise = r[0] >> 1 & 1u;
+    trk[t].pd_wav = r[1] <= 8u ? r[1] : 0, trk[t].pd_dcw = r[2] & 127u;
+}
 static void snd_pack(uint8_t *r, uint32_t t, uint32_t cat, uint32_t num)   /* track t's sound as a record */
 {
     uint32_t k, e = (uint32_t)clamp(trk[t].eng, 0, NENG - 1);
@@ -385,7 +393,7 @@ static uint32_t cat_len(uint32_t c)
 /* ---- packing: a track (52 B), a sequence (260 B), a track's step locks (288 B) */
 /* (V2) a track's newer settings in the spare bits of its 52 bytes (their values never use them; every save before
  * has 0 there: all off, as before): bit 7 of bytes 1 .. 30, 33 .. 36, 38 .. 42, 47 .. 49; bits 3 .. 6 of byte 25
- * (PHASE's WAVE, 0 .. 7), 4 .. 6 of byte 26 (its WAVE2, 0 .. 8). In order: PHASE's RING, NOISE; GLIDE (7) */
+ * (PHASE's WAVE, 0 .. 7), 4 .. 6 of byte 26 (its WAVE2, 0 .. 8). In order: PHASE's RING, NOISE; GLIDE (7); LINE 2's WAVE (4), DCW (7) */
 static const uint16_t XB_POS[49] = {
     1 << 3 | 7, 2 << 3 | 7, 3 << 3 | 7, 4 << 3 | 7, 5 << 3 | 7, 6 << 3 | 7, 7 << 3 | 7, 8 << 3 | 7, 9 << 3 | 7, 10 << 3 | 7,
     11 << 3 | 7, 12 << 3 | 7, 13 << 3 | 7, 14 << 3 | 7, 15 << 3 | 7, 16 << 3 | 7, 17 << 3 | 7, 18 << 3 | 7, 19 << 3 | 7,
@@ -442,6 +450,8 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
         xb_put(q, &at, trk[t].pd_ring != 0, 1);
         xb_put(q, &at, trk[t].pd_noise != 0, 1);
         xb_put(q, &at, (uint32_t)clamp(trk[t].glide, 0, 127), 7);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_wav, 0, 8), 4);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_dcw, 0, 127), 7);
     }
     return q + TRK_PK;
 }
@@ -470,6 +480,8 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
         trk[t].pd_ring = (int32_t)xb_get(q, &at, 1);
         trk[t].pd_noise = (int32_t)xb_get(q, &at, 1);
         trk[t].glide = (int32_t)xb_get(q, &at, 7);
+        trk[t].pd_wav = (int32_t)xb_get(q, &at, 4), trk[t].pd_wav = trk[t].pd_wav > 8 ? 0 : trk[t].pd_wav;
+        trk[t].pd_dcw = (int32_t)xb_get(q, &at, 7);
     }
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];

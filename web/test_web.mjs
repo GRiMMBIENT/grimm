@@ -323,10 +323,10 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   {                                                          // (GR!MM 2.0: PHASE's LINE 2 and envelopes, a sound's bytes 18 ..)
     const ps = parseSound(Uint8Array.from(meta.factory[3].rec), meta);   // LAST LIGHT (PHASE)
     const pd0 = JSON.stringify(ps.pd);
-    ps.pd.ring = 1, ps.pd.noise = 1, ps.glide = 77;
+    ps.pd.ring = 1, ps.pd.noise = 1, ps.pd.wave = 5, ps.pd.dcw = 99, ps.glide = 77;
     await cl.trackSet(2, buildRecord(ps));
     const pb = parseSound((await cl.track(2)).rec, meta);
-    check(ps.eng === 6 && pd0 === JSON.stringify({ ring: 0, noise: 0 }) && JSON.stringify(pb.pd) === JSON.stringify(ps.pd) &&
+    check(ps.eng === 6 && pd0 === JSON.stringify({ ring: 0, noise: 0, wave: 0, dcw: 0 }) && JSON.stringify(pb.pd) === JSON.stringify(ps.pd) &&
           pb.glide === 77 && pb.latch === ps.latch,
           `editor: PHASE's LINE 2 and GLIDE set live on track 3, read back (${JSON.stringify(pb.pd)}, GLIDE ${pb.glide}); a factory sound's all off`);
   }

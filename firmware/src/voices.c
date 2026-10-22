@@ -73,6 +73,7 @@ typedef struct {
     volatile int32_t tap;                       /* (V2) MIXER 1: the TAPE send, 0..127 (tapefx.c tape_send) */
     volatile int32_t vty;                       /* (V2) VOICE's TYPE (VT_: SOLO, GREGORIAN, NUNS, CATHEDRAL; formant.c) */
     volatile int32_t pd_ring, pd_noise;         /* (V2) PHASE's LINE 2: RING (line 1 x line 2), NOISE (phase.c) */
+    volatile int32_t pd_wav, pd_dcw;            /* (V2) LINE 2's WAVE (0 SAME: line 1's, 1 .. 8), DCW (0 SAME, 1 .. 127) */
     volatile int32_t glide;                     /* (V2) SOURCE's GLIDE: 0 off, 1 .. 127 (~10 ms .. 2.5 s; vc_gl) */
 } track_t;
 #define TRK_DEF {ENG_VA, {{0, 10, 90, 30}, {0, 64, 64, 20}, {0, 0, 127, 0}, {0, 12, 64, 10}, {4, 0, 40, 0}, {0, 64, 80, 64}, {0, 0, 60, 0}}, 100, 0, 100, 0, 64, 0, \

@@ -12,6 +12,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **Each track's filter** can be a low-pass, high-pass or band-pass, and can sit before or after the effect sends: MIXER 2's **TYPE** and **POS**. See [HOME](#2-home).
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched; SYSTEM 3's **VELOCITY** lets MIDI notes play as loud as they were played; SOURCE's **GLIDE** slides each note from the one before.
+- **PHASE's LINE 2:** a new page after SOURCE on PHASE tracks gives the second line its own **WAVE** and **DCW**, **RING** (line 1 × line 2) and **NOISE**, as on a Casio CZ. See [Sounds](#3-sounds-edit).
 - **VOICE choirs from real singers:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of six singers on every note, made from recordings of real singers: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
 - **GENERATE:** hold FX and tap a black key to let a track play random notes of the scale by itself, in three moods (DRIFT, PULSE, STORM), each track with its own mode, octave and range, shown on the PERFORM screen. See [Performance](#10-performance-hold-fx).
 - **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. See [HOME](#2-home).
@@ -142,11 +143,14 @@ The choir recordings are from **VocalSet** (Wilkins, Seetharaman, Wahl, Pardo, N
 
 ### PHASE's LINE 2 page
 
-On a **PHASE** track, EDIT has one more page after SOURCE: **LINE 2**. PHASE plays two lines, like a Casio CZ: line 1 is WAVE / WAVE2 bent by DCW; line 2 joins in when DETUNE is up (a copy of line 1, DETUNE cents higher) or when this page asks for it. Everything on it is saved with the sound (and with the project); every sound made before has it all off, so it sounds as it did.
+On a **PHASE** track, EDIT has one more page after SOURCE: **LINE 2**. PHASE plays two lines, like a Casio CZ: line 1 is WAVE / WAVE2 bent by DCW; line 2 joins in when DETUNE is up (a copy of line 1, DETUNE cents higher) or when this page asks for it, and here it can have a wave and a bend of its own (as the CZ's two lines). Everything on it is saved with the sound (and with the project); every sound made before has it all off, so it sounds as it did.
 
 | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|
-| – | – | RING: OFF / ON | NOISE: OFF / ON |
+| WAVE: SAME, SAW, SQR, PLS, DSIN, SPLS, RSAW, RTRI, RTRP | DCW: SAME, 1–100 % | RING: OFF / ON | NOISE: OFF / ON |
+
+- **WAVE:** line 2's wave. SAME (the default) plays line 1's (with WAVE2 every other cycle, as before); any other wave plays that one every cycle, mixed with line 1. It brings line 2 in by itself, at line 1's pitch unless DETUNE is up: a SAW over a DSIN, an RTRI over a SQR…
+- **DCW:** line 2's bend. SAME (the default) follows line 1's DCW; any other value bends line 2 that much, so one line can stay soft while the other bites. It also brings line 2 in by itself.
 
 - **RING:** line 1 × line 2 (ring modulation, as the CZ's) instead of the two mixed: metallic, bell-like, clangorous. Try it with DETUNE up: the further apart the two lines, the stranger.
 - **NOISE:** noise roughens line 2 (as the CZ's noise modulation): breathy, gritty, for winds, ghosts and broken radios. It brings line 2 in by itself; with RING too, the noise rings against line 1.

@@ -463,9 +463,13 @@ function drawEditor() {
   if (s.eng === 3)                                           // (GR!MM 2.0: VOICE's TYPE, as SOURCE's KNOB 3)
     choice(g, "TYPE", ["SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"], () => s.vtype || 0, (v) => { s.vtype = v; });
   if (s.eng === 6) {                                         // (GR!MM 2.0: PHASE's LINE 2 page)
-    s.pd = s.pd || { ring: 0, noise: 0 };
+    s.pd = s.pd || { ring: 0, noise: 0, wave: 0, dcw: 0 };
     const p2 = el("div", { cls: "grp" }, ed);
     el("h3", {}, p2, "PHASE: LINE 2");
+    choice(p2, "WAVE", ["SAME", "SAW", "SQR", "PLS", "DSIN", "SPLS", "RSAW", "RTRI", "RTRP"], () => s.pd.wave || 0,
+           (v) => { s.pd.wave = v; });
+    control(p2, "DCW", 0, 127, () => s.pd.dcw || 0, (v) => { s.pd.dcw = v; },
+            (v) => (v ? `${Math.round((v * 100 + 63) / 127)}%` : "SAME"));
     toggle(p2, ["RING OFF", "RING ON"], () => s.pd.ring, (v) => { s.pd.ring = v; });
     toggle(p2, ["NOISE OFF", "NOISE ON"], () => s.pd.noise, (v) => { s.pd.noise = v; });
   }

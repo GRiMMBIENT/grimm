@@ -101,12 +101,19 @@ check("RING on: another sound, in range", " pd1 1,0" in out and r_b != base_b an
 out, n_b, n, pk = pd_on("pd_noise", "enc 5 1")
 check("NOISE on: another sound, in range", " pd1 0,1" in out and n_b != base_b and pk < 32767 and
       rms(n, 3200, 4800) > 100, f"peak {pk}")
-SV = PD + [(600, "enc 4 1"), (650, "enc 5 1"), (1700, "keys 0")]
+out, w_b, w, pk = pd_on("pd_wav", "enc 2 4")
+check("LINE 2's WAVE (DSIN): line 2 on, another sound, in range", " pd1 0,0,4,0" in out and w_b != base_b and pk < 32767 and
+      rms(w, 3200, 4800) > 100, f"peak {pk}")
+out, d_b, d, pk = pd_on("pd_dcw", "enc 3 100")
+check("LINE 2's DCW (100): line 2 on, another sound, in range", " pd1 0,0,0,100" in out and d_b != base_b and d_b != w_b and
+      pk < 32767 and rms(d, 3200, 4800) > 100, f"peak {pk}")
+SV = PD + [(600, "enc 4 1"), (650, "enc 5 1"), (660, "enc 2 6"), (670, "enc 3 33"), (1700, "keys 0")]
 o1, _, _ = run("pd_save", SV, 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "pdsaves.bin")))
 o2, _, _ = run("pd_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "pdsaves.bin")))
 o3, _, _ = run("pd_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
-check("RING, NOISE saved with the project, loaded; a GR!MM 1.0 project: off", " pd1 1,1" in o2 and " pd1 0,0" in o3,
-      f"{o2.split(' pd1 ')[1][:3] if ' pd1 ' in o2 else '?'} {o3.split(' pd1 ')[1][:3] if ' pd1 ' in o3 else '?'}")
+check("LINE 2 (RING, NOISE, WAVE, DCW) saved with the project, loaded; a GR!MM 1.0 project: off",
+      " pd1 1,1,6,33 " in o2 and " pd1 0,0,0,0 " in o3,
+      f"{o2.split(' pd1 ')[1][:9] if ' pd1 ' in o2 else '?'} {o3.split(' pd1 ')[1][:9] if ' pd1 ' in o3 else '?'}")
 
 # GLIDE (SOURCE, KNOB 4; EDIT: SOUND, SOURCE): off (as before): a second note straight there (to the byte, against the build
 # given, if one); on: the second note starts at the first's pitch and gets there; saved, loaded; 1.0: off
