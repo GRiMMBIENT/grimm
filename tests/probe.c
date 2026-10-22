@@ -32,7 +32,13 @@ static void host_probe(void)
                (int)trk[0].latch, (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch, n, sv_wait,
                sv_wait && fm1_ms - sv_said < SV_SAY_MS);
         P2 = brw_pos[sel] >= 0 ? cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel]) : 0;
-        printf(" eng %d slatch %d", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
+        printf(" eng %d slatch %d sname ", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
+        {                                       /* (V2: the factory sound PRESETS loaded, its name, "_" for a space) */
+            const char *nm = P2 ? snd_fname(P2) : 0;
+            for (; nm && *nm; nm++) putchar(*nm == ' ' ? '_' : *nm);
+            if (!nm) putchar('-');
+        }
+        printf(" vty %d vsh %d", (int)trk[sel].vty, (int)trk[sel].p[ENG_VOICE][1]);   /* (V2: VOICE's TYPE, SHIFT) */
         printf(" dv %d,%d,%d,%d", (int)trk[0].drv, (int)trk[1].drv, (int)trk[2].drv, (int)trk[3].drv);   /* (V2: the
                                                  * tracks' DRIVE sends) */
         printf(" t1mix %d,%d,%d,%d", (int)trk[0].level, (int)trk[0].dly, (int)trk[0].rev, (int)trk[0].grn);

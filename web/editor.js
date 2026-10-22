@@ -457,6 +457,8 @@ function drawEditor() {
     drawEditor(), drawTracks();
   });
   toggle(g, ["LATCH OFF", "LATCH ON"], () => s.latch, (v) => { s.latch = v; });
+  if (s.eng === 3)                                           // (GR!MM 2.0: VOICE's TYPE, as SOURCE's KNOB 3)
+    choice(g, "TYPE", ["SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"], () => s.vtype || 0, (v) => { s.vtype = v; });
 
   g = el("div", { cls: "grp" }, ed);
   el("h3", {}, g, `${eng.name}: ITS FOUR KNOBS`);

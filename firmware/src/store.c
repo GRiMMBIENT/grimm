@@ -87,6 +87,7 @@ _Static_assert(SND_N * SND_SIZE <= 4096u && OBJ_HDR + WORK_PK + 4u <= 4096u && 4
  * SHAPE 0 SINE, 1 TRIANGLE, 5 RANDOM, 6 DRIFT */
 #define FSND(c, n, e, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls)                                              \
     {SND_MAGIC1, c, n, e, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls}
+#define FSNDV(c, n, ty, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls)   /* (V2) VOICE and its TYPE (byte 18) */     {SND_MAGIC1, c, n, ENG_VOICE, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls, ty}
 static const uint8_t SND_FACTORY[][SND_FSIZE] = {
     /* PADS */
     FSND(CAT_PAD, 1, ENG_VA, 2, 70, 62, 20, 105, 100, 110, 100, 1, 0x11, 30, 15, 5, 0),     /* CRYPT PAD */
@@ -294,6 +295,7 @@ static void snd_pack(uint8_t *r, uint32_t t, uint32_t cat, uint32_t num)   /* tr
     for (k = 0; k < SND_SIZE; k++) r[k] = 0;
     r[0] = SND_MAGIC, r[1] = (uint8_t)cat, r[2] = (uint8_t)num, r[3] = (uint8_t)e;
     if (e == ENG_FM) pk_fm(r + 18, t);          /* (FM: its own patch) */
+    if (e == ENG_VOICE) r[18] = (uint8_t)clamp(trk[t].vty, 0, NVT - 1);   /* (V2: VOICE: its TYPE in the patch's room) */
     for (k = 0; k < 4u; k++) {
         r[4 + k] = (uint8_t)clamp(trk[t].p[e][k], 0, 255);
         r[8 + k] = (uint8_t)clamp(trk[t].env[k], 0, 127);
@@ -336,6 +338,7 @@ static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into tra
     ch_unpack(t, r[13]);
     lfo_uk(r + 14, t);                          /* (saved before the LFO: zeros, DEPTH 0) */
     if (e == ENG_FM) uk_fm(snd_fname(r) ? 0 : r + 18, t);   /* (FM: its patch; a factory sound's: the PATCH as built) */
+    if (e == ENG_VOICE) trk[t].vty = r[18] < NVT ? r[18] : VT_SOLO;   /* (V2: its TYPE; saved before: 0, SOLO) */
     if ((uint32_t)trk[t].eng != e) {
         trk[t].eng = (int32_t)e;
         nq_put(NQ_RESTART, t, 0);
@@ -375,6 +378,8 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
     q[0] = (uint8_t)clamp(trk[t].eng, 0, NENG - 1);
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) q[1 + e * 4u + k] = (uint8_t)clamp(trk[t].p[e][k], 0, 255);
+    q[1 + ENG_VOICE * 4u + 1u] = (uint8_t)(clamp(trk[t].p[ENG_VOICE][1], 0, 24) | clamp(trk[t].vty, 0, NVT - 1) << 5);   /*
+                                                 * (V2: VOICE's TYPE over its SHIFT, 0..24: 1.0 had 0 there) */
     for (k = 0; k < 4u; k++) q[33 + k] = (uint8_t)clamp(trk[t].env[k], 0, 127);
     q[29] = (uint8_t)(127 - clamp(trk[t].cut, 0, 127)), q[30] = (uint8_t)clamp(trk[t].res, 0, 127);   /* TRACK (0, 0, 0:
                                                  * open, 0, 100 %: as a save from before it) */
@@ -415,6 +420,7 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
     trk_def(q, n);                              /* (what an older save has not: as at power-on) */
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];
+    trk[t].p[ENG_VOICE][1] = q[1 + ENG_VOICE * 4u + 1u] & 31u, trk[t].vty = q[1 + ENG_VOICE * 4u + 1u] >> 5 & 3u;   /* (V2) */
     for (k = 0; k < 4u; k++) trk[t].env[k] = q[33 + k];
     if (trk[t].latch && !(q[37] & 1u)) {               /* (LATCH ON -> OFF: its latched notes released; at the bar, now) */
         if (!isr) nq_put(NQ_RELEASE, t, 0);

@@ -867,7 +867,7 @@ typedef struct {
 } page_t;
 static const page_t PAGES[NPAGE] = {
     {"SOUND", BTN_EDIT, 1, 1, 1, {"", "", "", ""}},   /* (the source's names) */
-    {"SOURCE", BTN_EDIT, 1, 1, 1, {"SOURCE", "LATCH", "", ""}},
+    {"SOURCE", BTN_EDIT, 1, 1, 1, {"SOURCE", "LATCH", "", ""}},   /* (V2: VOICE: KNOB 3 its TYPE) */
     {"ENV", BTN_ENV, 1, 1, 1, {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"}},
     {"LFO", BTN_LFO, 1, 1, 1, {"RATE", "DEPTH", "DESTINATION", "SHAPE"}},
     {"SCALE", BTN_SEL, 1, 0, 1, {"ROOT", "SCALE", "", ""}},
@@ -975,7 +975,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
                                                {&rv_size, &rv_damp, &rv_mix, &rv_pre}};
     switch (pg) {
     case PG_SOUND: return &trk[sel].p[sel_eng()][k];
-    case PG_SOURCE: return k == 0u ? &trk[sel].eng : k == 1u ? &trk[sel].latch : 0;
+    case PG_SOURCE: return k == 0u ? &trk[sel].eng : k == 1u ? &trk[sel].latch : k == 2u && sel_eng() == ENG_VOICE ? &trk[sel].vty : 0;
     case PG_ENV: return &trk[sel].env[k];
     case PG_SONG: return k == 0u ? &song_sect : k == 1u ? &song_pat[clamp(song_sect, 0, SONG_N - 1)] :
                          k == 2u ? &song_rep[clamp(song_sect, 0, SONG_N - 1)] : &song_mode;
@@ -1010,12 +1010,13 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
 }
 static const char *knob_name(uint32_t pg, uint32_t k)
 {
-    return pg == PG_SOUND ? sel_engine()->knob[k] : pg == PG_MIX1 && !k ? MX_NAME[clamp(mx_sq, 0, MX_N - 1)] : PAGES[pg].knob[k];
+    return pg == PG_SOUND ? sel_engine()->knob[k] : pg == PG_MIX1 && !k ? MX_NAME[clamp(mx_sq, 0, MX_N - 1)] :
+           pg == PG_SOURCE && k == 2u && sel_eng() == ENG_VOICE ? "TYPE" : PAGES[pg].knob[k];
 }
 static int32_t knob_max(uint32_t pg, uint32_t k)
 {
     static const int32_t GRID_MAX[4] = {127, 100, 4, SEQ_N}, PATT_MAX[4] = {SEQ_N, 7, 127, SEQ_NMODE - 1};
-    return pg == PG_SOUND ? sel_engine()->max[k] : pg == PG_SOURCE ? (k ? 1 : (int32_t)NENG - 1) :
+    return pg == PG_SOUND ? sel_engine()->max[k] : pg == PG_SOURCE ? (k == 2u ? NVT - 1 : k ? 1 : (int32_t)NENG - 1) :
            pg == PG_GRID ? GRID_MAX[k] : pg == PG_PATTERN ? PATT_MAX[k] :
            pg == PG_SOUNDS ? (k == 0u ? SND_N - 1 : k == 1u ? NCAT - 1 : k == 2u ? (int32_t)NENG : 2) :
            pg == PG_PROJECTS ? 3 : pg == PG_SCALE ? (k ? NSCALE - 1 : 11) : pg == PG_CHORD ? (k ? NVOICING - 1 : NCHORD - 1) :
@@ -1095,6 +1096,7 @@ static void knob_text(uint32_t pg, uint32_t k, char *s)   /* knob k's value on p
     case PG_SOURCE:
         if (k == 0u) put_s(s, sel_engine()->name);
         else if (k == 1u) put_s(s, v ? "ON" : "OFF");
+        else put_s(s, VT_NAME[clamp(v, 0, NVT - 1)]);   /* (V2: VOICE's TYPE) */
         return;
     case PG_ENV:                                /* (as env_coef: ms, Q16) */
         v = clamp(v, 0, 127);

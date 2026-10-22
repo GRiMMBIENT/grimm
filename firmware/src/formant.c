@@ -14,7 +14,12 @@
  *   SHIFT   all formants -12 .. +12 semitones (a smaller or a larger throat)
  *   BUZZ    the source: open quotient 0.9 .. 0.35 and its tilt (soft .. bright, buzzy)
  *   BREATH  noise from the glottis; at the top the voicing fades out (a whisper)
- * Voice state: ph[0] glottal phase, ph[1..2] F4 y1 / y2; vx_s: F1..F3 y1 / y2, the tilt. */
+ * (V2) TYPE (the track's vty, on SOURCE): SOLO, one voice as above; GREGORIAN, NUNS, CATHEDRAL, a choir a note
+ * (choir_block): three singers, each a glottis of its own (a little detuned, a slow random drift, a vibrato of its own
+ * rate), summed into one set of formants shifted for them (the men down, the women up; CATHEDRAL: two men and a woman
+ * an octave over them, the formants between theirs). Three, not more: a fourth singer or a second set of formants (one
+ * for the men, one for the women) does not fit the FM-1's time with six voices and the effects.
+ * Voice state: ph[0] glottal phase, ph[1..2] F4 y1 / y2; vx_s: F1..F3 y1 / y2, the tilt; vx_c: a choir's. */
 
 #define FMT_FOLOW 30                            /* formant key tracking: 30 / 127 (Felucca's) */
 
@@ -92,29 +97,51 @@ static void fres_coef(fres_t *r, uint32_t f16, uint32_t bw16)
     r->a = (1 << 30) - r->b - r->c;
 }
 
+/* (V2) the choirs: the formants' shift (1/16 semitones), the singers an octave up (bit k), each singer's detune
+ * (cents), the vibrato (cents), the drift (cents) */
+enum { VT_SOLO, VT_GREG, VT_NUNS, VT_CATH, NVT };
+static const char *const VT_NAME[NVT] = {"SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"};
+#define VT_SING 3u                              /* singers a note */
+static const struct {
+    int16_t sh;
+    uint8_t oct;
+    int8_t det[VT_SING];
+    uint8_t vib, drift;
+} VT[NVT] = {
+    {0, 0, {0, 0, 0}, 0, 0},
+    {-24, 0, {-7, 0, 6}, 4, 6},                 /* GREGORIAN: three low men, 1.5 semitones down, little vibrato */
+    {48, 0, {-6, 0, 5}, 14, 4},                 /* NUNS: three women, 3 semitones up, a gentle vibrato */
+    {8, 4, {-5, 6, 0}, 10, 5},                  /* CATHEDRAL: two men, a woman an octave over them, half a semitone up */
+};
+static const uint32_t VIB_INC[VT_SING] = {16517421u, 17764019u, 15582473u};   /* a control step's: 5.3, 5.7, 5.0 Hz
+                                                 * (2^32 x CTL / 44100 a Hz) */
+static struct {
+    uint32_t ph[VT_SING], vp[VT_SING];          /* each singer's glottal phase, vibrato phase */
+    int32_t dr[VT_SING], dt[VT_SING], nst;      /* its drift now, where it goes (cents x 256); the drift's random */
+} vx_c[NV];
+
 static void formant_begin(voice_t *v)           /* a note from silence: the opening starts at zero (no click) */
 {
-    uint32_t i;
+    uint32_t i, n = (uint32_t)(v - vc);
     v->ph[0] = v->ph[1] = v->ph[2] = 0;
     for (i = 0; i < 7u; i++)
-        vx_s[v - vc][i] = 0;
+        vx_s[n][i] = 0;
+    for (i = 0; i < VT_SING; i++)                /* (V2: the singers out of step, their vibratos too) */
+        vx_c[n].ph[i] = i * 0x55000000u, vx_c[n].vp[i] = i * 0x5A000000u + n * 0x11000000u, vx_c[n].dr[i] = vx_c[n].dt[i] = 0;
+    vx_c[n].nst = (int32_t)(0x9E3779B9u ^ (n * 0x85EBCA6Bu) ^ (uint32_t)formant_nz) | 1;
 }
 
-/* CTL frames of voice v, added to mono[] (eng_formant.c formant_render) */
-static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1)
+/* the four resonators of VOWEL, SHIFT (+ sh, 1/16 semitones: a choir's men or women) for a voice at pitch (inc its
+ * phase increment), and the output's gain og (and its presence, ogk) at BUZZ buzz */
+static void fmt_set(fres_t *r, int32_t *og_, int32_t *ogk_, const volatile int32_t *p, int32_t pitch, uint32_t inc,
+                    int32_t sh, int32_t buzz)
 {
-    int32_t *st = vx_s[v - vc], pitch = VP16(v), damp = amp1 - amp0;
-    fres_t r1, r2, r3, r4;
-    int32_t fa[3], ba[3], j, buzz, oq, tilt, gv, gn, og, ogk, br = clamp(p[3], 0, 127);
-    uint32_t inc = vinc(pitch), i, te, tp, rp, rn, ratio, f0;
-    uint32_t ph = v->ph[0];
-    int32_t y1 = st[0], y2 = st[1], y3 = st[2], y4 = st[3], y5 = st[4], y6 = st[5];
-    int32_t y7 = (int32_t)v->ph[1], y8 = (int32_t)v->ph[2], lp = st[6], nst = formant_nz;
-
+    int32_t fa[3], ba[3], j, og;
+    uint32_t ratio, f0;
     vowel_at(clamp(p[0], 0, 127) << 8, fa, ba);
     /* SHIFT (semitones) and the key tracking around C4 (fixed), one ratio for all four; Q at 64: the bandwidths as
      * they are */
-    ratio = fmt_ratio((clamp(p[1], 0, 24) - 12) * 16 + ((FMT_FOLOW * (pitch - 60 * 16) * 516) >> 16));
+    ratio = fmt_ratio((clamp(p[1], 0, 24) - 12) * 16 + sh + ((FMT_FOLOW * (pitch - 60 * 16) * 516) >> 16));
     f0 = (uint32_t)(((uint64_t)inc * 705600u) >> 32);   /* F0 in Hz * 16 */
     for (j = 0; j < 3; j++) {
         int32_t f = (int32_t)(((int64_t)fa[j] * ratio) >> 16), b = (int32_t)(((int64_t)ba[j] * ratio) >> 16);
@@ -126,14 +153,34 @@ static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
         fa[j] = clamp(f, 60 * 16, 7000 * 16);
         ba[j] = clamp(b, 20 * 16, 1500 * 16);
     }
-    fres_coef(&r1, (uint32_t)fa[0], (uint32_t)ba[0]);
-    fres_coef(&r2, (uint32_t)fa[1], (uint32_t)ba[1]);
-    fres_coef(&r3, (uint32_t)fa[2], (uint32_t)ba[2]);
-    fres_coef(&r4, (uint32_t)clamp((int32_t)((3300u * 16u * (uint64_t)ratio) >> 16), 60 * 16, 7000 * 16),
+    fres_coef(&r[0], (uint32_t)fa[0], (uint32_t)ba[0]);
+    fres_coef(&r[1], (uint32_t)fa[1], (uint32_t)ba[1]);
+    fres_coef(&r[2], (uint32_t)fa[2], (uint32_t)ba[2]);
+    fres_coef(&r[3], (uint32_t)clamp((int32_t)((3300u * 16u * (uint64_t)ratio) >> 16), 60 * 16, 7000 * 16),
               (uint32_t)clamp((int32_t)((250u * 16u * (uint64_t)ratio) >> 16), 20 * 16, 1500 * 16));
+    og = 13000;                                 /* output (Q at 64) */
+    og = (int32_t)(((int64_t)og * fmt_ratio((60 * 16 - pitch) / 4)) >> 16);   /* 1.5 dB / oct: low notes are sparse */
+    *og_ = og, *ogk_ = (og >> 2) * (4 + (buzz >> 10));   /* presence k = 1 .. 4.9 */
+}
+static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1, uint32_t ty);
 
+/* CTL frames of voice v, added to mono[] (eng_formant.c formant_render) */
+static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1)
+{
+    int32_t *st = vx_s[v - vc], pitch = VP16(v), damp = amp1 - amp0;
+    fres_t rr[4];
+    int32_t buzz, oq, tilt, gv, gn, og, ogk, br = clamp(p[3], 0, 127);
+    uint32_t inc = vinc(pitch), i, te, tp, rp, rn, ty = (uint32_t)trk[v->trk & 3u].vty;
+    uint32_t ph = v->ph[0];
+    int32_t y1 = st[0], y2 = st[1], y3 = st[2], y4 = st[3], y5 = st[4], y6 = st[5];
+    int32_t y7 = (int32_t)v->ph[1], y8 = (int32_t)v->ph[2], lp = st[6], nst = formant_nz;
+    fres_t r1, r2, r3, r4;
+
+    if (ty != VT_SOLO && ty < NVT) { choir_block(v, p, mono, amp0, amp1, ty); return; }   /* (V2: a choir) */
     /* the source: BUZZ -> open quotient and tilt */
     buzz = clamp(p[2], 0, 127) << 8;
+    fmt_set(rr, &og, &ogk, p, pitch, inc, 0, buzz);
+    r1 = rr[0], r2 = rr[1], r3 = rr[2], r4 = rr[3];
     oq = 58982 - ((buzz * 284) >> 8);           /* Q16: 0.90 .. 0.35 */
     tilt = 2500 + ((buzz * 109) >> 8);          /* one-pole coefficient Q14: dark .. open */
     te = (uint32_t)oq << 16;                    /* closure (end of the open phase) */
@@ -142,9 +189,6 @@ static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
     rn = (1u << 30) / (((te - tp) >> 16) | 1u);
     gv = 32767 - br * br * 2;                   /* BREATH: voicing fades at the top */
     gn = br * 258;                              /* noise: Q15, up to 1.0 */
-    og = 13000;                                 /* output (Q at 64) */
-    og = (int32_t)(((int64_t)og * fmt_ratio((60 * 16 - pitch) / 4)) >> 16);   /* 1.5 dB / oct: low notes are sparse */
-    ogk = (og >> 2) * (4 + (buzz >> 10));       /* presence k = 1 .. 4.9 */
 
     for (i = 0; i < (uint32_t)CTL; i++) {
         int32_t e, x, a, s;
@@ -181,6 +225,85 @@ static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
     v->ph[0] = ph;
     v->ph[1] = (uint32_t)y7;
     v->ph[2] = (uint32_t)y8;
+    formant_nz = nst;
+    st[0] = y1, st[1] = y2, st[2] = y3, st[3] = y4, st[4] = y5, st[5] = y6, st[6] = lp;
+}
+
+/* (V2) a choir's glottis at ph: the source above, its closure band-limited */
+static inline int32_t glottis(uint32_t ph, uint32_t inc, uint32_t tp, uint32_t te, uint32_t rp, uint32_t rn)
+{
+    int32_t e;
+    if (ph < tp)
+        e = (sine_i(((ph >> 16) * rp) << 1) * 17644) >> 15;
+    else if (ph < te)
+        e = -sine_i(((ph - tp) >> 16) * rn);
+    else
+        e = 0;
+    return e + (blep(ph - te, inc) >> 1);
+}
+/* (V2) CTL frames of a choir (TYPE ty) on voice v: VT's three singers, each its own pitch this step (its detune, drift
+ * and vibrato), their glottises summed (1 / sqrt(3)) through the tilt and the formants as SOLO's (its state: a TYPE
+ * changed while it sounds, no jump) */
+static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1, uint32_t ty)
+{
+    uint32_t n = (uint32_t)(v - vc), i, k, inc[VT_SING], te, tp, rp, rn, ph0, ph1, ph2, inc0;
+    int32_t *st = vx_s[n], pitch = VP16(v), damp = amp1 - amp0, br = clamp(p[3], 0, 127), buzz = clamp(p[2], 0, 127) << 8;
+    int32_t oq, tilt, gv, gn, og, ogk, nst = formant_nz;
+    int32_t y1 = st[0], y2 = st[1], y3 = st[2], y4 = st[3], y5 = st[4], y6 = st[5];
+    int32_t y7 = (int32_t)v->ph[1], y8 = (int32_t)v->ph[2], lp = st[6];
+    fres_t rr[4], r1, r2, r3, r4;
+
+    inc0 = vinc(pitch);
+    fmt_set(rr, &og, &ogk, p, pitch, inc0, VT[ty].sh, buzz);
+    r1 = rr[0], r2 = rr[1], r3 = rr[2], r4 = rr[3];
+    for (k = 0; k < VT_SING; k++) {             /* each singer's pitch: detune, drift (a new aim now and then, glided
+                                                 * to), vibrato (cents x 256) */
+        uint32_t b = VT[ty].oct >> k & 1u ? vinc(pitch + 192) : inc0, rv = noise32(&vx_c[n].nst);
+        int32_t d;
+        if (!(rv & 511u)) vx_c[n].dt[k] = ((int32_t)(rv >> 16 & 255u) - 128) * VT[ty].drift * 2;
+        vx_c[n].dr[k] += (vx_c[n].dt[k] - vx_c[n].dr[k]) >> 8;
+        vx_c[n].vp[k] += VIB_INC[k];
+        d = VT[ty].det[k] * 256 + vx_c[n].dr[k] + ((sine_i(vx_c[n].vp[k]) * VT[ty].vib) >> 7);
+        inc[k] = b + (uint32_t)(int32_t)(((int64_t)b * (d * 38)) >> 24);   /* (2^(c / 1200) ~ 1 + c x 0.000578) */
+    }
+    ph0 = vx_c[n].ph[0], ph1 = vx_c[n].ph[1], ph2 = vx_c[n].ph[2];
+    oq = 58982 - ((buzz * 284) >> 8);           /* the source as SOLO's */
+    tilt = 2500 + ((buzz * 109) >> 8);
+    te = (uint32_t)oq << 16;
+    tp = (te >> 8) * 166u;
+    rp = (1u << 30) / ((tp >> 16) | 1u);
+    rn = (1u << 30) / (((te - tp) >> 16) | 1u);
+    gv = 32767 - br * br * 2;
+    gn = br * 258;
+
+    for (i = 0; i < (uint32_t)CTL; i++) {
+        int32_t e, x, a, s;
+        e = glottis(ph0, inc[0], tp, te, rp, rn) + glottis(ph1, inc[1], tp, te, rp, rn) + glottis(ph2, inc[2], tp, te, rp, rn);
+        e = ((e >> 2) * 18919) >> 13;           /* (1 / sqrt(3), no overflow) */
+        lp += ((e - lp) * tilt) >> 14;
+        x = (lp * gv) >> 15;
+        if (gn) {
+            int32_t nz = (((int32_t)(noise32(&nst) >> 16) - 32768) * gn) >> 15;
+            x += ph0 < te ? nz : nz >> 1;
+        }
+        a = (int32_t)(((int64_t)r1.a * (x << 6) + (int64_t)r1.b * y1 + (int64_t)r1.c * y2 + (1 << 29)) >> 30);
+        y2 = y1;
+        y1 = a;
+        a = (int32_t)(((int64_t)r2.a * a + (int64_t)r2.b * y3 + (int64_t)r2.c * y4 + (1 << 29)) >> 30);
+        y4 = y3;
+        y3 = a;
+        a = (int32_t)(((int64_t)r3.a * a + (int64_t)r3.b * y5 + (int64_t)r3.c * y6 + (1 << 29)) >> 30);
+        y6 = y5;
+        y5 = a;
+        a = (int32_t)(((int64_t)r4.a * a + (int64_t)r4.b * y7 + (int64_t)r4.c * y8 + (1 << 29)) >> 30);
+        y8 = y7;
+        y7 = clamp(a, -(1 << 28), 1 << 28);
+        s = soft_knee(clamp((int32_t)(((int64_t)y7 * og + (int64_t)(y7 - y8) * ogk) >> 21), -200000, 200000), 24000);
+        ph0 += inc[0], ph1 += inc[1], ph2 += inc[2];
+        mono[i] += mulq15(mulq15(s, amp_at(amp0, damp, (int32_t)i)), VOICE_LV);
+    }
+    vx_c[n].ph[0] = ph0, vx_c[n].ph[1] = ph1, vx_c[n].ph[2] = ph2;
+    v->ph[1] = (uint32_t)y7, v->ph[2] = (uint32_t)y8;
     formant_nz = nst;
     st[0] = y1, st[1] = y2, st[2] = y3, st[3] = y4, st[4] = y5, st[5] = y6, st[6] = lp;
 }

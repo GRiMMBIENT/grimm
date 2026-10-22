@@ -63,8 +63,9 @@ static const uint8_t *ed_bytes(uint32_t o)      /* object o as it is now (0: no 
     if (o >= EO_SMP && o < EO_SND) return sample_flash() ? sample_flash() + (o - EO_SMP) * SMP_SLOT_SIZE : 0;
     if (o < EO_SND) return slots[o - EO_SLOT];
     if (o < EO_FACT) return save_flash(0) ? save_flash(0) + (o - EO_SND) * SND_SIZE : 0;
-    for (k = 0; k < SND_SIZE; k++)              /* (a factory sound: as a user's record, no FM patch of its own) */
-        ED_FX[k] = k < SND_FSIZE && k < 18u ? SND_FACTORY[o - EO_FACT][k] : 0u;
+    for (k = 0; k < SND_SIZE; k++)              /* (a factory sound: as a user's record, no FM patch of its own; V2:
+                                                 * byte 18 VOICE's TYPE, 0 in the others) */
+        ED_FX[k] = k < SND_FSIZE && k < 19u ? SND_FACTORY[o - EO_FACT][k] : 0u;
     ED_FX[0] = SND_MAGIC;
     st_wr32(ED_FX + 60, st_crc(ED_FX, 60));
     return ED_FX;

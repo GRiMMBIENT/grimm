@@ -364,7 +364,8 @@ export function parseSound(r, meta) {                        // a record -> a so
   const name = String.fromCharCode(...r.slice(50, 60).filter((c) => c >= 32 && c < 127)).trim();
   return { cat: r[1], num: r[2], eng: r[3], k: [...r.slice(4, 8)], env: [...r.slice(8, 12)], latch: r[12],
            chordOn: r[13] >> 7, voicing: (r[13] >> 4) & 7, chord: r[13] & 15, lfo: [...r.slice(14, 18)],
-           fm: { alg: fm[0] & 31, fb: fm[1] & 7, ops: [0, 1, 2, 3, 4, 5].map((i) => [...fm.slice(2 + i * 5, 7 + i * 5)]) }, name };
+           fm: { alg: fm[0] & 31, fb: fm[1] & 7, ops: [0, 1, 2, 3, 4, 5].map((i) => [...fm.slice(2 + i * 5, 7 + i * 5)]) }, name,
+           vtype: r[3] === 3 && r[18] < 4 ? r[18] : 0 };      // (GR!MM 2.0: VOICE's TYPE, byte 18; before: SOLO)
 }
 export function buildRecord(s) {
   const r = new Uint8Array(SND);
@@ -376,6 +377,7 @@ export function buildRecord(s) {
     r[18] = 0x80 | (s.fm.alg & 31), r[19] = s.fm.fb & 7;
     s.fm.ops.forEach((o, i) => r.set(o, 20 + i * 5));
   }
+  if (s.eng === 3) r[18] = (s.vtype || 0) & 3;               // (GR!MM 2.0: VOICE's TYPE: SOLO, GREGORIAN, NUNS, CATHEDRAL)
   const nm = (s.name || "").toUpperCase().replace(/[^\x20-\x7e]/g, "").slice(0, 10);
   for (let i = 0; i < nm.length; i++) r[50 + i] = nm.charCodeAt(i);
   new DataView(r.buffer).setUint32(60, crc32(r.subarray(0, 60)), true);

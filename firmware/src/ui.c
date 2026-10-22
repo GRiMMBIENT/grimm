@@ -317,7 +317,10 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         }
         ui_3(S->val, ui_pc(v));
         return;
-    case PG_SOURCE: put_s(S->val, k ? (v ? "ON" : "OFF") : ENGINES[clamp(v, 0, NENG - 1)]->name); return;
+    case PG_SOURCE:                             /* SOURCE, LATCH, (V2) VOICE's TYPE */
+        if (k == 2u) { static const char *const VS[NVT] = {"SOLO", "GREG", "NUNS", "CATHED"}; put_s(S->val, VS[clamp(v, 0, NVT - 1)]); return; }
+        put_s(S->val, k ? (v ? "ON" : "OFF") : ENGINES[clamp(v, 0, NENG - 1)]->name);
+        return;
     case PG_SYSTEM:                             /* COLOUR, MIDI ("ALL": ALL > SEL; "CH5>S": CH 5 > SEL), TUNE, SCREEN
                                                  * OFF ("NVR": full) */
         if (k == 0u) S->fill = (uint8_t)(2 * v + 2), put_s(S->val, COL_NAME[clamp(v, 0, 3)]);
@@ -1052,6 +1055,10 @@ static void pic_source(void)                    /* the seven sources, the track'
     ui_text(140, 60, "LATCH", 1, UI_M);
     ui_rect(140, 74, 64, 24, trk[sel].latch ? ui_acc : UI_D);
     ui_text(140 + (trk[sel].latch ? 16 : 8), 78, trk[sel].latch ? "ON" : "OFF", 2, trk[sel].latch ? UI_K : UI_L);
+    if (e == ENG_VOICE) {                       /* (V2) VOICE's TYPE: one singer, or a choir a note */
+        ui_text(140, 112, "TYPE", 1, UI_M);
+        ui_text(140, 126, VT_NAME[clamp(trk[sel].vty, 0, NVT - 1)], 1, trk[sel].vty ? ui_acc : UI_L);
+    }
 }
 
 static void pic_env(void)                       /* Env: the shape of the track's ATTACK, DECAY, SUSTAIN, RELEASE */
@@ -1729,7 +1736,7 @@ static uint32_t ui_pic_key(void)
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
-            UI_H(trk[t].drv), UI_H(trk[t].tap),
+            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);
