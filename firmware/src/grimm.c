@@ -875,8 +875,9 @@ static const page_t PAGES[NPAGE] = {
     {"SONG", BTN_GLO, 1, 0, 1, {"SECTION", "PATTERN", "REPEATS", "MODE"}},
     {"HOME", BTN_HOME, 1, 1, 1, {"VOLUME", "CUTOFF", "RESONANCE", "FX"}},   /* (the track's: its LEVEL, its filter, its
                                                  * sends together; its sound's name in the header) */
-    {"MIXER 1", BTN_HOME, 1, 1, 1, {"SEND", "LEVEL", "", ""}},   /* (V2: SELECT picks the send KNOB 1 sets: DLY,
-                                                 * REV, GRAIN, DRIVE; its links as before, cc_apply: mx_link) */
+    {"MIXER 1", BTN_HOME, 1, 1, 1, {"LEVEL", "", "", ""}},   /* (V2: six tiles, SELECT picks the one KNOB 1 sets:
+                                                 * LEVEL, DLY, REV, TAPE, GRAIN, DRIVE; its links as before, cc_apply:
+                                                 * mx_link) */
     {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "TYPE", "POS", ""}},   /* (V2: the track filter's TYPE and POS) */
     {"SYSTEM", BTN_HOME, 1, 0, 0, {"COLOUR", "MIDI CHANNEL", "TUNE", "SCREEN OFF"}},   /* (HOME held; HOME again: */
     {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", "CLOCK"}},       /* SYSTEM 2, SYSTEM 3, and
@@ -908,18 +909,29 @@ static int pg_on(uint32_t p)                    /* in its button's round now (FM
     return PAGES[p].cyc && ((p != PG_FMALGO && p != PG_FMOP) || clamp(trk[sel].eng, 0, NENG - 1) == ENG_FM);
 }
 static volatile int32_t fm_op;                  /* FM ALGO's OP: the operator FINE and FM OP's knobs edit (0 = OP1) */
-static volatile int32_t mx_sq;                  /* (V2) MIXER 1: the send SELECT picks (0 DLY, 1 REV, 2 GRAIN, 3 DRIVE) */
-static const char *const MX_SEND[4] = {"DLY SEND", "REV SEND", "GRAIN SEND", "DRIVE SEND"};
-static volatile int32_t *mx_send(uint32_t t, uint32_t s)   /* track t's send s (mx_sq's) */
+static volatile int32_t mx_sq;                  /* (V2) MIXER 1: the tile SELECT picks (MX_NAME's: the top row, then the
+                                                 * bottom one) */
+enum { MX_LEVEL, MX_DLY, MX_REV, MX_TAPE, MX_GRAIN, MX_DRIVE, MX_N };
+static const char *const MX_NAME[MX_N] = {"LEVEL", "DLY SEND", "REV SEND", "TAPE SEND", "GRAIN SEND", "DRIVE SEND"};
+static volatile int32_t *mx_tile(uint32_t t, uint32_t i)   /* track t's tile i (MX_) */
 {
-    return s == 0u ? &trk[t].dly : s == 1u ? &trk[t].rev : s == 2u ? &trk[t].grn : &trk[t].drv;
+    return i == MX_LEVEL ? &trk[t].level : i == MX_DLY ? &trk[t].dly : i == MX_REV ? &trk[t].rev : i == MX_TAPE ?
+           &trk[t].tap : i == MX_GRAIN ? &trk[t].grn : &trk[t].drv;
 }
-static volatile int32_t *mx_link(const uint8_t *L)   /* a MIDI LEARN link to MIXER 1: x 0 its knobs as they were
-                                                 * (1.0: LEVEL, DLY, REV, GRAIN SEND), x 4 the DRIVE send */
+static volatile int32_t *mx_send(uint32_t t, uint32_t s)   /* track t's send s as the editor has them (DLY, REV,
+                                                 * GRAIN, DRIVE) */
 {
-    uint32_t t = L[3] & 3u, k = L[2] & 3u;
-    return L[4] == 4u ? &trk[t].drv : k ? mx_send(t, k - 1u) : &trk[t].level;
+    static const uint8_t S[4] = {MX_DLY, MX_REV, MX_GRAIN, MX_DRIVE};
+    return mx_tile(t, S[s & 3u]);
 }
+static const uint8_t MX_LK[MX_N][2] = {{0, 0}, {1, 0}, {2, 0}, {0, 5}, {3, 0}, {0, 4}};   /* a tile's MIDI LEARN link:
+                                                 * knob, x (1.0's knobs: LEVEL, DLY, REV, GRAIN SEND; x 4 DRIVE, 5 TAPE) */
+static uint32_t mx_of_link(const uint8_t *L)    /* a link to MIXER 1: its tile */
+{
+    static const uint8_t K[4] = {MX_LEVEL, MX_DLY, MX_REV, MX_GRAIN};
+    return L[4] == 4u ? MX_DRIVE : L[4] == 5u ? MX_TAPE : K[L[2] & 3u];
+}
+static volatile int32_t *mx_link(const uint8_t *L) { return mx_tile(L[3] & 3u, mx_of_link(L)); }
 static const char *const BTN_NAME[14] = {"OCT-", "OCT+", "FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP",
                                          "SEQ", "PLAY", "REC"};
 #define BTN_PAGES (1u << BTN_EDIT | 1u << BTN_ENV | 1u << BTN_LFO | 1u << BTN_SEL | 1u << BTN_GLO | 1u << BTN_HOME | \
@@ -974,7 +986,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_ARP: return k == 0u ? &trk[sel].arp_mode : k == 1u ? &trk[sel].arp_rate : k == 2u ? &trk[sel].arp_oct :
                         &trk[sel].arp_gate;
     case PG_HOME: return k == 0u ? &trk[sel].level : k == 1u ? &trk[sel].cut : k == 2u ? &trk[sel].res : &trk[sel].fx;
-    case PG_MIX1: return k == 0u ? mx_send(sel, (uint32_t)mx_sq) : k == 1u ? &trk[sel].level : 0;
+    case PG_MIX1: return k == 0u ? mx_tile(sel, (uint32_t)clamp(mx_sq, 0, MX_N - 1)) : 0;
     case PG_MIX2: return k == 0u ? &trk[sel].pan : k == 1u ? &trk[sel].ftype : k == 2u ? &trk[sel].fpos : 0;
     case PG_FMALGO: return k == 0u ? &trk[sel].fm_alg : k == 1u ? &trk[sel].fm_fb : k == 2u ? &fm_op :
                            &trk[sel].fmo[clamp(fm_op, 0, 5)][FO_FINE];
@@ -998,7 +1010,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
 }
 static const char *knob_name(uint32_t pg, uint32_t k)
 {
-    return pg == PG_SOUND ? sel_engine()->knob[k] : pg == PG_MIX1 && !k ? MX_SEND[mx_sq & 3] : PAGES[pg].knob[k];
+    return pg == PG_SOUND ? sel_engine()->knob[k] : pg == PG_MIX1 && !k ? MX_NAME[clamp(mx_sq, 0, MX_N - 1)] : PAGES[pg].knob[k];
 }
 static int32_t knob_max(uint32_t pg, uint32_t k)
 {
@@ -1375,11 +1387,10 @@ static void learn_knob(uint32_t pg, uint32_t k) /* a knob turned while LEARN wai
     if (!learn_st || pg == PG_SYSTEM || pg == PG_SYS2 || pg == PG_SYS3 || PAGES[pg].btn == BTN_SAVE || pg == PG_PERFORM ||
         !knob_param(pg, k))
         return;
-    if (pg == PG_HOME && k == 0u) pg = PG_MIX1, k = 1u;   /* (HOME's VOLUME: the track's LEVEL, as MIXER 1's) */
-    if (pg == PG_MIX1) {                        /* (V2: linked as 1.0 linked them, mx_link: LEVEL k 0, a send k 1 + its
-                                                 * number; DRIVE's: k 0, x 4) */
-        learn_to[0] = (uint8_t)pg, learn_to[2] = (uint8_t)sel;
-        learn_to[1] = (uint8_t)(k == 1u || mx_sq >= 3 ? 0 : mx_sq + 1), learn_to[3] = (uint8_t)(k == 0u && mx_sq >= 3 ? 4 : 0);
+    if (pg == PG_MIX1 || (pg == PG_HOME && k == 0u)) {   /* (V2: linked as 1.0 linked them, MX_LK; HOME's VOLUME:
+                                                 * the track's LEVEL, as MIXER 1's) */
+        uint32_t i = pg == PG_HOME ? (uint32_t)MX_LEVEL : (uint32_t)clamp(mx_sq, 0, MX_N - 1);
+        learn_to[0] = PG_MIX1, learn_to[1] = MX_LK[i][0], learn_to[2] = (uint8_t)sel, learn_to[3] = MX_LK[i][1];
         learn_st = 2;
         return;
     }
@@ -1393,7 +1404,7 @@ static char *link_name(char *s, const uint8_t *L)   /* a link's parameter: "T1 C
 {
     uint32_t pg = L[1] % NPAGE, k = L[2] & 3u;
     if (PAGES[pg].own) s = put_s(put_u(put_s(s, "T"), (L[3] & 3u) + 1u), " ");
-    if (pg == PG_MIX1) return put_s(s, L[4] == 4u ? MX_SEND[3] : k ? MX_SEND[k - 1u] : "LEVEL");   /* (mx_link) */
+    if (pg == PG_MIX1) return put_s(s, MX_NAME[mx_of_link(L)]);   /* (mx_link) */
     return put_s(s, pg == PG_SOUND ? ENGINES[L[4] % NENG]->knob[k] : PAGES[pg].knob[k]);
 }
 static void learn_cc(uint32_t cc)               /* MOVE A CC: this one, linked */
@@ -1773,8 +1784,8 @@ static void app_main(void)
                 seq[sel].cursor = clamp(seq[sel].cursor + enc_accel(ENC_SELECT, d, SEQ_N - 1), 0, SEQ_N - 1);
             else if (page == PG_HOME && !ck_ext)   /* (a MIDI clock's tempo: not ours to turn) */
                 seq_bpm = clamp(seq_bpm + enc_accel(ENC_SELECT, d, 280), 20, 300);
-            else if (page == PG_MIX1)           /* (V2) MIXER 1: the send KNOB 1 sets */
-                mx_sq = clamp(mx_sq + d, 0, 3);
+            else if (page == PG_MIX1)           /* (V2) MIXER 1: the tile KNOB 1 sets */
+                mx_sq = clamp(mx_sq + d, 0, MX_N - 1);
         }
         if ((d = enc_take(ENC_PRESETS)) != 0) {   /* PRESETS: on SEQ's pages the tempo; elsewhere the saved sounds */
             t_touch = fm1_ms;

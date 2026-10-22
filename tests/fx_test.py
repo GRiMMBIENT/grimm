@@ -69,7 +69,7 @@ check("track HP: the lows down, the highs kept", lo_ < lb * 0.5 and h > hb * 0.6
 r, h, lo_, _ = measure(bp)
 check("track BP (RESONANCE 80): both ends down", lo_ < lb * 0.7 and h < hb * 0.8, f"hi {h:.0f}/{hb:.0f} lo {lo_:.0f}/{lb:.0f}")
 # POS: LP closed (CUTOFF 15), the REV send full, the sound let go at 3000: the reverb's tail measured
-SEND = [(300, "btn 8"), (310, "enc 0 1"), (320, "enc 2 127")]   # (MIXER 1: SELECT REV, KNOB 1: REV SEND 0 -> 127)
+SEND = [(300, "btn 8"), (310, "enc 0 2"), (320, "enc 2 127")]   # (MIXER 1: SELECT REVERB, KNOB 1: REV SEND 0 -> 127)
 pre, _, _ = run("pre", SEND + [(350, "btn 8"), (400, "enc 4 0")] + HOME + [(800, "enc 3 -112"), (3000, "keys 0")], 5000)
 post, pp, _ = run("post", SEND + [(350, "btn 8"), (400, "enc 4 1")] + HOME + [(800, "enc 3 -112"), (3000, "keys 0")], 5000)
 _, h_pre, _, _ = measure(pre, 3300, 4800)
@@ -119,13 +119,13 @@ def onset(a, b):                                # how suddenly render b leaves r
 
 
 # POS switched while it plays (REV SEND full, CUTOFF low): the reverb hears the change come in, not at once
-SETP = [(300, "btn 8"), (310, "enc 0 1"), (320, "enc 2 127")] + HOME + [(800, "enc 3 -100"), (2300, "btn 8"), (2350, "btn 8")]
+SETP = [(300, "btn 8"), (310, "enc 0 2"), (320, "enc 2 127")] + HOME + [(800, "enc 3 -100"), (2300, "btn 8"), (2350, "btn 8")]
 p0, _, _ = run("pos_steady", SETP, 3200)
 p1, _, _ = run("pos_switch", SETP + [(2500, "enc 4 1")], 3200)
 o = onset(p0, p1)
 check("track POS PRE -> POST while playing: no click (the change comes in over ~46 ms)", o < 0.06, f"{o:.2f}")
 # MASTER's POSITION switched while it plays (REV SEND full, LP at 50): PRE FX -> END comes in over ~46 ms
-SETM = [(300, "btn 8"), (310, "enc 0 1"), (320, "enc 2 127")] + FX(5) + [(1200, "enc 2 -77"), (1250, "enc 5 -2")]
+SETM = [(300, "btn 8"), (310, "enc 0 2"), (320, "enc 2 127")] + FX(5) + [(1200, "enc 2 -77"), (1250, "enc 5 -2")]
 m0, _, _ = run("mpos_steady", SETM, 3200)
 m1, _, _ = run("mpos_switch", SETM + [(2500, "enc 5 2")], 3200)
 o = onset(m0, m1)
@@ -145,7 +145,7 @@ check("a GR!MM 1.0 project: LP PRE, MASTER open (END), DRIVE off", "fx mf 127,0,
       p3.split(" fx ")[-1])
 # (V2) the tracks' DRIVE sends (MIXER 1: SELECT to DRIVE, KNOB 1): 0, the sound as without; up, T1's chord driven
 # beside its clean sound, by DRIVE's TYPE (the whole mix's DRIVE left off); saved, loaded; a 1.0 project: none
-DSEL = [(300, "btn 8"), (310, "enc 0 1"), (320, "enc 0 1"), (330, "enc 0 1")]   # (MIXER 1, DRIVE's square)
+DSEL = [(300, "btn 8"), (310, "enc 0 5")]      # (MIXER 1, DRIVE's tile)
 _, _, z_b = run("dv_zero", DSEL + [(400, "enc 2 60"), (450, "enc 2 -60")])
 check("a DRIVE send turned up and back to 0: the sound as without it, to the byte (after its ramp: the block it went)",
       measure(array.array("h", z_b[44:]), 2500, 4000) == measure(base, 2500, 4000))
@@ -172,5 +172,34 @@ _, pl, _ = run("links", [(1200, "midi 0xB0 20 64"), (1250, "midi 0xB0 21 127"), 
 mixv = pl.split(" t1mix ")[1].split()[0]
 check("MIDI LEARN: 1.0's MIXER 1 links (LEVEL, REV SEND) as they were; the DRIVE send's", mixv.startswith("64,") and
       mixv.split(",")[2] == "127" and " dv 100,0,0,0" in pl, f"T1 level,dly,rev,grn {mixv}; {pl.split(' dv ')[1][:12]}")
+# (V2) the tracks' TAPE sends (MIXER 1: SELECT to TAPE, KNOB 1): 0, the sound as without; up, T1's chord through a tape
+# of its own as TAPE has it (WOW, SATURATION, TONE) beside its clean sound; saved (beside ARP OCTAVES), loaded; 1.0: none
+TSEL = [(300, "btn 8"), (310, "enc 0 3")]      # (MIXER 1, TAPE's tile)
+_, _, tz_b = run("tp_zero", TSEL + [(400, "enc 2 60"), (450, "enc 2 -60")])
+check("a TAPE send turned up and back to 0: the sound as without it, to the byte (after its ramp and the line let out)",
+      measure(array.array("h", tz_b[44:]), 2500, 4000) == measure(base, 2500, 4000))
+tp, _, tp_b = run("tp_clean", TSEL + [(400, "enc 2 127")])
+r, h, lo_, pk = measure(tp)
+check("T1's TAPE send up, TAPE all 0: a clean copy beside the sound (louder; in range)",
+      r > rb * 1.3 and tp_b != base_b and pk <= 32767, f"rms {r:.0f}/{rb:.0f} peak {pk}")
+_, _, tps_b = run("tp_sat", TSEL + [(400, "enc 2 127")] + FX(1) + [(1200, "enc 3 110")])
+tpw, _, tpw_b = run("tp_wow", TSEL + [(400, "enc 2 127")] + FX(1) + [(1200, "enc 2 127")])
+_, _, wo_b = run("wow_only", FX(1) + [(1200, "enc 2 127")])
+r, h, lo_, pk = measure(tpw)
+check("the TAPE send by TAPE's SATURATION, its WOW (other sounds; the whole mix's TAPE as ever)",
+      tps_b != tp_b and tpw_b != tp_b and tpw_b != wo_b and pk <= 32767, f"peak {pk}")
+SV = TSEL + [(400, "enc 2 90"), (1700, "keys 0")]
+_, p1, _ = run("tp_save", SV + [(1800, "btn 10"), (1850, "enc 4 2")], 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "tsaves.bin")))
+_, p2, _ = run("tp_load", [(1050, "keys 0")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "tsaves.bin")))
+_, p3, _ = run("tp_v10", [(1050, "keys 0")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
+ao = p1.split(" ao ")[1].split()[0]
+check("the TAPE send saved, loaded (90), ARP OCTAVES beside it kept; a GR!MM 1.0 project: none",
+      " tp 90,0,0,0" in p1 and " tp 90,0,0,0" in p2 and ao == "3" and " ao 3" in p2 and " tp 0,0,0,0" in p3,
+      f"{p1.split(' tp ')[-1]} | {p2.split(' tp ')[-1]} | {p3.split(' tp ')[-1]}")
+st[22:27] = bytes([23, 8, 0, 0, 5])
+st[6] = 4
+(OUT / "links2.bin").write_bytes(bytes(st))
+_, pl, _ = run("links2", [(1200, "midi 0xB0 23 127")], 1500, dict(os.environ, GRIMM_SETTINGS_IN=str(OUT / "links2.bin")))
+check("MIDI LEARN: a link to the TAPE send (x 5)", " tp 127,0,0,0" in pl, pl.split(" tp ")[1][:16])
 print("fx test: passed" if not bad else "fx test: FAILED")
 sys.exit(1 if bad else 0)

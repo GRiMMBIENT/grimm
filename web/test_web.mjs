@@ -50,12 +50,12 @@ function run() {                                   // as worklet.js run()
 const BTN_FX = 2, BTN_EDIT = 6, BTN_HOME = 8, ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB3 = 4,
       ENC_KNOB4 = 5;
 const CHORD1 = 1 << 7 | 1 << 11 | 1 << 14, CHORD2 = 1 << 2 | 1 << 5 | 1 << 9;
-const SCRIPT = [[100, "btn", BTN_HOME], [105, "enc", ENC_SELECT, 2], [110, "enc", ENC_KNOB1, 100], [120, "btn", BTN_FX], [130, "enc", ENC_KNOB1, 40],
+const SCRIPT = [[100, "btn", BTN_HOME], [105, "enc", ENC_SELECT, 4], [110, "enc", ENC_KNOB1, 100], [120, "btn", BTN_FX], [130, "enc", ENC_KNOB1, 40],
                 [140, "enc", ENC_KNOB2, 50], [150, "enc", ENC_KNOB3, 60], [160, "enc", ENC_KNOB4, 30], [170, "btn", BTN_FX],
                 [180, "enc", ENC_KNOB3, 30], [500, "keys", CHORD1], [600, "keys", 0], [700, "enc", ENC_ALGORITHM, 1],
                 [710, "btn", BTN_EDIT], [720, "btn", BTN_EDIT], [730, "enc", ENC_KNOB1, 2], [740, "btn", BTN_EDIT],
                 [750, "btn", BTN_HOME], [760, "btn", BTN_HOME],
-                [765, "enc", ENC_SELECT, -2], [770, "enc", ENC_KNOB1, 80], [800, "keys", CHORD2],
+                [765, "enc", ENC_SELECT, -3], [770, "enc", ENC_KNOB1, 80], [800, "keys", CHORD2],
                 [900, "keys", 0], [2000, "btn", BTN_HOME], [2010, "btn", BTN_HOME], [3000, "btn", BTN_FX],
                 [4000, "btn", BTN_FX], [5000, "down", BTN_FX], [5010, "keys", 1], [5020, "keys", 0], [5030, "up", BTN_FX],
                 [7000, "keys", CHORD2], [7100, "keys", 0], [7200, "enc", ENC_ALGORITHM, -1], [7300, "keys", CHORD1],
@@ -209,13 +209,14 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
     const f0 = await cl.fx();
     await cl.fxSet(16, 60), await cl.fxSet(20, 90), await cl.fxSet(21, 9), await cl.fxSet(25, 2 | 4);
     const f1 = await cl.fx();
-    check(f0.length === 44 && f0[16] === 127 && f0[20] === 0 && f1[16] === 60 && f1[20] === 90 && f1[21] === 3 && f1[25] === 6,
+    check(f0.length === 48 && f0[16] === 127 && f0[20] === 0 && f1[16] === 60 && f1[20] === 90 && f1[21] === 3 && f1[25] === 6,
           `editor: FX read and set live (MASTER, DRIVE FOLD, T2's filter BP POST; a value past its range: its end)`);
     await cl.fxSet(16, 127), await cl.fxSet(20, 0), await cl.fxSet(21, 0), await cl.fxSet(25, 0);
-    await cl.fxSet(31, 70), await cl.fxSet(36, 33);          // (V2: T1's DRIVE send, T3's DLY send)
+    await cl.fxSet(31, 70), await cl.fxSet(36, 33), await cl.fxSet(45, 50);   // (V2: T1's DRIVE send, T3's DLY, T2's TAPE)
     const f2 = await cl.fx();
-    check(f2[31] === 70 && f2[36] === 33 && f0[31] === 0, `editor: FX: the tracks' sends read and set (T1 DRIVE ${f2[31]}, T3 DLY ${f2[36]})`);
-    await cl.fxSet(31, 0), await cl.fxSet(36, f0[36]);
+    check(f2[31] === 70 && f2[36] === 33 && f2[45] === 50 && f0[31] === 0 && f0[45] === 0,
+          `editor: FX: the tracks' sends read and set (T1 DRIVE ${f2[31]}, T3 DLY ${f2[36]}, T2 TAPE ${f2[45]})`);
+    await cl.fxSet(31, 0), await cl.fxSet(36, f0[36]), await cl.fxSet(45, 0);
   }
   const fr = 48000, n = 38400, wav = new Uint8Array(44 + n * 4), dv = new DataView(wav.buffer);   // 0.8 s, 16 bit stereo
   [..."RIFF"].forEach((c, i) => { wav[i] = c.charCodeAt(0); }), dv.setUint32(4, 36 + n * 4, true);

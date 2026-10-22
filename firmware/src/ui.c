@@ -1083,11 +1083,17 @@ static void pic_env(void)                       /* Env: the shape of the track's
     ui_cell(wa - 1, 3, ui_acc), ui_cell(wa, 3, ui_acc), ui_cell(wa - 1, 4, ui_acc), ui_cell(wa, 4, ui_acc);
 }
 
-/* (V2) MIXER 1's LEVEL column: the track's sound now (its peak, as HOME's candles, after its LEVEL: up at once, down
- * over ~0.3 s; muted: none), its colour the LEVEL set (mid .. white); a frame every UI_ANIM_MS, a column drawn when
- * it moved */
+/* (V2) MIXER 1's LEVEL meter: each track's sound now (its peak, as HOME's candles, after its LEVEL: up at once, down
+ * over ~0.3 s; muted: none), its colour the LEVEL set (mid .. white); a frame every UI_ANIM_MS, the selected track's
+ * segments drawn when they moved */
 static uint8_t mx_h[NT];                        /* each track's level now: cells lit, 0 .. 8 */
 static uint32_t mx_e[NT];
+#define MXT_X0 3                                /* MIXER 1's tiles: the first's corner, a tile's size, from one to the */
+#define MXT_Y0 26                               /* next (three a row, two rows: MX_'s order) */
+#define MXT_W 76
+#define MXT_H 104
+#define MXT_DX 79
+#define MXT_DY 107
 static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W */
 {
     int32_t a = clamp(lv, 0, 127);
@@ -1107,40 +1113,46 @@ static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL co
             ;
         if (h != mx_h[t]) {
             mx_h[t] = (uint8_t)h;
-            if (draw) ui_region(PX0 + (int32_t)t * 54 + 4, 44, 9, 94, UI_K, ui_pic_draw);
+            if (draw && t == sel) ui_region(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_pic_draw);
         }
     }
 }
-static void pic_mix(void)                       /* FxTrack: the four tracks' columns, LEVEL and the sends (MIXER 2: PAN) */
+/* (V2) MIXER 1: the whole page six tiles as the knobs' slabs (no slabs under them), LEVEL DELAY REVERB over TAPE
+ * GRAIN DRIVE, the selected track's: the name, 8 segments, the value; the one SELECT picks outlined in the accent, its
+ * segments and value too. LEVEL's segments: the sound now (ui_mix_frame; the top two in the accent, the rest in
+ * LEVEL's colour), a notch under them where LEVEL is set */
+static void pic_mix1(void)
 {
-    int32_t t, m, j;
-    static const char *const SQ[4] = {"DL", "RV", "GR", "DR"};
-    if (page == PG_MIX1) {                      /* (V2) the level, then a square a send (its amount filled, the one
-                                                 * SELECT picked outlined: the selected track's in the accent) */
-        ui_caption("LEVEL  SENDS", MX_SEND[mx_sq & 3]);
-        for (m = 0; m < 4; m++) ui_text(PX0 + 3 * 54 + 4 + 40, 44 + m * 24 + 6, SQ[m], 1, m == mx_sq ? UI_L : UI_M);
-    } else
-        ui_caption("PAN  FILTER", 0);
+    static const char *const LAB[MX_N] = {"LEVEL", "DELAY", "REVERB", "TAPE", "GRAIN", "DRIVE"};
+    uint32_t i;
+    int32_t j;
+    for (i = 0; i < MX_N; i++) {
+        int32_t x = MXT_X0 + (int32_t)(i % 3u) * MXT_DX, y = MXT_Y0 + (int32_t)(i / 3u) * MXT_DY;
+        int32_t v = clamp(*mx_tile(sel, i), 0, 127), on = (int32_t)i == mx_sq, f = i == MX_LEVEL ? mx_h[sel] : (v * 8 + 63) / 127;
+        uint16_t fc = on ? ui_acc : UI_L, lc = mx_col(v);
+        char s[4];
+        ui_rect(x, y, MXT_W, MXT_H, on ? ui_acc : UI_D);
+        if (on) ui_rect(x + 2, y + 2, MXT_W - 4, MXT_H - 4, UI_D);
+        ui_text(x + 6, y + 8, LAB[i], 1, UI_L);
+        for (j = 0; j < 8; j++)
+            ui_rect(x + 6 + j * 8, y + 28, 7, 30, j >= f ? UI_K : i != MX_LEVEL ? fc : on || j >= 6 ? ui_acc : lc);
+        if (i == MX_LEVEL) ui_rect(x + 6 + v * 60 / 127, y + 60, 3, 5, fc);
+        ui_3(s, ui_pc(v));
+        ui_text(x + 6, y + 76, s, 2, fc);
+    }
+}
+static void pic_mix(void)                       /* FxTrack: the four tracks' columns, PAN, the filter's TYPE and POS */
+{
+    int32_t t, j;
+    if (page == PG_MIX1) { pic_mix1(); return; }
+    ui_caption("PAN  FILTER", 0);
     for (t = 0; t < (int32_t)NT; t++) {
-        int32_t x0 = PX0 + t * 54 + 4;
+        int32_t x0 = PX0 + t * 54 + 4, pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
         char lab[3] = {'T', (char)('1' + t), 0};
-        if (page == PG_MIX1) {
-            uint16_t lc = mx_col(trk[t].level);
-            for (j = 0; j < 8; j++)             /* (LEVEL: the sound now, in LEVEL's colour) */
-                ui_rect(x0, 44 + j * 12, 9, 10, 7 - j < mx_h[t] ? lc : UI_D);
-            for (m = 0; m < 4; m++) {           /* (the sends: a square each, filled from below as set) */
-                int32_t y = 44 + m * 24, h = (clamp(*mx_send((uint32_t)t, (uint32_t)m), 0, 127) * 18 + 63) / 127;
-                ui_rect(x0 + 16, y, 20, 20, m != mx_sq ? UI_D : t == (int32_t)sel ? ui_acc : UI_L);
-                ui_rect(x0 + 17, y + 1, 18, 18, UI_K);
-                if (h) ui_rect(x0 + 17, y + 19 - h, 18, h, m == mx_sq ? UI_L : UI_M);
-            }
-        } else {
-            int32_t pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
-            for (j = 0; j < 7; j++)
-                ui_rect(x0 + j * 7, 64, 6, 20, j == pp ? UI_L : j == 3 ? UI_M : UI_D);
-            ui_text(x0 + 16, 100, FT_NAME[clamp(trk[t].ftype, 0, NFTYPE - 1)], 1, UI_L);   /* (V2: its TYPE, POS) */
-            ui_text(x0 + 8 + (trk[t].fpos ? 0 : 4), 116, trk[t].fpos ? "POST" : "PRE", 1, UI_M);
-        }
+        for (j = 0; j < 7; j++)
+            ui_rect(x0 + j * 7, 64, 6, 20, j == pp ? UI_L : j == 3 ? UI_M : UI_D);
+        ui_text(x0 + 16, 100, FT_NAME[clamp(trk[t].ftype, 0, NFTYPE - 1)], 1, UI_L);   /* (V2: its TYPE, POS) */
+        ui_text(x0 + 8 + (trk[t].fpos ? 0 : 4), 116, trk[t].fpos ? "POST" : "PRE", 1, UI_M);
         ui_text(x0 + 14, 145, lab, 1, t == (int32_t)sel ? ui_acc : UI_M);
     }
 }
@@ -1717,7 +1729,7 @@ static uint32_t ui_pic_key(void)
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
-            UI_H(trk[t].drv),
+            UI_H(trk[t].drv), UI_H(trk[t].tap),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);
@@ -1849,6 +1861,8 @@ static void ui_update(int32_t oct)
     if (all) {
         if (shown_page == 0xFFFFFFFFu)
             lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen: all of it cleared once) */
+        else if (shown_page == PG_MIX1 && page != PG_MIX1)
+            lcd_fill(0, 165, 240, 75, UI_K);    /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
         shown_page = page, shown_acc = ui_acc;
         for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '\x01';
         pic_key = ~ui_pic_key();
@@ -1864,7 +1878,7 @@ static void ui_update(int32_t oct)
         an_t = fm1_ms;
         ui_home_frame(!all);
     }
-    if (page == PG_MIX1 && fm1_ms - an_t >= UI_ANIM_MS) {   /* (V2) MIXER 1: its LEVEL columns, the sound now */
+    if (page == PG_MIX1 && fm1_ms - an_t >= UI_ANIM_MS) {   /* (V2) MIXER 1: its LEVEL meter, the sound now */
         an_t = fm1_ms;
         ui_mix_frame(!all);
     }
@@ -1874,7 +1888,7 @@ static void ui_update(int32_t oct)
         pic_t = fm1_ms;
         stat_key = 0xFFFFFFFFu;
         dot_shown = page == PG_LFO ? lfo_dot() : 0xFFFFFFFFu;
-        ui_region(0, 24, 240, 141, UI_K, ui_pic_draw);
+        ui_region(0, 24, 240, page == PG_MIX1 ? 216 : 141, UI_K, ui_pic_draw);   /* (V2: MIXER 1, the whole page) */
     }
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
@@ -1889,7 +1903,7 @@ static void ui_update(int32_t oct)
             ui_region(PX0, 144, 216, 15, UI_K, ui_pic_draw);
         }
     }
-    for (k = 0; k < 4u; k++) {
+    for (k = 0; k < 4u && page != PG_MIX1; k++) {   /* (V2: MIXER 1 none: its tiles) */
         ui_slab_make(k, &ui_sl[k]);
         if (!same(ui_sl[k].lab, ui_slab_shown[k].lab) || !same(ui_sl[k].val, ui_slab_shown[k].val) ||
             ui_sl[k].fill != ui_slab_shown[k].fill || ui_sl[k].acc != ui_slab_shown[k].acc) {

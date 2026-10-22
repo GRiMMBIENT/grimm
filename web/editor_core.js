@@ -191,9 +191,10 @@ export class Client {
     return this.smpInfo();
   }
   async fx() {                                             // GR!MM V2: the project's effects (28 values: FX_LIST's), then
-    const r = await this.req(CMD.FX, [0], 1500);             // the tracks' sends (16: DLY REV GRAIN DRIVE a track; a V2
-    if (r[1]) throw new EditorError(RC[r[1]] || `rc ${r[1]}`, r[1]);   // build before them: none, null)
-    return r.length >= 46 ? r.slice(2, 46) : r.slice(2, 30).concat(new Array(16).fill(null));
+    const r = await this.req(CMD.FX, [0], 1500);             // the tracks' sends (16: DLY REV GRAIN DRIVE a track), their
+    if (r[1]) throw new EditorError(RC[r[1]] || `rc ${r[1]}`, r[1]);   // TAPE sends (4) (a V2 build before them: null)
+    return r.length >= 50 ? r.slice(2, 50) : (r.length >= 46 ? r.slice(2, 46) : r.slice(2, 30).concat(new Array(16).fill(null)))
+      .concat(new Array(4).fill(null));
   }
   async fxSet(i, v) {                                      // value i to v, live
     const r = await this.req(CMD.FX, [1, i, v & 0x7f], 1500, true);

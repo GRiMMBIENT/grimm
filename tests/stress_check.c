@@ -453,11 +453,12 @@ static void stress_editor(void)                 /* "x_editor" */
         ed_rd35(st_sxr + 11) != cpu_now || st_sxr[st_sxn - 1u] != 0xF7u)
         stress_fail("x_editor: CPU not as it should be (length)", st_sxn);
     {                                           /* (25 FX: READ, a SET read back, the value as it was again; V2: the
-                                                 * tracks' four sends after the 28, T2's DRIVE 35) */
+                                                 * tracks' four sends after the 28, T2's DRIVE 35; their TAPE sends,
+                                                 * T3's 46) */
         int32_t was = mf_res, dv = trk[1].drv;
         st_fhead(ED_EFFECTS), st_fb(0), st_ed(1);
-        if (st_sxn != 6u + 2u + 44u || st_sxr[6] != ER_OK || st_sxr[7 + 17] != (uint8_t)mf_res ||
-            st_sxr[7 + 35] != (uint8_t)clamp(trk[1].drv, 0, 127))
+        if (st_sxn != 6u + 2u + 48u || st_sxr[6] != ER_OK || st_sxr[7 + 17] != (uint8_t)mf_res ||
+            st_sxr[7 + 35] != (uint8_t)clamp(trk[1].drv, 0, 127) || st_sxr[7 + 46] != (uint8_t)clamp(trk[2].tap, 0, 127))
             stress_fail("x_editor: FX READ not as it should be (length)", st_sxn);
         st_fhead(ED_EFFECTS), st_fb(1), st_fb(17), st_fb(99), st_ed(1);
         if (st_sxn != 8u || st_sxr[6] != ER_OK || mf_res != 99) stress_fail("x_editor: FX SET not taken (MASTER RES)", (uint32_t)mf_res);

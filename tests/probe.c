@@ -36,6 +36,8 @@ static void host_probe(void)
         printf(" dv %d,%d,%d,%d", (int)trk[0].drv, (int)trk[1].drv, (int)trk[2].drv, (int)trk[3].drv);   /* (V2: the
                                                  * tracks' DRIVE sends) */
         printf(" t1mix %d,%d,%d,%d", (int)trk[0].level, (int)trk[0].dly, (int)trk[0].rev, (int)trk[0].grn);
+        printf(" tp %d,%d,%d,%d ao %d", (int)trk[0].tap, (int)trk[1].tap, (int)trk[2].tap, (int)trk[3].tap,
+               (int)trk[0].arp_oct);                    /* (V2: the TAPE sends; T1's ARP OCTAVES, beside them saved) */
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

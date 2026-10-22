@@ -202,7 +202,7 @@ static const host_ev_t SCRIPT0[] = {
     /* T1: a VA chord sent to GRAIN; T2: a SAMPLE chord (slot 1: URCHIN, a factory sample) sent to DELAY; TAPE over it all at
      * moderate settings; FREEZE once; then the notes let go (the frozen cloud and the tails go on) */
     {100, 0, BTN_HOME, 0, 0, 0, 0, 0},                          /* HOME: MIXER 1 (T1) */
-    {105, 0, -1, 0, 0, 0, ENC_SELECT, 2},                       /* (V2: SELECT: GRAIN's square) */
+    {105, 0, -1, 0, 0, 0, ENC_SELECT, 4},                       /* (V2: SELECT: GRAIN's tile) */
     {110, 0, -1, 0, 0, 0, ENC_KNOB1, 100},                      /* GRAIN SEND 0 -> 100 */
     {120, 0, BTN_FX, 0, 0, 0, 0, 0},                            /* FX: TAPE */
     {130, 0, -1, 0, 0, 0, ENC_KNOB1, 40},                       /* WOW 31 % */
@@ -220,7 +220,7 @@ static const host_ev_t SCRIPT0[] = {
     {740, 0, BTN_EDIT, 0, 0, 0, 0, 0},                          /* EDIT: SOUND (SAMPLE: SLOT 1, the whole sample) */
     {750, 0, BTN_HOME, 0, 0, 0, 0, 0},                          /* HOME */
     {760, 0, BTN_HOME, 0, 0, 0, 0, 0},                          /* HOME: MIXER 1 (T2) */
-    {765, 0, -1, 0, 0, 0, ENC_SELECT, -2},                      /* (V2: SELECT: DLY's square) */
+    {765, 0, -1, 0, 0, 0, ENC_SELECT, -3},                      /* (V2: SELECT: DELAY's tile) */
     {770, 0, -1, 0, 0, 0, ENC_KNOB1, 80},                       /* DLY SEND 0 -> 80 */
     {800, CHORD2, -1, 0, 0, 0, 0, 0},                           /* T2: G3 Bb3 D4 (SAMPLE) */
     {900, 0, -1, 0, 0, 0, 0, 0},

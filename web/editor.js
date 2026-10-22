@@ -29,7 +29,7 @@ let wasm = null, vf = null, vfc = null, meta = null;        // grimm.wasm; its i
 let conn = null;                                             // { client, info, kind: "fm1" | "virtual", transport, live }
 let busy = false;
 let setBytes = null;                                         // the settings as last read from the FM-1 (SETTINGS)
-let fxVals = null;                                           // the project's effects as last read (FX: 44 values)
+let fxVals = null;                                           // the project's effects as last read (FX: 48 values)
 const user = Array.from({ length: 64 }, () => emptyRecord()), dirty = new Array(64).fill(false);
 let pick = { fact: true, i: 0 }, readAt = "";                // the sound chosen under SOUNDS
 const tracks = [null, null, null, null], loaded = ["", "", "", ""], from = ["", "", "", ""];   // T1..T4: the sound,
@@ -816,7 +816,7 @@ async function fxSend(i, v) {
   } catch (e) { say(`FX: ${errText(e)}`, "err"); } finally { fxBusy = false; }
 }
 function drawFx() {
-  const box = $("fx"), v = fxVals || new Array(44).fill(0);
+  const box = $("fx"), v = fxVals || new Array(48).fill(0);
   box.textContent = "";
   FX_PAGES.forEach(([page, knobs], p) => {
     const g = el("div", { cls: "grp" }, box);
@@ -837,10 +837,10 @@ function drawFx() {
   if (v[28] !== null) {                                      // (GR!MM 2.0: the tracks' sends, MIXER 1's squares)
     const s = el("div", { cls: "grp" }, box);
     el("h3", {}, s, "TRACK SENDS (MIXER 1)");
-    for (let t = 0; t < 4; t++)
-      ["DLY", "REV", "GRAIN", "DRIVE"].forEach((nm, k) => {
-        const i = 28 + t * 4 + k;
-        control(s, `T${t + 1} ${nm}`, 0, 127, () => v[i], (x) => { v[i] = x; fxSend(i, x); }, (x) => `${Math.round(x * 100 / 127)}%`, true);
+    for (let t = 0; t < 4; t++)                              // (as MIXER 1's tiles: DELAY, REVERB, TAPE, GRAIN, DRIVE)
+      [["DLY", 28 + t * 4], ["REV", 29 + t * 4], ["TAPE", 44 + t], ["GRAIN", 30 + t * 4], ["DRIVE", 31 + t * 4]].forEach(([nm, i]) => {
+        if (v[i] !== null)
+          control(s, `T${t + 1} ${nm}`, 0, 127, () => v[i], (x) => { v[i] = x; fxSend(i, x); }, (x) => `${Math.round(x * 100 / 127)}%`, true);
       });
   }
   refreshButtons();
