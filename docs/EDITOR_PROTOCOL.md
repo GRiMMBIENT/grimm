@@ -140,7 +140,7 @@ shows it (ASCII, up to 15; none: nothing, HOME shows the source).
 | 12 | LATCH (0 / 1) |
 | 13 | the chord byte (below) |
 | 14–17 | LFO: RATE (0–127), DEPTH (0–100), DESTINATION, SHAPE (below) |
-| 18–49 | FM: the track's patch (below), when the source is FM and byte 18 has bit 7 set; else the PATCH as built |
+| 18–49 | FM: the track's patch (below), when the source is FM and byte 18 has bit 7 set; else the PATCH as built. VOICE (V2): byte 18 its TYPE (0 SOLO, 1 GREGORIAN, 2 NUNS, 3 CATHEDRAL; saved before: 0) |
 | 50–59 | its name (ASCII, up to 10, 0-padded; the editor page gives it): PRESETS, SOUNDS and HOME show it instead of "PAD 03" (a byte the font has not as a space). Saving a sound on the FM-1 over a slot keeps the name that slot had; into an empty slot, none |
 | 60–63 | CRC-32 of bytes 0–59 |
 
@@ -176,7 +176,7 @@ row of 5 an operator, OP1 first: RATIO (0–31, 0 = 0.5), FINE, LEVEL, ATTACK, D
 | Byte | |
 | --- | --- |
 | 0 | the source (as in a sound) |
-| 1–28 | every source's four knobs: source s's knob k at 1 + 4 s + k (all seven kept) |
+| 1–28 | every source's four knobs: source s's knob k at 1 + 4 s + k (all seven kept); byte 14 (VOICE's SHIFT, 0–24): bits 5–6 VOICE's TYPE (V2: 0 SOLO, 1 GREGORIAN, 2 NUNS, 3 CATHEDRAL; GR!MM 1.0: 0) |
 | 29 | 127 − CUTOFF (HOME's filter; 0: open) |
 | 30 | RESONANCE (0–127) |
 | 31 | FX − 100, signed (0: 100 %; −100..100 for 0..200 %) |

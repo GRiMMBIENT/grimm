@@ -12,7 +12,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **Each track's filter** can be a low-pass, high-pass or band-pass, and can sit before or after the effect sends: MIXER 2's **TYPE** and **POS**. See [HOME](#2-home).
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
-- **Four choir sounds** made with the VOICE source: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Factory sounds](#12-factory-sounds).
+- **VOICE choirs:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of three singers on every note: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
 - **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. See [HOME](#2-home).
 - **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level meter on MIXER 1.
 - **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
@@ -91,9 +91,9 @@ Press **HOME** again for the mixer pages:
 
 ### SOURCE page
 
-| KNOB 1 | KNOB 2 |
-|---|---|
-| SOURCE: VA, FM, SAMPLE, VOICE, WHEEL, PHYS, PHASE | LATCH: OFF / ON |
+| KNOB 1 | KNOB 2 | KNOB 3 |
+|---|---|---|
+| SOURCE: VA, FM, SAMPLE, VOICE, WHEEL, PHYS, PHASE | LATCH: OFF / ON | TYPE (VOICE only): SOLO, GREGORIAN, NUNS, CATHEDRAL |
 
 - **LATCH OFF:** a note sounds while you hold the key, like a normal keyboard.
 - **LATCH ON:** press once to start a note, press again to stop it. For drones. A note latched from MIDI (a DAW, a keyboard) stops with its key on the FM-1 too, and switching LATCH off stops every note of the track, wherever it came from. (After a DAW's STOP, notes it latched stay on: with LATCH ON a note-off doesn't end a note, as in GR!MM 1.0.)
@@ -115,6 +115,17 @@ Press **HOME** again for the mixer pages:
 | **PHASE** | WAVE | WAVE2 | DCW | DETUNE | CZ-style phase distortion |
 
 On PHYS, STRUCTURE and BOW change meaning with the model; the screen shows the current name.
+
+**VOICE's TYPE** (SOURCE page, KNOB 3) turns each note into a choir:
+
+| TYPE | Who sings each note |
+|---|---|
+| SOLO | One voice, as in GR!MM 1.0 (the default; every sound made before 2.0 is SOLO) |
+| GREGORIAN | Three low men's voices, slightly out of tune with each other, each drifting a little on its own, almost no vibrato |
+| NUNS | Three women's voices, slightly out of tune with each other, a gentle vibrato |
+| CATHEDRAL | Two men and a woman an octave above them, a gentle vibrato |
+
+VOWEL, SHIFT, BUZZ and BREATH work as always, on the whole choir; with chord mode, every note of the chord is a choir. A choir uses more of the processor than SOLO, so a sound with all six voices singing in chords is about as heavy as GR!MM gets. The choir sounds sound best with a big reverb: turn up the track's REVERB on MIXER 1 and SPACE's SIZE and MIX (a sound doesn't store those).
 
 | PHYS MODEL | What it is | STRUCTURE | DAMP | BOW |
 |---|---|---|---|---|
