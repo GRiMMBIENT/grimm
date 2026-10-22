@@ -249,5 +249,38 @@ for nm, pr in (("NUNS", 39), ("CATHEDRAL CHOIR", 38)):
     j, pk = clean(f"clean{pr}", pr)
     check(f"{nm}: chords A3 .. G5 clean (no sudden jumps, nothing at full scale)", j == 0 and pk < 32000,
           f"jumps {j}, peak {pk}")
+# (V2) the choirs' VOWEL: NUNS, LATCH, A4 held, VOWEL turned A .. U a step every 94 ms: no jump while it turns; the
+# vowels' harmonics apart (A open, E bright: its second resonance, harmonics 3 .. 6): E from A by 8 dB and more (before
+# E, I, U were made clearer: 5.8)
+
+
+def harmonics_db(m, t, f0, n=8):                # harmonics 1 .. n at t s (8192 samples, Hann), dB under the loudest
+    import math
+    a0 = int(t * 44100)
+    seg = [m[a0 + i] * (0.5 - 0.5 * math.cos(2 * math.pi * i / 8191)) for i in range(8192)]
+    out = []
+    for k in range(1, n + 1):                   # (Goertzel)
+        w = 2 * math.pi * k * f0 / 44100
+        c, s1, s2 = 2 * math.cos(w), 0.0, 0.0
+        for x in seg:
+            s1, s2 = x + c * s1 - s2, s1
+        out.append(math.sqrt(max(s1 * s1 + s2 * s2 - c * s1 * s2, 1e-9)))
+    top = max(out)
+    return [max(20 * math.log10(v / top), -40) for v in out]
+
+
+ev = [(300, "enc 6 39"), (350, "down 3"), (360, "btn 1"), (370, "up 3"), (600, f"keys {1 << 16:#x}"), (700, "keys 0"),
+      (800, "btn 6"), (900, "enc 2 -127")] + [(3000 + 94 * i, "enc 2 1") for i in range(127)]
+_, _, raw = run("vowels", ev, 3000 + 94 * 127 + 2500)
+a = array.array("h", raw[44:])
+m = [(a[2 * i] + a[2 * i + 1]) / 2 for i in range(len(a) // 2)]
+w = m[int(2.5 * 44100):int(15.5 * 44100)]
+d = [abs(w[i + 2] - 2 * w[i + 1] + w[i]) for i in range(len(w) - 2)]
+blk = [sum(d[j:j + 2048]) / 2048 for j in range(0, len(d), 2048)]
+jumps = sum(1 for i, x in enumerate(d) if x > 40 * blk[i // 2048] + 600)
+hA, hE = harmonics_db(m, 3.35, 440.0), harmonics_db(m, 3.0 + 32 * 0.094 + 0.35, 440.0)
+apart = sum(abs(x - y) for x, y in zip(hA, hE)) / len(hA)
+check("the choirs' VOWEL: turned A .. U without a jump; E from A by 8 dB and more", jumps == 0 and apart >= 8.0,
+      f"jumps {jumps}, E from A {apart:.1f} dB")
 print("fx test: passed" if not bad else "fx test: FAILED")
 sys.exit(1 if bad else 0)

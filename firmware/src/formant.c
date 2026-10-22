@@ -125,6 +125,7 @@ static struct {
     int32_t dr[VT_SING], dt[VT_SING], nst, lp, nl;   /* its drift now, where it goes (cents x 256); the drift's
                                                  * random; the tone's low-pass, the breath's */
     uint8_t lv[VT_SING];                        /* its cycle's size (CH_OFF's; 255: none yet) */
+    int32_t vpos;                               /* VOWEL where it is (x 256 a vowel, gliding to the knob; -1: none yet) */
 } vx_c[NV];
 
 static void formant_begin(voice_t *v)           /* a note from silence: the opening starts at zero (no click) */
@@ -140,6 +141,7 @@ static void formant_begin(voice_t *v)           /* a note from silence: the open
     }
     vx_c[n].lp = vx_c[n].nl = 0;
     for (i = 0; i < VT_SING; i++) vx_c[n].lv[i] = 255u;
+    vx_c[n].vpos = -1;
 }
 
 /* the four resonators of VOWEL, SHIFT (+ sh, 1/16 semitones: a choir's men or women) for a voice at pitch (inc its
@@ -244,7 +246,8 @@ static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
  * of the men or the women) at the note it sings (the lower below F#3, F#4: the cycle sung nearest), as large as its
  * pitch allows (band-limited), morphed between VOWEL's two vowels; its pitch this step: detune, drift (a new aim now and
  * then, glided to), sway (~0.3 Hz: the chorus), all times SHIFT's spread, and vibrato; summed (1 / sqrt(n)), the
- * breath noise in, the tone's low-pass (BUZZ: open at the top) */
+ * breath noise in, the tone's low-pass (BUZZ: open at the top). VOWEL glides to the knob (3 / 256 of a vowel a step:
+ * ~0.3 s from A to U), so a turn of it has no steps (a note starts where the knob is) */
 static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1, uint32_t ty)
 {
     static struct {                             /* (static: the audio ISR's alone; a fixed address, quicker) */
@@ -254,13 +257,16 @@ static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
     typeof(&sg[0]) q, qe;
     uint32_t n = (uint32_t)(v - vc), ns = VT[ty].n, i, k;
     int32_t pitch = VP16(v), damp = amp1 - amp0, br = clamp(p[3], 0, 127), sp = clamp(p[1], 0, 24);
-    int32_t pos = (clamp(p[0], 0, 127) * 4 * 256) / 127, vi = pos >> 8, mf = pos & 255, l = vx_c[n].lp, nl = vx_c[n].nl;
+    int32_t pos = (clamp(p[0], 0, 127) * 4 * 256) / 127, vi, mf, l = vx_c[n].lp, nl = vx_c[n].nl;
     int32_t tc = clamp(1500 + clamp(p[2], 0, 127) * clamp(p[2], 0, 127) * 2, 0, 32767), gv = 32767 - br * br * 2, gn = br * br >> 1;   /*
                                                  * (BUZZ: ~330 Hz, 2.5 kHz at 64, 4.7 at 85, open at the top) */
     int32_t g = 13377, nst = formant_nz;        /* (1 / sqrt(6)) */
+    if ((pos & 255) < 8) pos &= ~255;           /* (the knob on a vowel, near enough: that vowel, its cycle alone:
+                                                 * half the reading) */
+    else if ((pos & 255) > 248) pos = (pos | 255) + 1;
+    vx_c[n].vpos = vx_c[n].vpos < 0 ? pos : vx_c[n].vpos + clamp(pos - vx_c[n].vpos, -3, 3);
+    vi = vx_c[n].vpos >> 8, mf = vx_c[n].vpos & 255;
     if (vi >= 4) vi = 3, mf = 256;
-    if (mf < 8) mf = 0;                         /* (on a vowel, near enough: its cycle alone, half the reading) */
-    else if (mf > 248) vi++, mf = 0;
     for (k = 0, q = sg; k < ns; k++, q++) {
         uint32_t w = VT[ty].women >> k & 1u, rv = noise32(&vx_c[n].nst), lv, b;
         int32_t pk = pitch + (VT[ty].oct >> k & 1u ? 192 : 0), z = pk >= (w ? 66 * 16 : 54 * 16), d;
