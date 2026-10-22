@@ -201,5 +201,25 @@ st[6] = 4
 (OUT / "links2.bin").write_bytes(bytes(st))
 _, pl, _ = run("links2", [(1200, "midi 0xB0 23 127")], 1500, dict(os.environ, GRIMM_SETTINGS_IN=str(OUT / "links2.bin")))
 check("MIDI LEARN: a link to the TAPE send (x 5)", " tp 127,0,0,0" in pl, pl.split(" tp ")[1][:16])
+# (V2) VOICE's TYPE (SOURCE, KNOB 3): the four choirs load theirs; a choir another sound than SOLO, in range; saved
+# beside SHIFT (one byte), loaded; a GR!MM 1.0 project: SOLO
+want = {36: "GREGORIAN 1", 37: "PLAINCHANT 1", 38: "CATHEDRAL_CHOIR 3", 39: "NUNS 2"}
+got = {k: run(f"vt{k}", [(300, f"enc 6 {k}"), (500, "probe")], 600)[1].split(" sname ")[1].split(" vsh ")[0].replace(" vty", "")
+       for k in want}
+check("the four choir sounds load their TYPEs (GREGORIAN, GREGORIAN, CATHEDRAL, NUNS)", got == want, got)
+SRC = [(300, "enc 6 31"), (400, "btn 6"), (450, "btn 6")]   # (CHOIR OF GHOSTS: VOICE, SOLO; EDIT: SOURCE)
+_, ps, solo_b = run("vt_solo", SRC + [(600, "probe")])
+for ty, name in ((1, "GREGORIAN"), (2, "NUNS"), (3, "CATHEDRAL")):
+    w, pv, ch_b = run(f"vt_{ty}", SRC + [(500, f"enc 4 {ty}"), (600, "probe")])
+    r, h, lo_, pk = measure(w)
+    check(f"TYPE {name}: a choir, another sound than SOLO's, in range", f" vty {ty} " in pv and ch_b != solo_b and
+          pk <= 32767 and r > 100, f"{pv.split(' vty ')[1][:12]} rms {r:.0f} peak {pk}")
+SVV = SRC + [(500, "enc 4 3"), (550, "btn 6"), (600, "enc 3 5"), (1700, "keys 0")]   # (CATHEDRAL; SOUND: SHIFT +5)
+_, p1, _ = run("vt_save", SVV, 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "vsaves.bin")))
+_, p2, _ = run("vt_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "vsaves.bin")))
+_, p3, _ = run("vt_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
+check("VOICE's TYPE saved beside its SHIFT and loaded (CATHEDRAL, SHIFT as set); a GR!MM 1.0 project: SOLO",
+      p1.split(" vty ")[1].startswith("3 vsh 19") and p2.split(" vty ")[1].startswith("3 vsh 19") and
+      p3.split(" vty ")[1].startswith("0 "), f"{p1.split(' vty ')[1][:10]} | {p2.split(' vty ')[1][:10]} | {p3.split(' vty ')[1][:10]}")
 print("fx test: passed" if not bad else "fx test: FAILED")
 sys.exit(1 if bad else 0)

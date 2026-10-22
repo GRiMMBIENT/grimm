@@ -176,6 +176,16 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   await cl.put(OBJ.SND + 5, rec, info.fmt);
   const back = await cl.get(OBJ.SND + 5, 64);
   check(eq([...back], [...rec]) && JSON.stringify(parseSound(back, meta)) === JSON.stringify(s), "editor: a sound edited, sent, read back as edited");
+  {                                                          // (GR!MM 2.0: VOICE's TYPE in byte 18: the choirs' read; set, sent, read back)
+    const ty = [40, 41, 42, 43].map((i) => parseSound(Uint8Array.from(meta.factory[i].rec), meta).vtype);
+    const v = parseSound(Uint8Array.from(meta.factory[40].rec), meta);
+    v.vtype = 2, v.name = "TYPE TEST";
+    const vr = buildRecord(v);
+    await cl.put(OBJ.SND + 6, vr, info.fmt);
+    const vb = parseSound(await cl.get(OBJ.SND + 6, 64), meta);
+    check(ty.join() === "1,1,3,2" && vb.vtype === 2 && vb.k[1] === v.k[1] && parseSound(Uint8Array.from(meta.factory[0].rec), meta).vtype === 0,
+          `editor: VOICE's TYPE read (the choirs: ${ty.join()}), set, sent, read back (${vb.vtype}); other sounds SOLO`);
+  }
   const b1 = await makeBackup(cl, info);
   await cl.put(OBJ.SND + 9, rec, info.fmt);
   await cl.put(OBJ.SND + 5, new Uint8Array(64).fill(0xff), info.fmt);

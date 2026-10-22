@@ -137,11 +137,14 @@ static const uint8_t SND_FACTORY[][SND_FSIZE] = {
     FSND(CAT_KEYS, 9, ENG_PHASE, 3, 0, 40, 4, 80, 90, 70, 80, 0, 0x00, 100, 1, 0, 0),       /* CANDLE */
     /* TEXTURES */
     FSND(CAT_TEXTURE, 1, ENG_VOICE, 96, 12, 0, 127, 100, 90, 120, 105, 1, 0x00, 30, 90, 4, 0), /* WIND THRU STONE */
-    /* (V2) CHOIRS: VOICE, slow attacks, long releases; chord mode on (bit 7): parallel fifths (organum), minor chords */
-    FSND(CAT_VOICE, 6, ENG_VOICE, 100, 6, 25, 30, 95, 90, 50, 100, 0, 0x95, 20, 3, 0, 6),   /* GREGORIAN: FIFTH OPEN */
-    FSND(CAT_VOICE, 7, ENG_VOICE, 127, 8, 30, 20, 80, 90, 65, 95, 0, 0x00, 40, 2, 0, 0),    /* PLAINCHANT: one voice */
-    FSND(CAT_VOICE, 8, ENG_VOICE, 0, 12, 45, 25, 100, 90, 60, 110, 0, 0xA1, 25, 4, 0, 6),   /* CATHEDRAL CHOIR: MIN SPREAD */
-    FSND(CAT_VOICE, 9, ENG_VOICE, 40, 19, 35, 45, 95, 90, 75, 100, 0, 0x91, 40, 3, 0, 0),   /* NUNS: MIN OPEN */
+    /* (V2) CHOIRS: VOICE's choir TYPEs, a clear vowel (O, A), a throat's BUZZ, a little BREATH, ATTACK ~0.3 .. 0.45 s,
+     * a long RELEASE (~5 .. 7 s), no LFO; chord mode on (bit 7): parallel fifths (organum), minor chords. SPACE isn't
+     * a sound's (the project's, the track's REV send): the manual says to turn it up */
+    FSNDV(CAT_VOICE, 6, VT_GREG, 95, 12, 70, 20, 82, 90, 120, 108, 0, 0x95, 40, 0, 0, 0),  /* GREGORIAN: O, FIFTH OPEN */
+    FSNDV(CAT_VOICE, 7, VT_GREG, 0, 12, 65, 22, 80, 90, 120, 105, 0, 0x00, 40, 0, 0, 0),   /* PLAINCHANT: A, one line */
+    FSNDV(CAT_VOICE, 8, VT_CATH, 0, 12, 60, 18, 85, 90, 100, 110, 0, 0xA1, 40, 0, 0, 0),   /* CATHEDRAL CHOIR: A, MIN
+                                                                                             * SPREAD */
+    FSNDV(CAT_VOICE, 9, VT_NUNS, 0, 12, 55, 25, 82, 90, 120, 106, 0, 0x91, 40, 0, 0, 0),   /* NUNS: A, MIN OPEN */
 };
 static const char *const SND_FNAME[] = {
     "CRYPT PAD", "ASH VEIL", "FROZEN HALL", "LAST LIGHT", "MOSS", "BLACK VELVET",
