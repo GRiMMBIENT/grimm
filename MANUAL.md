@@ -127,7 +127,7 @@ On PHYS, STRUCTURE and BOW change meaning with the model; the screen shows the c
 
 On a choir, the knobs do this:
 
-- **VOWEL** morphs between the singers' A, E, I, O and U.
+- **VOWEL** morphs between the singers' A, E, I, O and U (E, I and U made a little clearer than the recordings have them; it glides as you turn it, without steps).
 - **SHIFT** spreads the singers: −12 = all in tune (unison), 0 (the middle) = as designed, +12 = twice as wide.
 - **BUZZ** is the tone: low = dark and soft, high = open and bright.
 - **BREATH** adds breath noise; at the very top the singing fades into a whisper.
