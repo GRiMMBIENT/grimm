@@ -350,10 +350,21 @@ static int32_t out_gain(void)                   /* MASTER: Q12, half up to 3/4, 
     int32_t m = clamp(fm1_master(), 0, 4092);
     return m <= OUT_MQ ? m >> 1 : (m >> 1) + m * (m - OUT_MQ) / (2 * (4092 - OUT_MQ));
 }
+#ifdef GRIMM_LEVEL_TEST
+static int32_t lt_m, lt_g, lt_in, lt_out, lt_pi, lt_po;   /* (a test build: SYSTEM 2's last row: MASTER, its gain, the
+                                                 * mix's peak in, the output's peak out, the last ~0.5 s) */
+static uint32_t lt_n;
+#endif
 static void out_stage(int32_t *out, uint32_t n)
 {
     int32_t g = out_gain(), env = out_env;
     uint32_t i;
+#ifdef GRIMM_LEVEL_TEST
+    for (i = 0; i < 2u * n; i++) {
+        int32_t a = out[i] < 0 ? -out[i] : out[i];
+        if (a > lt_pi) lt_pi = a;
+    }
+#endif
     for (i = 0; i < n; i++) {
         int32_t l = (clamp(out[2u * i], -500000, 500000) * g) >> 12, r = (clamp(out[2u * i + 1u], -500000, 500000) * g) >> 12;
         int32_t a = l < 0 ? -l : l, b = r < 0 ? -r : r;
@@ -364,8 +375,15 @@ static void out_stage(int32_t *out, uint32_t n)
             l = (int32_t)(((int64_t)l * k) >> 15), r = (int32_t)(((int64_t)r * k) >> 15);
         }
         out[2u * i] = l, out[2u * i + 1u] = r;
+#ifdef GRIMM_LEVEL_TEST
+        if ((l < 0 ? -l : l) > lt_po) lt_po = l < 0 ? -l : l;
+        if ((r < 0 ? -r : r) > lt_po) lt_po = r < 0 ? -r : r;
+#endif
     }
     out_env = env;
+#ifdef GRIMM_LEVEL_TEST
+    if (++lt_n >= 86u) lt_m = fm1_master(), lt_g = g, lt_in = lt_pi, lt_out = lt_po, lt_pi = lt_po = 0, lt_n = 0;
+#endif
 }
 
 static void app_audio(int32_t *out, uint32_t n)

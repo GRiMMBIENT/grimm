@@ -1752,6 +1752,11 @@ static void sys2_cpu(void)                      /* SYSTEM 2's last row: CPU NOW,
     char l[16], r[16];
     put_s(put_x10(put_s(l, "CPU NOW "), pct10(cpu_now)), "%");
     put_s(put_x10(put_s(r, "PEAK "), pct10(cpu_peak)), "%");
+#ifdef GRIMM_LEVEL_TEST
+    put_u(put_s(put_u(put_s(l, "M"), (uint32_t)lt_m), " G"), (uint32_t)lt_g);   /* (a test build: MASTER, its gain; the
+                                                 * peaks in and out) */
+    put_u(put_s(put_u(put_s(r, "I"), (uint32_t)lt_in), " O"), (uint32_t)lt_out);
+#endif
     ui_rect(PX0, 144, 216, 15, UI_D);
     ui_text(PX0 + 6, 148, l, 1, UI_L);
     ui_text(PX0 + 210 - 8 * ui_len(r), 148, r, 1, UI_W);
@@ -2020,6 +2025,9 @@ static void ui_update(int32_t oct)
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
         st = pct10(cpu_now) << 16 ^ pct10(cpu_peak);
+#ifdef GRIMM_LEVEL_TEST
+        st ^= (uint32_t)lt_m * 2654435761u ^ (uint32_t)lt_g << 3 ^ (uint32_t)lt_in * 40503u ^ (uint32_t)lt_out << 11;
+#endif
         if (st != stat_key) {
             stat_key = st;
             ui_region(PX0, 144, 216, 15, UI_K, ui_pic_draw);
