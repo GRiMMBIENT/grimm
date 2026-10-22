@@ -458,6 +458,8 @@ function drawEditor() {
     drawEditor(), drawTracks();
   });
   toggle(g, ["LATCH OFF", "LATCH ON"], () => s.latch, (v) => { s.latch = v; });
+  control(g, "GLIDE", 0, 127, () => s.glide || 0, (v) => { s.glide = v; },   // (GR!MM 2.0: SOURCE's KNOB 4)
+          (v) => (v ? `${Math.round(10 * Math.pow(2, v * 12 / 192))} MS` : "OFF"));
   if (s.eng === 3)                                           // (GR!MM 2.0: VOICE's TYPE, as SOURCE's KNOB 3)
     choice(g, "TYPE", ["SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"], () => s.vtype || 0, (v) => { s.vtype = v; });
   if (s.eng === 6) {                                         // (GR!MM 2.0: PHASE's LINE 2 page)

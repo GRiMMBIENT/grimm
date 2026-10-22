@@ -73,6 +73,7 @@ typedef struct {
     volatile int32_t tap;                       /* (V2) MIXER 1: the TAPE send, 0..127 (tapefx.c tape_send) */
     volatile int32_t vty;                       /* (V2) VOICE's TYPE (VT_: SOLO, GREGORIAN, NUNS, CATHEDRAL; formant.c) */
     volatile int32_t pd_ring, pd_noise;         /* (V2) PHASE's LINE 2: RING (line 1 x line 2), NOISE (phase.c) */
+    volatile int32_t glide;                     /* (V2) SOURCE's GLIDE: 0 off, 1 .. 127 (~10 ms .. 2.5 s; vc_gl) */
 } track_t;
 #define TRK_DEF {ENG_VA, {{0, 10, 90, 30}, {0, 64, 64, 20}, {0, 0, 127, 0}, {0, 12, 64, 10}, {4, 0, 40, 0}, {0, 64, 80, 64}, {0, 0, 60, 0}}, 100, 0, 100, 0, 64, 0, \
                  {22, 85, 127, 89}, 0, 0, 0, 0, 0, 4, 1, 50, 64, 0, 0, 0, 127, 0, 100, 0, 0, {{0}}}
@@ -117,7 +118,8 @@ static inline int32_t amp_at(int32_t amp0, int32_t damp, int32_t i)
 /* the LFO's (lfo.c, the audio ISR a control step): a track's pitch offset (1/16 semitones: VP16, a voice's pitch, every
  * engine's), and a voice's parameters, one of them moved (else the track's own) */
 static volatile int32_t lfo_p16[NT];
-#define VP16(v) ((int32_t)(v)->note * 16 + lfo_p16[(v)->trk % NT])
+#define VP16(v) ((int32_t)(v)->note * 16 + lfo_p16[(v)->trk % NT] + (vc_gl[(v) - vc] >> 8))   /* (V2: GLIDE's way left) */
+static int32_t vc_gl[NV];                       /* (V2) GLIDE: a voice's pitch still to go (1/16 semitones x 256; 0: there) */
 static const volatile int32_t *lfo_params(uint32_t v, uint32_t t, uint32_t e);
 /* SYSTEM's TUNE (main loop): every source's pitch times 1 + tune_f / 4096 (-50 .. +50 cents: -117 .. +120; finer than
  * VP16's 6.25-cent steps); vinc: a pitch's phase increment, tuned */
@@ -141,6 +143,7 @@ static const engine_t *const ENGINES[NENG] = {&VA_ENGINE, &FM_ENGINE, &SAMPLE_EN
 /* (V2) GENERATE's notes (gen.c): a voice's volume (0: full; else x / 256) and attack (0: the track's ATTACK; else
  * GEN_ATK's k - 1), asked with the note (gen_vel, gen_atk: the next note_on's), taken as it begins */
 static uint8_t vc_vel[NV], vc_atk[NV], vc_wvel[NV], vc_watk[NV], gen_vel, gen_atk;
+static int32_t vc_wgl[NV], gl_want;             /* (V2) GLIDE: a voice's way to go, asked (gl_want: the next note_on's) */
 static uint8_t gen_lo, gen_hi;                  /* (V2) the next note_on's range, GENERATE's (0 0: none): its chord's
                                                  * notes past it folded in by octaves (grimm.c note_on) */
 static const int32_t GEN_ATK[8] = {2434783, 608696, 202899, 81159, 40580, 20290, 10145, 4870};   /* ATTACK steps
@@ -151,6 +154,7 @@ static const int32_t GEN_ATK[8] = {2434783, 608696, 202899, 81159, 40580, 20290,
 static void voice_start(uint32_t v, uint32_t t, uint32_t note)
 {
     vc_wvel[v] = gen_vel, vc_watk[v] = gen_atk; /* (V2: GENERATE's; 0 0: the voice as ever) */
+    vc_wgl[v] = gl_want;                        /* (V2: GLIDE's; 0: none) */
     vc[v].want_note = (uint8_t)note;
     vc[v].want_trk = (uint8_t)t;
     vc[v].want_on = 1;
@@ -180,6 +184,7 @@ static void voice_begin(voice_t *v)             /* a note from silence */
     v->env = 0;
     v->stage = ST_ATK;
     vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc];   /* (V2: GENERATE's volume, attack) */
+    vc_gl[v - vc] = vc_wgl[v - vc];             /* (V2: GLIDE: from the track's last note) */
 }
 
 /* the tracks' ENV as steps, from the knobs, once a render: ATTACK a linear step (Q24 a control step), DECAY and RELEASE
@@ -187,6 +192,7 @@ static void voice_begin(voice_t *v)             /* a note from silence */
  * 2^(v 20 / 192) (~9.6 s at 127), DECAY 10 ms x 2^(v 15 / 192) (~9.7 s), RELEASE 10 ms x 2^(v 16.5 / 192) (~19 s) */
 typedef struct { int32_t atk, sus; uint32_t dec, rel; } env_c_t;
 static env_c_t env_c[NT];
+static uint32_t gl_k[NT];                       /* (V2) GLIDE: the share of the way a control step (env_k's; 0: off) */
 static uint32_t env_k(uint32_t t_ms_q16)        /* 60 dB in t: 6.9 / (t / 0.726 ms) of the way a control step, Q16 */
 {
     uint32_t k = (uint32_t)((((uint64_t)328516u) << 16) / t_ms_q16);   /* (64 / 32: the chip's divide) */
@@ -219,7 +225,7 @@ static int32_t env_tick(voice_t *v)
             e = 0;
         } else if (v->want_note == v->note && v->want_trk == v->trk && v->eng == trk[v->trk].eng && v->stage != ST_FADE) {
             v->stage = ST_ATK;                  /* the same note again (same engine): on up from where it is */
-            vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc];
+            vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc], vc_gl[v - vc] = vc_wgl[v - vc];
         } else {
             v->stage = ST_FADE;                 /* another note: out first, then begin */
         }
@@ -280,8 +286,11 @@ static uint32_t voices_render(int32_t (*tb)[VB], uint32_t n)
         if (k == NV)
             continue;
         if (!envd) {                            /* the tracks' ENV, as the knobs are now (once a render) */
-            for (k = 0; k < NT; k++)
+            for (k = 0; k < NT; k++) {
                 env_coef(&env_c[k], trk[k].env);
+                gl_k[k] = trk[k].glide > 0 ? env_k(10u * pow2_q16(clamp(trk[k].glide, 0, 127) * 12)) : 0u;   /* (V2:
+                                                 * GLIDE: 10 ms x 2^(v 12 / 192), ~2.5 s at 127, 60 dB of the way) */
+            }
             envd = 1;
         }
         for (k = 0; k < NV; k++) {
@@ -291,6 +300,11 @@ static uint32_t voices_render(int32_t (*tb)[VB], uint32_t n)
             v->amp = amp1;
             if (!amp0 && !amp1)
                 continue;                       /* silent: costs nothing */
+            if (vc_gl[k]) {                     /* (V2: GLIDE: its pitch a step nearer; GLIDE off: there at once) */
+                int32_t x = vc_gl[k], d = gl_k[t] ? mulq16(x, gl_k[t]) : x;
+                x -= d ? d : x > 0 ? 1 : -1;
+                vc_gl[k] = x > -32 && x < 32 ? 0 : x;
+            }
             if (!(used >> t & 1u)) {            /* the track's first sound this block */
                 used |= 1u << t;
                 for (i = 0; i < n; i++)

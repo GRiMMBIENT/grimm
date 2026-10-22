@@ -591,6 +591,11 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
         else voice_release(lat_voice[j]);
         drop((uint32_t)j);
     }
+    {                                           /* (V2: GLIDE: from the track's last note, the chord's notes alike) */
+        static int16_t last[NT] = {-1, -1, -1, -1};
+        gl_want = trk[t].glide > 0 && last[t] >= 0 ? (last[t] - (int32_t)note * 16) * 256 : 0;
+        last[t] = (int16_t)(note * 16u);
+    }
     ns[0] = (uint8_t)note, n = 1;
     if (ch < 0 && trk[t].chord) n = chord_notes(t, note, ns);
     else if (ch > 0) n = chord_notes_tv(ch & 15, ch >> 4 & 7, note, ns);
@@ -622,6 +627,7 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
         lat_src[nlat] = (uint8_t)src;
         nlat = nlat + 1u, on++;
     }
+    gl_want = 0;
     for (; i < no; i++) voice_release(own[i]);  /* (a smaller chord now: the rest let go) */
     if (echo && on) ec_put(0x90, t, note);      /* (V2: none played, none sent: no note-off would follow it) */
 }
@@ -837,6 +843,7 @@ static uint8_t learn_to[4];                     /* (the page, the knob, the trac
 static uint32_t scr_dark, scr_woke, t_hand;     /* SCREEN OFF: dark; a touch woke it (this pass); the hands' last touch */
 static const uint16_t SCR_S[5] = {0, 60, 300, 900, 1800};   /* SCREEN OFF: NEVER, 1, 5, 15, 30 min (s) */
 static char *link_name(char *s, const uint8_t *L);
+static char *ui_time(char *s, uint32_t q16);    /* (ui.c: a time as text; V2: GLIDE's) */
 static char hd_msg[24];                         /* (ui.c: in the header's place until hd_until) */
 static int32_t bat_lvl = -1;                    /* the battery's level (batt_poll; ui.c's header) */
 static uint32_t hd_until, as_err;               /* (as_err: an autosave failed, it is tried again) */
@@ -898,7 +905,7 @@ typedef struct {
 } page_t;
 static const page_t PAGES[NPAGE] = {
     {"SOUND", BTN_EDIT, 1, 1, 1, {"", "", "", ""}},   /* (the source's names) */
-    {"SOURCE", BTN_EDIT, 1, 1, 1, {"SOURCE", "LATCH", "", ""}},   /* (V2: VOICE: KNOB 3 its TYPE) */
+    {"SOURCE", BTN_EDIT, 1, 1, 1, {"SOURCE", "LATCH", "", "GLIDE"}},   /* (V2: VOICE: KNOB 3 its TYPE; KNOB 4 GLIDE) */
     {"ENV", BTN_ENV, 1, 1, 1, {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"}},
     {"LFO", BTN_LFO, 1, 1, 1, {"RATE", "DEPTH", "DESTINATION", "SHAPE"}},
     {"SCALE", BTN_SEL, 1, 0, 1, {"ROOT", "SCALE", "", ""}},
@@ -1010,7 +1017,8 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
                                                {&rv_size, &rv_damp, &rv_mix, &rv_pre}};
     switch (pg) {
     case PG_SOUND: return &trk[sel].p[sel_eng()][k];
-    case PG_SOURCE: return k == 0u ? &trk[sel].eng : k == 1u ? &trk[sel].latch : k == 2u && sel_eng() == ENG_VOICE ? &trk[sel].vty : 0;
+    case PG_SOURCE: return k == 0u ? &trk[sel].eng : k == 1u ? &trk[sel].latch : k == 2u && sel_eng() == ENG_VOICE ? &trk[sel].vty :
+                           k == 3u ? &trk[sel].glide : 0;   /* (V2: GLIDE) */
     case PG_ENV: return &trk[sel].env[k];
     case PG_SONG: return k == 0u ? &song_sect : k == 1u ? &song_pat[clamp(song_sect, 0, SONG_N - 1)] :
                          k == 2u ? &song_rep[clamp(song_sect, 0, SONG_N - 1)] : &song_mode;
@@ -1052,7 +1060,7 @@ static const char *knob_name(uint32_t pg, uint32_t k)
 static int32_t knob_max(uint32_t pg, uint32_t k)
 {
     static const int32_t GRID_MAX[4] = {127, 100, 4, SEQ_N}, PATT_MAX[4] = {SEQ_N, 7, 127, SEQ_NMODE - 1};
-    return pg == PG_SOUND ? sel_engine()->max[k] : pg == PG_SOURCE ? (k == 2u ? NVT - 1 : k ? 1 : (int32_t)NENG - 1) :
+    return pg == PG_SOUND ? sel_engine()->max[k] : pg == PG_SOURCE ? (k == 3u ? 127 : k == 2u ? NVT - 1 : k ? 1 : (int32_t)NENG - 1) :
            pg == PG_GRID ? GRID_MAX[k] : pg == PG_PATTERN ? PATT_MAX[k] :
            pg == PG_SOUNDS ? (k == 0u ? SND_N - 1 : k == 1u ? NCAT - 1 : k == 2u ? (int32_t)NENG : 2) :
            pg == PG_PROJECTS ? 3 : pg == PG_SCALE ? (k ? NSCALE - 1 : 11) : pg == PG_CHORD ? (k ? NVOICING - 1 : NCHORD - 1) :
@@ -1132,7 +1140,9 @@ static void knob_text(uint32_t pg, uint32_t k, char *s)   /* knob k's value on p
     case PG_SOURCE:
         if (k == 0u) put_s(s, sel_engine()->name);
         else if (k == 1u) put_s(s, v ? "ON" : "OFF");
-        else put_s(s, VT_NAME[clamp(v, 0, NVT - 1)]);   /* (V2: VOICE's TYPE) */
+        else if (k == 2u) put_s(s, VT_NAME[clamp(v, 0, NVT - 1)]);   /* (V2: VOICE's TYPE) */
+        else if (v) put_s(ui_time(s, 10u * pow2_q16(clamp(v, 0, 127) * 12)), "");   /* (V2: GLIDE) */
+        else put_s(s, "OFF");
         return;
     case PG_ENV:                                /* (as env_coef: ms, Q16) */
         v = clamp(v, 0, 127);

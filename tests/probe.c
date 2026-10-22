@@ -32,7 +32,7 @@ static void host_probe(void)
                (int)trk[0].latch, (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch & 1u, n, sv_wait,
                sv_wait && fm1_ms - sv_said < SV_SAY_MS);
         P2 = brw_pos[sel] >= 0 ? cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel]) : 0;
-        printf(" eng %d slatch %d sname ", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
+        printf(" eng %d slatch %d sname ", (int)trk[sel].eng, P2 ? (int)(P2[12] & 1u) : -1);
         {                                       /* (V2: the factory sound PRESETS loaded, its name, "_" for a space) */
             const char *nm = P2 ? snd_fname(P2) : 0;
             for (; nm && *nm; nm++) putchar(*nm == ' ' ? '_' : *nm);
@@ -60,6 +60,12 @@ static void host_probe(void)
         }
         printf(" vel %u", vel_on);              /* (V2: SYSTEM 3's VELOCITY) */
         printf(" pd1 %d,%d", (int)trk[0].pd_ring, (int)trk[0].pd_noise);   /* (V2: T1's PHASE extras: RING, NOISE) */
+        {                                       /* (V2: T1's GLIDE; its voices' way to go, the most) */
+            int32_t g = 0, k2;
+            for (k2 = 0; k2 < (int32_t)NV; k2++)
+                if (vc[k2].trk == 0 && (vc_gl[k2] < 0 ? -vc_gl[k2] : vc_gl[k2]) > g) g = vc_gl[k2] < 0 ? -vc_gl[k2] : vc_gl[k2];
+            printf(" gl1 %d %d", (int)trk[0].glide, (int)g);
+        }
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

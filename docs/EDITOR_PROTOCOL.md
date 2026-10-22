@@ -137,7 +137,7 @@ shows it (ASCII, up to 15; none: nothing, HOME shows the source).
 | 3 | the source: 0 VA, 1 FM, 2 SAMPLE, 3 VOICE, 4 WHEEL, 5 PHYS, 6 PHASE |
 | 4–7 | the source's four knobs (SOUND page), each 0..its range |
 | 8–11 | ENV: ATTACK, DECAY, SUSTAIN, RELEASE (0–127) |
-| 12 | LATCH (0 / 1) |
+| 12 | bit 0 LATCH (0 / 1); bits 1–7 GLIDE (V2: 0 OFF, 1–127: 10 ms × 2^(v × 12 / 192); saved before: 0) |
 | 13 | the chord byte (below) |
 | 14–17 | LFO: RATE (0–127), DEPTH (0–100), DESTINATION, SHAPE (below) |
 | 18–49 | FM: the track's patch (below), when the source is FM and byte 18 has bit 7 set; else the PATCH as built. VOICE (V2): byte 18 its TYPE (0 SOLO, 1 GREGORIAN, 2 NUNS, 3 CATHEDRAL; saved before: 0) |

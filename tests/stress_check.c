@@ -213,7 +213,7 @@ static void stress_factory(void)                /* "factory" */
     for (k = 0; k < 4u; k++)
         if ((uint32_t)trk[sel].p[e][k] != r[4 + k] || (uint32_t)trk[sel].env[k] != r[8 + k] || lf[k] != r[14 + k])
             stress_fail("factory: the track's sound not the one browsed to (knob)", k);
-    if ((uint32_t)trk[sel].eng != e || (uint32_t)trk[sel].latch != r[12] || ch_pack(sel) != r[13])
+    if ((uint32_t)trk[sel].eng != e || (uint32_t)trk[sel].latch != (r[12] & 1u) || (uint32_t)trk[sel].glide != (uint32_t)(r[12] >> 1) || ch_pack(sel) != r[13])
         stress_fail("factory: the track's source, LATCH or CHORD not the browsed sound's (source)", (uint32_t)trk[sel].eng);
 }
 

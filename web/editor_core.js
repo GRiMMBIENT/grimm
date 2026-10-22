@@ -362,7 +362,7 @@ export function recordOk(r) {
 export function parseSound(r, meta) {                        // a record -> a sound (FM: its patch, or the PATCH's as built)
   const fm = r[3] === 1 && r[18] & 0x80 ? r.slice(18, 50) : meta.fmPatches[Math.min(r[4], meta.fmPatches.length - 1)].fm;
   const name = String.fromCharCode(...r.slice(50, 60).filter((c) => c >= 32 && c < 127)).trim();
-  return { cat: r[1], num: r[2], eng: r[3], k: [...r.slice(4, 8)], env: [...r.slice(8, 12)], latch: r[12],
+  return { cat: r[1], num: r[2], eng: r[3], k: [...r.slice(4, 8)], env: [...r.slice(8, 12)], latch: r[12] & 1, glide: r[12] >> 1,
            chordOn: r[13] >> 7, voicing: (r[13] >> 4) & 7, chord: r[13] & 15, lfo: [...r.slice(14, 18)],
            fm: { alg: fm[0] & 31, fb: fm[1] & 7, ops: [0, 1, 2, 3, 4, 5].map((i) => [...fm.slice(2 + i * 5, 7 + i * 5)]) }, name,
            vtype: r[3] === 3 && r[18] < 4 ? r[18] : 0,       // (GR!MM 2.0: VOICE's TYPE, byte 18; before: SOLO)
@@ -374,7 +374,7 @@ function pdOf(r) {                                          // a PHASE sound's L
 export function buildRecord(s) {
   const r = new Uint8Array(SND);
   r[0] = 0x54, r[1] = s.cat, r[2] = Math.max(1, Math.min(99, s.num || 1)), r[3] = s.eng;
-  r.set(s.k, 4), r.set(s.env, 8), r[12] = s.latch ? 1 : 0;
+  r.set(s.k, 4), r.set(s.env, 8), r[12] = (s.latch ? 1 : 0) | ((s.glide || 0) & 127) << 1;   // (GR!MM 2.0: GLIDE over LATCH)
   r[13] = (s.chordOn ? 0x80 : 0) | (s.voicing & 7) << 4 | (s.chord & 15);
   r.set(s.lfo, 14);
   if (s.eng === 1) {                                         // FM: its own patch (bit 7: there is one)

@@ -310,7 +310,7 @@ static void snd_pack(uint8_t *r, uint32_t t, uint32_t cat, uint32_t num)   /* tr
         r[4 + k] = (uint8_t)clamp(trk[t].p[e][k], 0, 255);
         r[8 + k] = (uint8_t)clamp(trk[t].env[k], 0, 127);
     }
-    r[12] = (uint8_t)(trk[t].latch != 0);
+    r[12] = (uint8_t)((trk[t].latch != 0) | clamp(trk[t].glide, 0, 127) << 1);   /* (V2: GLIDE over LATCH's bit) */
     r[13] = ch_pack(t);
     lfo_pk(r + 14, t);
     st_wr32(r + 60, st_crc(r, 60));
@@ -342,7 +342,8 @@ static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into tra
         trk[t].p[e][k] = r[4 + k];
         trk[t].env[k] = r[8 + k];
     }
-    la = snd_latch_off ? 0u : r[12];            /* (V2: SYSTEM 3's ALWAYS OFF: LATCH OFF, whatever the sound's) */
+    la = snd_latch_off ? 0u : r[12] & 1u;       /* (V2: SYSTEM 3's ALWAYS OFF: LATCH OFF, whatever the sound's) */
+    trk[t].glide = r[12] >> 1;                  /* (V2: GLIDE; saved before: 0, off) */
     if (trk[t].latch && !la) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
     trk[t].latch = (int32_t)la;
     ch_unpack(t, r[13]);
@@ -384,7 +385,7 @@ static uint32_t cat_len(uint32_t c)
 /* ---- packing: a track (52 B), a sequence (260 B), a track's step locks (288 B) */
 /* (V2) a track's newer settings in the spare bits of its 52 bytes (their values never use them; every save before
  * has 0 there: all off, as before): bit 7 of bytes 1 .. 30, 33 .. 36, 38 .. 42, 47 .. 49; bits 3 .. 6 of byte 25
- * (PHASE's WAVE, 0 .. 7), 4 .. 6 of byte 26 (its WAVE2, 0 .. 8). In order: PHASE's RING, NOISE */
+ * (PHASE's WAVE, 0 .. 7), 4 .. 6 of byte 26 (its WAVE2, 0 .. 8). In order: PHASE's RING, NOISE; GLIDE (7) */
 static const uint16_t XB_POS[49] = {
     1 << 3 | 7, 2 << 3 | 7, 3 << 3 | 7, 4 << 3 | 7, 5 << 3 | 7, 6 << 3 | 7, 7 << 3 | 7, 8 << 3 | 7, 9 << 3 | 7, 10 << 3 | 7,
     11 << 3 | 7, 12 << 3 | 7, 13 << 3 | 7, 14 << 3 | 7, 15 << 3 | 7, 16 << 3 | 7, 17 << 3 | 7, 18 << 3 | 7, 19 << 3 | 7,
@@ -440,6 +441,7 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
         uint32_t at = 0;
         xb_put(q, &at, trk[t].pd_ring != 0, 1);
         xb_put(q, &at, trk[t].pd_noise != 0, 1);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].glide, 0, 127), 7);
     }
     return q + TRK_PK;
 }
@@ -467,6 +469,7 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
         uint32_t at = 0;
         trk[t].pd_ring = (int32_t)xb_get(q, &at, 1);
         trk[t].pd_noise = (int32_t)xb_get(q, &at, 1);
+        trk[t].glide = (int32_t)xb_get(q, &at, 7);
     }
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];

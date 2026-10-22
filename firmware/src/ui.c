@@ -319,6 +319,8 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         return;
     case PG_SOURCE:                             /* SOURCE, LATCH, (V2) VOICE's TYPE */
         if (k == 2u) { static const char *const VS[NVT] = {"SOLO", "GREG", "NUNS", "CATHED"}; put_s(S->val, VS[clamp(v, 0, NVT - 1)]); return; }
+        if (k == 3u) { if (v) ui_time(S->val, 10u * pow2_q16(clamp(v, 0, 127) * 12)); else put_s(S->val, "OFF"); return; }   /* (V2:
+                                                 * GLIDE) */
         put_s(S->val, k ? (v ? "ON" : "OFF") : ENGINES[clamp(v, 0, NENG - 1)]->name);
         return;
     case PG_SYSTEM:                             /* COLOUR, MIDI ("ALL": ALL > SEL; "CH5>S": CH 5 > SEL), TUNE, SCREEN
@@ -1094,6 +1096,12 @@ static void pic_source(void)                    /* the seven sources, the track'
     ui_text(140, 60, "LATCH", 1, UI_M);
     ui_rect(140, 74, 64, 24, trk[sel].latch ? ui_acc : UI_D);
     ui_text(140 + (trk[sel].latch ? 16 : 8), 78, trk[sel].latch ? "ON" : "OFF", 2, trk[sel].latch ? UI_K : UI_L);
+    {                                           /* (V2) GLIDE */
+        char g[12];
+        ui_text(140, 140, "GLIDE", 1, UI_M);
+        if (trk[sel].glide) ui_time(g, 10u * pow2_q16(clamp(trk[sel].glide, 0, 127) * 12)); else put_s(g, "OFF");
+        ui_text(140, 152, g, 1, trk[sel].glide ? UI_L : UI_M);
+    }
     if (e == ENG_VOICE) {                       /* (V2) VOICE's TYPE: one singer, or a choir a note */
         ui_text(140, 112, "TYPE", 1, UI_M);
         ui_text(140, 126, VT_NAME[clamp(trk[sel].vty, 0, NVT - 1)], 1, trk[sel].vty ? ui_acc : UI_L);
@@ -1801,7 +1809,7 @@ static uint32_t ui_pic_key(void)
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
-            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise),
+            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise), UI_H(trk[t].glide),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);

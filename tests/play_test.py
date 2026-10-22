@@ -4,6 +4,7 @@
 """GR!MM V2's playing additions in host mode (tests/host.c):
   - VELOCITY (SYSTEM 3, KNOB 2): ON, a MIDI note's volume from how hard; OFF (as before): the same at any velocity;
     the keys at full either way; the setting loaded from the settings (byte 169's bit 1)
+  - PHASE's LINE 2 page (RING, NOISE) and GLIDE (SOURCE, KNOB 4): off, as before; on, at work; saved, loaded; 1.0: off
     python3 tests/play_test.py build/host/grimm"""
 import array
 import math
@@ -106,5 +107,23 @@ o2, _, _ = run("pd_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.env
 o3, _, _ = run("pd_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
 check("RING, NOISE saved with the project, loaded; a GR!MM 1.0 project: off", " pd1 1,1" in o2 and " pd1 0,0" in o3,
       f"{o2.split(' pd1 ')[1][:3] if ' pd1 ' in o2 else '?'} {o3.split(' pd1 ')[1][:3] if ' pd1 ' in o3 else '?'}")
+
+# GLIDE (SOURCE, KNOB 4; EDIT: SOUND, SOURCE): off (as before): a second note straight there (to the byte, against the build
+# given, if one); on: the second note starts at the first's pitch and gets there; saved, loaded; 1.0: off
+GL = [(300, "btn 6"), (400, "btn 6")]
+TWO = [(3000, "keys 0x80"), (3500, "keys 0x800"), (3520, "probe"), (5000, "probe"), (5200, "keys 0")]
+og, g0_b, _ = run("gl_off", GL + TWO, 5500)
+if OLD:
+    _, old_b, _ = pd_run("gl_old", GL + TWO, 5500, binary=OLD)
+    check("GLIDE OFF: two notes as before, to the byte", old_b == g0_b)
+check("GLIDE OFF: no glide", og.count(" gl1 0 0") == 2, og.split(" gl1 ")[1][:8] if " gl1 " in og else og[:80])
+o, g_b, _ = run("gl_on", GL + [(500, "enc 5 64")] + TWO, 5500)
+w = [x.split(" gl1 ")[1].split()[:2] for x in o.splitlines() if " gl1 " in x]
+check("GLIDE 64 (160 ms): the second note starts at the first's pitch, gets there", len(w) == 2 and w[0][0] == "64" and
+      int(w[0][1]) > 8 * 256 and w[1] == ["64", "0"] and g_b != g0_b, str(w))
+o1, _, _ = run("gl_save", GL + [(500, "enc 5 77"), (1700, "keys 0")], 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "glsaves.bin")))
+o2, _, _ = run("gl_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "glsaves.bin")))
+check("GLIDE saved with the project, loaded; a GR!MM 1.0 project: off", " gl1 77 " in o2 and " gl1 0 " in o3,   # (o3: 1.0)
+      f"{o2.split(' gl1 ')[1][:6] if ' gl1 ' in o2 else '?'} {o3.split(' gl1 ')[1][:6] if ' gl1 ' in o3 else '?'}")
 print("play test: passed" if not bad else "play test: FAILED")
 sys.exit(1 if bad else 0)
