@@ -108,11 +108,43 @@ out, d_b, d, pk = pd_on("pd_dcw", "enc 3 100")
 check("LINE 2's DCW (100): line 2 on, another sound, in range", " pd1 0,0,0,100" in out and d_b != base_b and d_b != w_b and
       pk < 32767 and rms(d, 3200, 4800) > 100, f"peak {pk}")
 SV = PD + [(600, "enc 4 1"), (650, "enc 5 1"), (660, "enc 2 6"), (670, "enc 3 33"), (1700, "keys 0")]
+
+# PHASE ENV (EDIT: SOUND, SOURCE, LINE 2, PHASE ENV): off, as before (above); DCW ENV, PITCH ENV up and down: another
+# sound, in range, the start unlike the end (the envelopes decayed); saved, loaded; 1.0: off
+PE = PD + [(550, "btn 6")]
+
+
+def pe_on(name, turns):
+    out, raw, a = pd_run(name, PE + [(600 + 10 * i, t) for i, t in enumerate(turns)] + [(700, "probe")] + PLAY)
+    return out, raw, a, max(abs(x) for x in a)
+
+
+out, _, _ = pd_run("pe_page", PE + [(600, "probe")], 700)
+check("PHASE: the PHASE ENV page after LINE 2", " page 29 " in out, out.split(" ui page ")[1][:8] if " ui page " in out else "?")
+out, e_b, e, pk = pe_on("pe_dcw", ["enc 2 127", "enc 3 60"])
+check("DCW ENV 100 %: another sound, in range", " pde1 127,60,0,0" in out and e_b != base_b and pk < 32767 and
+      rms(e, 3200, 4800) > 100, f"peak {pk}")
+out, u_b, u, pk = pe_on("pe_up", ["enc 4 24", "enc 5 90"])
+_, dn_b, dn, pk2 = pe_on("pe_down", ["enc 4 -24", "enc 5 90"])
+check("PITCH ENV +24 / -24 ST: other sounds, unlike each other, in range", " pde1 0,0,24,90" in out and u_b != base_b and
+      dn_b != base_b and u_b != dn_b and max(pk, pk2) < 32767, f"peak {pk} {pk2}")
+
+
+def zc(a, t0, t1):                              # zero crossings (left), t0 .. t1 ms: the pitch, roughly
+    x = a[2 * 44100 * t0 // 1000:2 * 44100 * t1 // 1000:2]
+    return sum((x[i] < 0) != (x[i + 1] < 0) for i in range(len(x) - 1))
+
+
+z0, zu, zd = zc(base, 3020, 3120), zc(u, 3020, 3120), zc(dn, 3020, 3120)
+l0, lu = zc(base, 4300, 4900), zc(u, 4300, 4900)
+check("PITCH ENV: up at the start (+24: higher, -24: lower), back on the note after its DECAY",
+      zu > 1.5 * z0 and zd < 0.8 * z0 and abs(lu - l0) <= 0.05 * l0 + 2, f"start {zd} {z0} {zu}, later {l0} {lu}")
+SV += [(1000, "btn 6"), (1100, "enc 2 90"), (1110, "enc 3 20"), (1120, "enc 4 -12"), (1130, "enc 5 70")]
 o1, _, _ = run("pd_save", SV, 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "pdsaves.bin")))
 o2, _, _ = run("pd_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "pdsaves.bin")))
 o3, _, _ = run("pd_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
-check("LINE 2 (RING, NOISE, WAVE, DCW) saved with the project, loaded; a GR!MM 1.0 project: off",
-      " pd1 1,1,6,33 " in o2 and " pd1 0,0,0,0 " in o3,
+check("LINE 2 (RING, NOISE, WAVE, DCW) and PHASE ENV saved with the project, loaded; a GR!MM 1.0 project: off",
+      " pd1 1,1,6,33 " in o2 and " pd1 0,0,0,0 " in o3 and " pde1 90,20,-12,70" in o2 and " pde1 0,0,0,0" in o3,
       f"{o2.split(' pd1 ')[1][:9] if ' pd1 ' in o2 else '?'} {o3.split(' pd1 ')[1][:9] if ' pd1 ' in o3 else '?'}")
 
 # GLIDE (SOURCE, KNOB 4; EDIT: SOUND, SOURCE): off (as before): a second note straight there (to the byte, against the build

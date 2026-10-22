@@ -10,6 +10,8 @@
  * ring modulation; line 2 on for it, DETUNE or not); NOISE, line 2 read a little off where it is, at random each sample
  * (up to ~1/16 of a cycle: it roughens, as the CZ's noise modulation; line 2 on for it); WAVE, DCW, line 2's own
  * (0 SAME: line 1's, as before; a wave of its own: that wave every cycle; line 2 on for either).
+ * (V2) the PHASE ENV page: two envelopes a note, each a jump at the note's start decaying back (vc_pdl): DCW ENV, more
+ * bend (both lines'); PITCH ENV, semitones up or down (both lines); each with its DECAY (0: none, as before).
  * GR!MM's: the four knobs, the level (as VA's), the engine interface.
  *   WAVE    SAW, SQR, PLS, DSIN, SPLS, RSAW, RTRI, RTRP (the last three: CZ's resonance waves)
  *   WAVE2   -, or a wave every other cycle
@@ -129,6 +131,16 @@ static uint32_t pd_dcw(int32_t v)              /* the DCW knob (0 .. 127) as the
     return (dcw * 56000u) >> 16;
 }
 
+static uint32_t pd_ek(uint32_t t, uint32_t i, int32_t d)   /* an envelope's DECAY as env_k's step (a track's, kept:
+                                                 * its divide once a change) */
+{
+    static uint32_t k[NT][2];
+    static int16_t at[NT][2] = {{-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}};
+    d = clamp(d, 0, 127);
+    if (at[t][i] != d) at[t][i] = (int16_t)d, k[t][i] = env_k(10u * pow2_q16(d * 15));
+    return k[t][i];
+}
+
 static void phase_begin(voice_t *v)             /* a note from silence (phase_note_on): the lines from the start */
 {
     v->ph[0] = v->ph[1] = 0;
@@ -141,15 +153,20 @@ static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
 {
     uint32_t w1 = (uint32_t)clamp(p[0], 0, 7), w2 = (uint32_t)clamp(p[1], 0, 8), i;
     int32_t depth = clamp(p[2], 0, 127) << 8, pitch = VP16(v), damp = amp1 - amp0;
-    uint32_t dcw, inc = vinc(pitch), inc2;
+    uint32_t dcw, inc, inc2;
     int32_t det = clamp(p[3], 0, 127), ring = trk[v->trk & 3u].pd_ring != 0, noise = trk[v->trk & 3u].pd_noise != 0;
     int32_t wl2 = clamp(trk[v->trk & 3u].pd_wav, 0, 8), dl2 = clamp(trk[v->trk & 3u].pd_dcw, 0, 127);
     int32_t line2 = det != 0 || ring || noise || wl2 || dl2;
+    int32_t de = clamp(trk[v->trk & 3u].pd_de, 0, 127), pe = clamp(trk[v->trk & 3u].pd_pe, -64, 63), *lv = vc_pdl[v - vc];
+    int32_t dj = de ? (de * lv[0]) >> 16 : 0;   /* (V2: DCW ENV: the knobs' more bend now) */
     int32_t d16 = det * 16 / 100, rem = det * 16 - d16 * 100;   /* (cents_inc(), written out) */
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1];
     int32_t tg0 = v->s[0], tg1 = v->s[1];       /* WAVE / WAVE2 toggles */
     pd_t b1, b2, c1, c2;
     const pd_t *l2a = &b1, *l2b = &b2;          /* line 2's waves (line 1's; V2: its own WAVE, DCW) */
+    if (pe) pitch += (pe * 16 * lv[1]) >> 16;   /* (V2: PITCH ENV: semitones, decaying) */
+    inc = vinc(pitch);
+    if (dj) depth = clamp(p[2] + dj, 0, 127) << 8;
     dcw = (uint32_t)depth * 65535u / (127u << 8);
     dcw = (dcw * 56000u) >> 16;                 /* the classic range of the bend */
     inc2 = vinc(pitch + d16);
@@ -157,7 +174,7 @@ static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
     pd_setup(&b1, w1, dcw);
     pd_setup(&b2, w2 ? w2 - 1u : w1, dcw);      /* WAVE2 (every other cycle) */
     if (wl2 || dl2) {                           /* (V2: line 2's own: its WAVE every cycle; SAME, line 1's, WAVE2 too) */
-        uint32_t d2 = dl2 ? pd_dcw(dl2) : dcw;
+        uint32_t d2 = dl2 ? pd_dcw(dl2 + dj) : dcw;
         pd_setup(&c1, wl2 ? (uint32_t)wl2 - 1u : w1, d2);
         if (!wl2) pd_setup(&c2, w2 ? w2 - 1u : w1, d2);
         l2a = &c1, l2b = wl2 ? &c1 : &c2;
@@ -184,6 +201,8 @@ static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
     v->ph[1] = ph1;
     v->s[0] = tg0;
     v->s[1] = tg1;
+    if (de) lv[0] -= mulq16(lv[0], pd_ek(v->trk & 3u, 0u, trk[v->trk & 3u].pd_dd));   /* (V2: the envelopes a step down) */
+    if (pe) lv[1] -= mulq16(lv[1], pd_ek(v->trk & 3u, 1u, trk[v->trk & 3u].pd_pd));
 }
 
 static void phase_text(const volatile int32_t *p, uint32_t k, char *s)   /* parameter k as the screen shows it */

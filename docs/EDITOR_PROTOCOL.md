@@ -140,7 +140,7 @@ shows it (ASCII, up to 15; none: nothing, HOME shows the source).
 | 12 | bit 0 LATCH (0 / 1); bits 1–7 GLIDE (V2: 0 OFF, 1–127: 10 ms × 2^(v × 12 / 192); saved before: 0) |
 | 13 | the chord byte (below) |
 | 14–17 | LFO: RATE (0–127), DEPTH (0–100), DESTINATION, SHAPE (below) |
-| 18–49 | FM: the track's patch (below), when the source is FM and byte 18 has bit 7 set; else the PATCH as built. VOICE (V2): byte 18 its TYPE (0 SOLO, 1 GREGORIAN, 2 NUNS, 3 CATHEDRAL; saved before: 0). PHASE (V2): byte 18 bit 0 RING, bit 1 NOISE; 19 LINE 2's WAVE (0 SAME, 1–8: SAW .. RTRP); 20 its DCW (0 SAME, 1–127); saved before: 0, all off |
+| 18–49 | FM: the track's patch (below), when the source is FM and byte 18 has bit 7 set; else the PATCH as built. VOICE (V2): byte 18 its TYPE (0 SOLO, 1 GREGORIAN, 2 NUNS, 3 CATHEDRAL; saved before: 0). PHASE (V2): byte 18 bit 0 RING, bit 1 NOISE; 19 LINE 2's WAVE (0 SAME, 1–8: SAW .. RTRP); 20 its DCW (0 SAME, 1–127); 21 DCW ENV (0 OFF, 1–127); 22 its DECAY (0–127: 10 ms × 2^(v × 15 / 192)); 23 PITCH ENV (a signed byte, −64 … 63 semitones; 0 OFF); 24 its DECAY (as 22); saved before: 0, all off |
 | 50–59 | its name (ASCII, up to 10, 0-padded; the editor page gives it): PRESETS, SOUNDS and HOME show it instead of "PAD 03" (a byte the font has not as a space). Saving a sound on the FM-1 over a slot keeps the name that slot had; into an empty slot, none |
 | 60–63 | CRC-32 of bytes 0–59 |
 

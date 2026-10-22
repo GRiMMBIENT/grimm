@@ -202,6 +202,7 @@ static const char *const LONG_LAB[][2] = {
     {"REVERSE", "REV"}, {"SECTION", "SECT"}, {"PATTERN", "PATT"}, {"REPEATS", "REPEAT"}, {"OCTAVES", "OCTAVE"},
     {"RATCHET", "RATCH"}, {"VOICING", "VOICNG"}, {"CHANCE", "CHNC"}, {"ACTION", "DO"}, {"MIDI LEARN", "LEARN"},
     {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"}, {"VELOCITY", "VELO"},
+    {"DCW ENV", "DCW"}, {"DCW DECAY", "D DEC"}, {"PITCH ENV", "PITCH"}, {"PITCH DECAY", "P DEC"},
 };
 static void ui_label(char *d, const char *s)    /* a knob's name on a slab (at most 6 characters: 48 px) */
 {
@@ -344,6 +345,14 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         if (k == 0u) put_s(S->val, v ? N_PD_WAVE[clamp(v, 1, 8) - 1] : "SAME");
         else if (k == 1u) { if (v) put_s(put_u(S->val, ((uint32_t)clamp(v, 0, 127) * 100u + 63u) / 127u), "%"); else put_s(S->val, "SAME"); }
         else put_s(S->val, v ? "ON" : "OFF");
+        return;
+    case PG_PDENV:                              /* (V2: PHASE ENV: DCW ENV, its DECAY, PITCH ENV, its DECAY) */
+        if (k == 0u) { if (v) put_s(put_u(S->val, ((uint32_t)clamp(v, 0, 127) * 100u + 63u) / 127u), "%"); else put_s(S->val, "OFF"); }
+        else if (k == 2u) {                     /* (the bar from its middle: 4 at OFF) */
+            S->fill = (uint8_t)((clamp(v, -64, 63) + 64) * 8 / 127);
+            if (v) put_s(put_u(put_s(S->val, v > 0 ? "+" : "-"), (uint32_t)(v > 0 ? v : -v)), "ST"); else put_s(S->val, "OFF");
+        }
+        else ui_time(S->val, 10u * pow2_q16(clamp(v, 0, 127) * 15));
         return;
     case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
                                                  * ALWAYS OFF; VELOCITY: OFF, ON */
@@ -1088,6 +1097,27 @@ static void pic_pdline(void)                    /* (V2) LINE 2: line 1 (light) b
     ui_text(PX0 + 124, PY0 + 96, trk[sel].pd_noise ? "NOISE ON" : "NOISE OFF", 1, trk[sel].pd_noise ? ui_acc : UI_M);
 }
 
+static void pic_pdenv(void)                     /* (V2) PHASE ENV: the two envelopes, DCW (light: up from the floor),
+                                                 * PITCH (mid: up or down from the middle; 24 ST: all the way), each
+                                                 * over ~1.2 s */
+{
+    int32_t c, x, y0;
+    ui_caption("DCW", "PITCH");
+    for (c = 0; c < 2; c++) {
+        int32_t d = c ? clamp(trk[sel].pd_pe, -64, 63) : clamp(trk[sel].pd_de, 0, 127);
+        uint32_t k = env_k(10u * pow2_q16(clamp(c ? trk[sel].pd_pd : trk[sel].pd_dd, 0, 127) * 15)), l = 65536u, j;
+        int32_t base = c ? 11 : 20, span = c ? clamp(9 * d / 24, -9, 9) : 18 * d / 127;
+        for (y0 = -1, x = 0; x < 26; x++) {
+            int32_t yy = base - (int32_t)(((int64_t)span * l) >> 16), a = y0 < 0 ? yy : y0, z;
+            for (z = a < yy ? a : yy; z <= (a < yy ? yy : a); z++) ui_cell(c * 28 + x, z, c ? UI_M : UI_L);
+            y0 = yy;
+            for (j = 0; j < 64u; j++) l -= (uint32_t)mulq16((int32_t)l, k);   /* (a column: 64 control steps, ~46 ms) */
+        }
+    }
+    ui_text(PX0 + 4, PY0 + 96, trk[sel].pd_de ? "DCW ENV ON" : "DCW ENV OFF", 1, trk[sel].pd_de ? ui_acc : UI_M);
+    ui_text(PX0 + 124, PY0 + 96, trk[sel].pd_pe ? "PITCH ON" : "PITCH OFF", 1, trk[sel].pd_pe ? ui_acc : UI_M);
+}
+
 static void pic_source(void)                    /* the seven sources, the track's in the accent; LATCH */
 {
     int32_t i, e = (int32_t)sel_eng();
@@ -1767,6 +1797,7 @@ static void ui_pic_draw(void)
     case PG_FMALGO: pic_fmalgo(); return;
     case PG_FMOP: pic_fmop(); return;
     case PG_PDLINE: pic_pdline(); return;
+    case PG_PDENV: pic_pdenv(); return;
     case PG_SOUND:
         switch (sel_eng()) {
         case ENG_VA: pic_va(); return;
@@ -1814,7 +1845,8 @@ static uint32_t ui_pic_key(void)
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
-            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise), UI_H(trk[t].pd_wav), UI_H(trk[t].pd_dcw), UI_H(trk[t].glide),
+            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise), UI_H(trk[t].pd_wav), UI_H(trk[t].pd_dcw), UI_H(trk[t].pd_de), UI_H(trk[t].pd_dd), UI_H(trk[t].pd_pe),
+            UI_H(trk[t].pd_pd), UI_H(trk[t].glide),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);

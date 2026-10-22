@@ -463,7 +463,7 @@ function drawEditor() {
   if (s.eng === 3)                                           // (GR!MM 2.0: VOICE's TYPE, as SOURCE's KNOB 3)
     choice(g, "TYPE", ["SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"], () => s.vtype || 0, (v) => { s.vtype = v; });
   if (s.eng === 6) {                                         // (GR!MM 2.0: PHASE's LINE 2 page)
-    s.pd = s.pd || { ring: 0, noise: 0, wave: 0, dcw: 0 };
+    s.pd = s.pd || { ring: 0, noise: 0, wave: 0, dcw: 0, denv: 0, ddec: 0, penv: 0, pdec: 0 };
     const p2 = el("div", { cls: "grp" }, ed);
     el("h3", {}, p2, "PHASE: LINE 2");
     choice(p2, "WAVE", ["SAME", "SAW", "SQR", "PLS", "DSIN", "SPLS", "RSAW", "RTRI", "RTRP"], () => s.pd.wave || 0,
@@ -472,6 +472,15 @@ function drawEditor() {
             (v) => (v ? `${Math.round((v * 100 + 63) / 127)}%` : "SAME"));
     toggle(p2, ["RING OFF", "RING ON"], () => s.pd.ring, (v) => { s.pd.ring = v; });
     toggle(p2, ["NOISE OFF", "NOISE ON"], () => s.pd.noise, (v) => { s.pd.noise = v; });
+    const pe = el("div", { cls: "grp" }, ed);                // (GR!MM 2.0: PHASE ENV page)
+    el("h3", {}, pe, "PHASE: ENV");
+    const dec = (v) => { const ms = 10 * Math.pow(2, v * 15 / 192); return ms < 995 ? `${Math.round(ms)} MS` : `${(ms / 1000).toFixed(1)} S`; };
+    control(pe, "DCW ENV", 0, 127, () => s.pd.denv || 0, (v) => { s.pd.denv = v; },
+            (v) => (v ? `${Math.round((v * 100 + 63) / 127)}%` : "OFF"));
+    control(pe, "DCW DECAY", 0, 127, () => s.pd.ddec || 0, (v) => { s.pd.ddec = v; }, dec);
+    control(pe, "PITCH ENV", -64, 63, () => s.pd.penv || 0, (v) => { s.pd.penv = v; },
+            (v) => (v ? `${v > 0 ? "+" : ""}${v} ST` : "OFF"));
+    control(pe, "PITCH DECAY", 0, 127, () => s.pd.pdec || 0, (v) => { s.pd.pdec = v; }, dec);
   }
 
   g = el("div", { cls: "grp" }, ed);

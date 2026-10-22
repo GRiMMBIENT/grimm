@@ -61,6 +61,8 @@ static void host_probe(void)
         printf(" vel %u", vel_on);              /* (V2: SYSTEM 3's VELOCITY) */
         printf(" pd1 %d,%d,%d,%d", (int)trk[0].pd_ring, (int)trk[0].pd_noise, (int)trk[0].pd_wav,
                (int)trk[0].pd_dcw);             /* (V2: T1's PHASE extras: RING, NOISE, LINE 2's WAVE, DCW) */
+        printf(" pde1 %d,%d,%d,%d", (int)trk[0].pd_de, (int)trk[0].pd_dd, (int)trk[0].pd_pe, (int)trk[0].pd_pd);   /* (V2:
+                                                 * T1's PHASE ENV) */
         {                                       /* (V2: T1's GLIDE; its voices' way to go, the most) */
             int32_t g = 0, k2;
             for (k2 = 0; k2 < (int32_t)NV; k2++)

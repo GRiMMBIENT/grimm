@@ -370,7 +370,9 @@ export function parseSound(r, meta) {                        // a record -> a so
 }
 function pdOf(r) {                                          // a PHASE sound's LINE 2 (bytes 18 ..: 18 bit 0 RING, bit 1
   return { ring: r ? r[18] & 1 : 0, noise: r ? r[18] >> 1 & 1 : 0,   // NOISE; 19 its WAVE, 0 SAME, 1 .. 8; 20 its DCW, 0
-           wave: r && r[19] <= 8 ? r[19] : 0, dcw: r ? r[20] & 127 : 0 };   // SAME, 1 .. 127); none (another source,
+           wave: r && r[19] <= 8 ? r[19] : 0, dcw: r ? r[20] & 127 : 0,   // SAME, 1 .. 127); PHASE ENV (21 .. 24: DCW
+           denv: r ? r[21] & 127 : 0, ddec: r ? r[22] & 127 : 0,   // ENV, its DECAY, PITCH ENV a signed byte, its
+           penv: r ? Math.max(-64, Math.min(63, r[23] << 24 >> 24)) : 0, pdec: r ? r[24] & 127 : 0 };   // DECAY); none (another source,
 }                                                            // saved before): all off
 export function buildRecord(s) {
   const r = new Uint8Array(SND);
@@ -386,6 +388,8 @@ export function buildRecord(s) {
   if (s.eng === 6 && s.pd) {                                 // (GR!MM 2.0: PHASE: LINE 2's RING, NOISE, WAVE, DCW)
     r[18] = (s.pd.ring ? 1 : 0) | (s.pd.noise ? 2 : 0);
     r[19] = Math.min(s.pd.wave || 0, 8), r[20] = (s.pd.dcw || 0) & 127;
+    r[21] = (s.pd.denv || 0) & 127, r[22] = (s.pd.ddec || 0) & 127;   // (PHASE ENV)
+    r[23] = Math.max(-64, Math.min(63, s.pd.penv || 0)) & 255, r[24] = (s.pd.pdec || 0) & 127;
   }
   const nm = (s.name || "").toUpperCase().replace(/[^\x20-\x7e]/g, "").slice(0, 10);
   for (let i = 0; i < nm.length; i++) r[50 + i] = nm.charCodeAt(i);
