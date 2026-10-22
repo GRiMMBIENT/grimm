@@ -12,7 +12,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **Each track's filter** can be a low-pass, high-pass or band-pass, and can sit before or after the effect sends: MIXER 2's **TYPE** and **POS**. See [HOME](#2-home).
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
-- **VOICE choirs:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of three singers on every note: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
+- **VOICE choirs from real singers:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of six singers on every note, made from recordings of real singers: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
 - **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. See [HOME](#2-home).
 - **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level meter on MIXER 1.
 - **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
@@ -116,16 +116,27 @@ Press **HOME** again for the mixer pages:
 
 On PHYS, STRUCTURE and BOW change meaning with the model; the screen shows the current name.
 
-**VOICE's TYPE** (SOURCE page, KNOB 3) turns each note into a choir:
+**VOICE's TYPE** (SOURCE page, KNOB 3) turns each note into a choir of six singers. SOLO is VOICE's own synthesized voice; the choirs are made from **recordings of real singers** (single cycles of their sung vowels, like the vocal wavetables of a "vocal pad" synth), each singer a little out of tune with the others, drifting a little on its own, with a vibrato and a slow sway of their own:
 
 | TYPE | Who sings each note |
 |---|---|
-| SOLO | One voice, as in GR!MM 1.0 (the default; every sound made before 2.0 is SOLO) |
-| GREGORIAN | Three low men's voices, slightly out of tune with each other, each drifting a little on its own, almost no vibrato |
-| NUNS | Three women's voices, slightly out of tune with each other, a gentle vibrato |
-| CATHEDRAL | Two men and a woman an octave above them, a gentle vibrato |
+| SOLO | One synthesized voice, as in GR!MM 1.0 (the default; every sound made before 2.0 is SOLO) |
+| GREGORIAN | Six men (three singers, two parts each), almost no vibrato |
+| NUNS | Six women (three singers, two parts each), a gentle vibrato |
+| CATHEDRAL | Three men and three women an octave above them, a gentle vibrato |
 
-VOWEL, SHIFT, BUZZ and BREATH work as always, on the whole choir; with chord mode, every note of the chord is a choir. A choir uses more of the processor than SOLO, so a sound with all six voices singing in chords is about as heavy as GR!MM gets. The choir sounds sound best with a big reverb: turn up the track's REVERB on MIXER 1 and SPACE's SIZE and MIX (a sound doesn't store those).
+On a choir, the knobs do this:
+
+- **VOWEL** morphs between the singers' A, E, I, O and U.
+- **SHIFT** spreads the singers: −12 = all in tune (unison), 0 (the middle) = as designed, +12 = twice as wide.
+- **BUZZ** is the tone: low = dark and soft, high = open and bright.
+- **BREATH** adds breath noise; at the very top the singing fades into a whisper.
+
+With chord mode, every note of the chord is a choir. The men sound most natural from about F#2 to F#4, the women from about F#3 to F#5 (each singer was recorded at two pitches, men C3 and C4, women C4 and C5; further from them the vowels get boomier or thinner). A choir uses a little more of the processor than SOLO, and a little more again while VOWEL sits between two vowels.
+
+**Reverb for the choirs** (a sound doesn't store these: set them on the FX pages and MIXER 1): SPACE **SIZE** about 10 s, **DAMP** about 47 % (a darker tail), **MIX** 79 % (as it starts), **PRE-DELAY** about 40 ms, and the track's **REVERB** on MIXER 1 at about 80 %. For a long, cathedral wash, SIZE up to 15–20 s.
+
+The choir recordings are from **VocalSet** (Wilkins, Seetharaman, Wahl, Pardo, Northwestern University, 2018, <https://doi.org/10.5281/zenodo.1442513>), licensed under Creative Commons Attribution 4.0 (<https://creativecommons.org/licenses/by/4.0/>); GR!MM made single cycles from them (see LICENSING.md).
 
 | PHYS MODEL | What it is | STRUCTURE | DAMP | BOW |
 |---|---|---|---|---|
