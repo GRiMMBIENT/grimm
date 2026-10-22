@@ -931,7 +931,7 @@ static const page_t PAGES[NPAGE] = {
     {"DRIVE", BTN_FX, 1, 0, 1, {"AMOUNT", "TYPE", "TONE", "MIX"}},
     {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "VELOCITY", "", ""}},   /* (V2: VELOCITY: a MIDI note's volume; a NEW
                                                  * project's tracks' LATCH) */
-    {"LINE 2", BTN_EDIT, 1, 1, 1, {"", "", "RING", ""}},   /* (V2: a PHASE track's, after SOURCE: phase.c) */
+    {"LINE 2", BTN_EDIT, 1, 1, 1, {"", "", "RING", "NOISE"}},   /* (V2: a PHASE track's, after SOURCE: phase.c) */
 };
 static uint32_t pg_key(uint32_t p)              /* its place in its button's round */
 {
@@ -1026,7 +1026,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_FMALGO: return k == 0u ? &trk[sel].fm_alg : k == 1u ? &trk[sel].fm_fb : k == 2u ? &fm_op :
                            &trk[sel].fmo[clamp(fm_op, 0, 5)][FO_FINE];
     case PG_FMOP: return &trk[sel].fmo[clamp(fm_op, 0, 5)][k == 0u ? FO_RATIO : k == 1u ? FO_LEVEL : k == 2u ? FO_ATK : FO_DEC];
-    case PG_PDLINE: return k == 2u ? &trk[sel].pd_ring : 0;   /* (V2: PHASE's LINE 2) */
+    case PG_PDLINE: return k == 2u ? &trk[sel].pd_ring : k == 3u ? &trk[sel].pd_noise : 0;   /* (V2: PHASE's LINE 2) */
     case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: return FX[pg - PG_TAPE][k];
     case PG_MASTER: return k == 0u ? &mf_cut : k == 1u ? &mf_res : k == 2u ? &mf_type : &mf_pos;
     case PG_DRIVE: return k == 0u ? &dr_amt : k == 1u ? &dr_type : k == 2u ? &dr_tone : &dr_mix;
@@ -1060,7 +1060,7 @@ static int32_t knob_max(uint32_t pg, uint32_t k)
            pg == PG_LFO ? (k == 0u ? 127 : k == 1u ? 100 : k == 2u ? NLFODEST - 1 : NLFOSHAPE - 1) :
            pg == PG_SONG ? (k == 0u ? SONG_N - 1 : k == 1u ? SONG_END : k == 2u ? 16 : NSONGMODE - 1) :
            pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k == 3u ? CK_N - 1 : k ? 1 : 2) :
-           pg == PG_SYS3 || (pg == PG_PDLINE && k == 2u) ? 1 :
+           pg == PG_SYS3 || (pg == PG_PDLINE && k >= 2u) ? 1 :
            pg == PG_HOME && k == 3u ? 200 : pg == PG_FMALGO ? (k == 0u ? 31 : k == 1u ? 7 : k == 2u ? 5 : 99) :
            pg == PG_FMOP ? (k ? 99 : 31) : pg == PG_MIX2 ? (k == 1u ? NFTYPE - 1 : k == 2u ? 1 : 127) :
            pg == PG_MASTER ? (k == 2u ? NFTYPE - 1 : k == 3u ? NMPOS - 1 : 127) :

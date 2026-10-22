@@ -145,9 +145,10 @@ On a **PHASE** track, EDIT has one more page after SOURCE: **LINE 2**. PHASE pla
 
 | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|
-| – | – | RING: OFF / ON | – |
+| – | – | RING: OFF / ON | NOISE: OFF / ON |
 
 - **RING:** line 1 × line 2 (ring modulation, as the CZ's) instead of the two mixed: metallic, bell-like, clangorous. Try it with DETUNE up: the further apart the two lines, the stranger.
+- **NOISE:** noise roughens line 2 (as the CZ's noise modulation): breathy, gritty, for winds, ghosts and broken radios. It brings line 2 in by itself; with RING too, the noise rings against line 1.
 
 | PHYS MODEL | What it is | STRUCTURE | DAMP | BOW |
 |---|---|---|---|---|

@@ -7,7 +7,8 @@
  * whose bend is DCW. WAVE2 alternates with WAVE every other cycle; a second line DETUNE cents up is mixed in. Taken
  * over: pd_cos, pd_setup, pd_wave, the render loop. Not taken: ENV -> DCW (no envelope of its own yet), SUB.
  * (V2) the LINE 2 page (PHASE tracks', the track's: trk[].pd_): RING, line 1 x line 2 instead of their mix (as the CZ's
- * ring modulation; line 2 on for it, DETUNE or not).
+ * ring modulation; line 2 on for it, DETUNE or not); NOISE, line 2 read a little off where it is, at random each sample
+ * (up to ~1/16 of a cycle: it roughens, as the CZ's noise modulation; line 2 on for it).
  * GR!MM's: the four knobs, the level (as VA's), the engine interface.
  *   WAVE    SAW, SQR, PLS, DSIN, SPLS, RSAW, RTRI, RTRP (the last three: CZ's resonance waves)
  *   WAVE2   -, or a wave every other cycle
@@ -134,7 +135,8 @@ static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
     uint32_t w1 = (uint32_t)clamp(p[0], 0, 7), w2 = (uint32_t)clamp(p[1], 0, 8), i;
     int32_t depth = clamp(p[2], 0, 127) << 8, pitch = VP16(v), damp = amp1 - amp0;
     uint32_t dcw, inc = vinc(pitch), inc2;
-    int32_t det = clamp(p[3], 0, 127), ring = trk[v->trk & 3u].pd_ring != 0, line2 = det != 0 || ring;
+    int32_t det = clamp(p[3], 0, 127), ring = trk[v->trk & 3u].pd_ring != 0, noise = trk[v->trk & 3u].pd_noise != 0;
+    int32_t line2 = det != 0 || ring || noise;
     int32_t d16 = det * 16 / 100, rem = det * 16 - d16 * 100;   /* (cents_inc(), written out) */
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1];
     int32_t tg0 = v->s[0], tg1 = v->s[1];       /* WAVE / WAVE2 toggles */
@@ -154,7 +156,8 @@ static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
             tg0 ^= 1;
         if (line2) {
             uint32_t old2 = ph1;
-            int32_t s2 = pd_wave(tg1 ? &b2 : &b1, ph1 >> 16);
+            int32_t s2 = pd_wave(tg1 ? &b2 : &b1, noise ? (ph1 >> 16) + (uint32_t)((int32_t)noise32(&v->rng) >> 19) :
+                                 ph1 >> 16);   /* (V2: NOISE: its read off by up to +-4096 of 65536) */
             ph1 += inc2;
             if (ph1 < old2)
                 tg1 ^= 1;

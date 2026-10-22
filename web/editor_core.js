@@ -368,9 +368,9 @@ export function parseSound(r, meta) {                        // a record -> a so
            vtype: r[3] === 3 && r[18] < 4 ? r[18] : 0,       // (GR!MM 2.0: VOICE's TYPE, byte 18; before: SOLO)
            pd: pdOf(r[3] === 6 ? r : null) };                 // (GR!MM 2.0: PHASE's LINE 2 and envelopes, bytes 18 ..)
 }
-function pdOf(r) {                                          // a PHASE sound's LINE 2 (bytes 18 ..: 18 bit 0 RING);
-  return { ring: r ? r[18] & 1 : 0 };                        // none (another source, saved before): all off
-}
+function pdOf(r) {                                          // a PHASE sound's LINE 2 (bytes 18 ..: 18 bit 0 RING, bit 1
+  return { ring: r ? r[18] & 1 : 0, noise: r ? r[18] >> 1 & 1 : 0 };   // NOISE); none (another source, saved before):
+}                                                            // all off
 export function buildRecord(s) {
   const r = new Uint8Array(SND);
   r[0] = 0x54, r[1] = s.cat, r[2] = Math.max(1, Math.min(99, s.num || 1)), r[3] = s.eng;
@@ -382,7 +382,7 @@ export function buildRecord(s) {
     s.fm.ops.forEach((o, i) => r.set(o, 20 + i * 5));
   }
   if (s.eng === 3) r[18] = (s.vtype || 0) & 3;               // (GR!MM 2.0: VOICE's TYPE: SOLO, GREGORIAN, NUNS, CATHEDRAL)
-  if (s.eng === 6 && s.pd) r[18] = s.pd.ring ? 1 : 0;        // (GR!MM 2.0: PHASE: LINE 2's RING)
+  if (s.eng === 6 && s.pd) r[18] = (s.pd.ring ? 1 : 0) | (s.pd.noise ? 2 : 0);   // (GR!MM 2.0: PHASE: LINE 2's RING, NOISE)
   const nm = (s.name || "").toUpperCase().replace(/[^\x20-\x7e]/g, "").slice(0, 10);
   for (let i = 0; i < nm.length; i++) r[50 + i] = nm.charCodeAt(i);
   new DataView(r.buffer).setUint32(60, crc32(r.subarray(0, 60)), true);

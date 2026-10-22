@@ -95,13 +95,16 @@ def pd_on(name, turn, extra=()):
 
 
 out, r_b, r, pk = pd_on("pd_ring", "enc 4 1")
-check("RING on: another sound, in range", " pd1 1" in out and r_b != base_b and pk < 32767 and rms(r, 3200, 4800) > 100,
+check("RING on: another sound, in range", " pd1 1,0" in out and r_b != base_b and pk < 32767 and rms(r, 3200, 4800) > 100,
       f"peak {pk}")
-SV = PD + [(600, "enc 4 1"), (1700, "keys 0")]
+out, n_b, n, pk = pd_on("pd_noise", "enc 5 1")
+check("NOISE on: another sound, in range", " pd1 0,1" in out and n_b != base_b and pk < 32767 and
+      rms(n, 3200, 4800) > 100, f"peak {pk}")
+SV = PD + [(600, "enc 4 1"), (650, "enc 5 1"), (1700, "keys 0")]
 o1, _, _ = run("pd_save", SV, 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "pdsaves.bin")))
 o2, _, _ = run("pd_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "pdsaves.bin")))
 o3, _, _ = run("pd_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
-check("RING saved with the project, loaded; a GR!MM 1.0 project: off", " pd1 1" in o2 and " pd1 0" in o3,
+check("RING, NOISE saved with the project, loaded; a GR!MM 1.0 project: off", " pd1 1,1" in o2 and " pd1 0,0" in o3,
       f"{o2.split(' pd1 ')[1][:3] if ' pd1 ' in o2 else '?'} {o3.split(' pd1 ')[1][:3] if ' pd1 ' in o3 else '?'}")
 print("play test: passed" if not bad else "play test: FAILED")
 sys.exit(1 if bad else 0)

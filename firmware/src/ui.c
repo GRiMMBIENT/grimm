@@ -338,7 +338,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
               LEARN_NAME[clamp(v, 0, 2)]);
         return;
-    case PG_PDLINE: put_s(S->val, v ? "ON" : "OFF"); return;   /* (V2: PHASE's LINE 2: RING) */
+    case PG_PDLINE: put_s(S->val, v ? "ON" : "OFF"); return;   /* (V2: PHASE's LINE 2: RING, NOISE) */
     case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
                                                  * ALWAYS OFF; VELOCITY: OFF, ON */
     case PG_SOUNDS:
@@ -1076,8 +1076,9 @@ static void pic_pdline(void)                    /* (V2) LINE 2: line 1 (light) b
             y0 = yy;
         }
     }
-    ui_text(PX0 + 4, PY0 + 96, trk[sel].pd_ring ? "RING  1 X 2" : p[3] ? "MIX  1 + 2" : "LINE 1 ALONE", 1,
+    ui_text(PX0 + 4, PY0 + 96, trk[sel].pd_ring ? "RING  1 X 2" : p[3] || trk[sel].pd_noise ? "MIX  1 + 2" : "LINE 1 ALONE", 1,
             trk[sel].pd_ring ? ui_acc : UI_M);
+    ui_text(PX0 + 124, PY0 + 96, trk[sel].pd_noise ? "NOISE ON" : "NOISE OFF", 1, trk[sel].pd_noise ? ui_acc : UI_M);
 }
 
 static void pic_source(void)                    /* the seven sources, the track's in the accent; LATCH */
@@ -1800,7 +1801,7 @@ static uint32_t ui_pic_key(void)
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
-            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring),
+            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);

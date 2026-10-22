@@ -59,7 +59,7 @@ static void host_probe(void)
             printf(" /srcs");
         }
         printf(" vel %u", vel_on);              /* (V2: SYSTEM 3's VELOCITY) */
-        printf(" pd1 %d", (int)trk[0].pd_ring); /* (V2: T1's PHASE extras: RING) */
+        printf(" pd1 %d,%d", (int)trk[0].pd_ring, (int)trk[0].pd_noise);   /* (V2: T1's PHASE extras: RING, NOISE) */
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,
