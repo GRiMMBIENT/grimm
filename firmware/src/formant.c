@@ -124,6 +124,7 @@ static struct {
     uint32_t ph[VT_SING], vp[VT_SING], cp[VT_SING];   /* each singer's cycle's phase, its vibrato's, its sway's */
     int32_t dr[VT_SING], dt[VT_SING], nst, lp, nl;   /* its drift now, where it goes (cents x 256); the drift's
                                                  * random; the tone's low-pass, the breath's */
+    uint8_t lv[VT_SING];                        /* its cycle's size (CH_OFF's; 255: none yet) */
 } vx_c[NV];
 
 static void formant_begin(voice_t *v)           /* a note from silence: the opening starts at zero (no click) */
@@ -138,6 +139,7 @@ static void formant_begin(voice_t *v)           /* a note from silence: the open
         vx_c[n].dr[i] = vx_c[n].dt[i] = 0;
     }
     vx_c[n].lp = vx_c[n].nl = 0;
+    for (i = 0; i < VT_SING; i++) vx_c[n].lv[i] = 255u;
 }
 
 /* the four resonators of VOWEL, SHIFT (+ sh, 1/16 semitones: a choir's men or women) for a voice at pitch (inc its
@@ -271,8 +273,13 @@ static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
             ((sine_i(vx_c[n].vp[k]) * VT[ty].vib) >> 7);   /* (cents x 256) */
         b = vinc(pk);
         q->inc = b + (uint32_t)(int32_t)(((int64_t)b * (d * 38)) >> 24);   /* (2^(c / 1200) ~ 1 + c x 0.000578) */
-        for (lv = 0; lv < 3u && (q->inc >> 20) * (64u >> lv) > 1858u; lv++)   /* (its harmonics under ~20 kHz) */
+        for (lv = 0; lv < 3u && (b >> 20) * (64u >> lv) > 1858u; lv++)   /* (its harmonics under ~20 kHz at its
+                                                 * note: its vibrato and drift, a few cents, stay under 22 kHz) */
             ;
+        if (lv < vx_c[n].lv[k] && vx_c[n].lv[k] < 4u && ((b + (b >> 5)) >> 20) * (64u >> lv) > 1858u)
+            lv = vx_c[n].lv[k];                 /* (the larger cycle only once the note is clearly under its edge: a
+                                                 * pitch moving at the edge, an LFO's, doesn't switch to and fro) */
+        vx_c[n].lv[k] = (uint8_t)lv;
         q->t0 = c + vi * CHOIR_LEN + CH_OFF[lv], q->t1 = mf ? c + (vi + 1) * CHOIR_LEN + CH_OFF[lv] : q->t0;
         q->sh = 24u + lv, q->sf = 16u + lv, q->mk = (256u >> lv) - 1u, q->ph = vx_c[n].ph[k];
     }
@@ -289,15 +296,16 @@ static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
             acc += a;
             q->ph = ph + q->inc;
         }
-        x = mulq15(acc, g) << 1;                /* (Q8 x 127 a singer, n of them: to about SOLO's level) */
-        x = (x * gv) >> 15;
+        x = mulq15(acc, g) << 1;                /* (Q8 x 127 a singer, n of them: to about SOLO's level; six peaks
+                                                 * together: ~100000, so the products after it in 64 bits) */
+        x = (int32_t)(((int64_t)x * gv) >> 15);
         if (gn) {                               /* (the breath: noise less its low-pass, airy) */
             nz = (int32_t)(noise32(&nst) >> 16) - 32768;
             nl += (nz - nl) >> 3;
             x += ((nz - nl) * gn) >> 13;
         }
-        l += ((x - l) * tc) >> 15;              /* (BUZZ: the tone) */
-        mono[i] += mulq15(mulq15(l, amp_at(amp0, damp, (int32_t)i)), VOICE_LV);
+        l += (int32_t)(((int64_t)(x - l) * tc) >> 15);   /* (BUZZ: the tone) */
+        mono[i] += mulq15((int32_t)(((int64_t)l * amp_at(amp0, damp, (int32_t)i)) >> 15), VOICE_LV);
     }
     for (k = 0, q = sg; k < ns; k++, q++) vx_c[n].ph[k] = q->ph;
     vx_c[n].lp = l, vx_c[n].nl = nl;

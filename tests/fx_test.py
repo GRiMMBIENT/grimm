@@ -221,5 +221,33 @@ _, p3, _ = run("vt_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.envi
 check("VOICE's TYPE saved beside its SHIFT and loaded (CATHEDRAL, SHIFT as set); a GR!MM 1.0 project: SOLO",
       p1.split(" vty ")[1].startswith("3 vsh 19") and p2.split(" vty ")[1].startswith("3 vsh 19") and
       p3.split(" vty ")[1].startswith("0 "), f"{p1.split(' vty ')[1][:10]} | {p2.split(' vty ')[1][:10]} | {p3.split(' vty ')[1][:10]}")
+# (V2) the choirs clean through their range: NUNS's and CATHEDRAL CHOIR's chords (the women's cycles, the hottest),
+# A3 .. G5 (keys, then OCT+): no sample at full scale, no sudden jump (a sample's second difference past 40 x its
+# neighbourhood's, 46 ms around it: a click, a pop; before the fix NUNS had dozens here: its sums wrapped in 32 bits)
+KEYS = [4, 8, 12, 16, 20, 24]                   # (A3, C#4, F4, A4, C#5, F5; then an octave up)
+
+
+def clean(name, preset):
+    ev, t = [(300, f"enc 6 {preset}")], 1000
+    for o in range(2):
+        if o:
+            ev.append((t, "btn 1"))
+            t += 200
+        for k in KEYS:
+            ev += [(t, f"keys {1 << k:#x}"), (t + 900, "keys 0")]
+            t += 1000
+    _, _, raw = run(name, ev, t + 1500)
+    a = array.array("h", raw[44:])
+    m = [(a[2 * i] + a[2 * i + 1]) // 2 for i in range(len(a) // 2)]
+    d = [abs(m[i + 2] - 2 * m[i + 1] + m[i]) for i in range(len(m) - 2)]
+    blk = [sum(d[j:j + 2048]) / 2048 for j in range(0, len(d), 2048)]
+    jumps = sum(1 for i, x in enumerate(d) if x > 40 * blk[i // 2048] + 600)
+    return jumps, max(abs(x) for x in a)
+
+
+for nm, pr in (("NUNS", 39), ("CATHEDRAL CHOIR", 38)):
+    j, pk = clean(f"clean{pr}", pr)
+    check(f"{nm}: chords A3 .. G5 clean (no sudden jumps, nothing at full scale)", j == 0 and pk < 32000,
+          f"jumps {j}, peak {pk}")
 print("fx test: passed" if not bad else "fx test: FAILED")
 sys.exit(1 if bad else 0)
