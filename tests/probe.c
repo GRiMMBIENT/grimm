@@ -54,6 +54,9 @@ static void host_probe(void)
                 for (h = 2166136261u, j2 = 0; j2 < sizeof seq[t2].pat[0]; j2++) h = (h ^ b[j2]) * 16777619u;
                 printf("%s%08x", t2 ? "," : " ", h);
             }
+            printf(" gv %u %u %u,%u,%u,%u", gen_took, gen_short, gen[0].left, gen[1].left, gen[2].left,
+                   gen[3].left);                /* (V2: GENERATE's voices: taken from another track, chord notes not
+                                                 * played within the share; the notes' ticks left) */
             printf(" srcs");
             for (j2 = 0; j2 < nlat; j2++) printf(" %u:%u:%u", lat_src[j2], lat_trk[j2] + 1u, lat_note[j2]);
             printf(" /srcs");

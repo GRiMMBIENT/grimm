@@ -566,6 +566,41 @@ static int pick_voice(uint32_t t, uint32_t note, uint32_t *v)
         if (u != t && trk_voices(u, phys) > most) most = trk_voices(u, phys), from = u;
     return from < NT && take_from(from, phys, 0, v);
 }
+/* (V2) GENERATE on two tracks or more (heard ones): each generating track has a share of the voices the others leave
+ * (the tracks not generating: their notes and releases, as ever), the first ones the odd ones over; a generated note
+ * takes its own release of the note, else (the track under its share) an idle voice, else its track's own quietest
+ * voice let go (the oldest note it replaces): never another track's (none: not played); a generated chord, its share's
+ * notes at most (the root first). One track generating, the keys, the sequencer, the arp: the voice rule as ever */
+static volatile uint32_t gen_on;                /* (seq.c's: bit t, track t generates) */
+static uint32_t gen_took, gen_short;            /* (tests/probe.c: generated notes that took another track's voice, chord
+                                                 * notes within the share not played) */
+static uint32_t gen_share(uint32_t t)           /* track t's share (0: not two tracks generating, the rule as ever) */
+{
+    uint32_t g = gen_on & ~trk_quiet & 15u, n = 0, r = 0, busy = 0, w, u;
+    if (!(g >> t & 1u)) return 0;
+    for (u = 0; u < NT; u++) {
+        if (g >> u & 1u) n++, r += u < t;
+        else busy += trk_voices(u, 0);
+    }
+    if (n < 2u) return 0;
+    w = busy < NV ? NV - busy : 0u;
+    w = w / n + (r < w % n);
+    return w ? w : 1u;
+}
+static int gen_pick(uint32_t t, uint32_t note, uint32_t *v)   /* a generated note's voice, sharing (gen_share) */
+{
+    uint32_t w, best = NV;
+    int32_t lv = 0x7FFFFFFF;
+    for (w = 0; w < NV; w++)                    /* (its own release of this note: it again) */
+        if (!voice_latched(w) && !voice_idle(w) && vc[w].note == note && vc[w].trk == t) { *v = w; return 1; }
+    if (!(trk[t].eng == ENG_PHYS && phys_count() >= PHYS_MAX) && trk_voices(t, 0) < gen_share(t))
+        for (w = 0; w < NV; w++)                /* (under its share: an idle one; PHYS past PHYS_MAX: not) */
+            if (!voice_latched(w) && voice_idle(w)) { *v = w; return 1; }
+    for (w = 0; w < NV; w++)                    /* (its own quietest let go: a release, or one just let go) */
+        if (!voice_latched(w) && !voice_idle(w) && vc[w].trk == t && voice_level(w) < lv) lv = voice_level(w), best = w;
+    if (best < NV) { *v = best; return 1; }
+    return 0;
+}
 static void note_off(uint32_t t, uint32_t id, uint32_t src, int echo)   /* origin id's voices released (its chord) */
 {
     int i = note_find(t, id, src);
@@ -582,6 +617,7 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
                                                  * voices start over on it */
 {
     uint8_t ns[CH_MAX], own[CH_MAX];
+    uint32_t gs = src == SRC_GEN ? gen_share(t) : 0u;   /* (V2: GENERATE sharing the voices) */
     uint32_t v, i, n, no = 0, on = 0;
     int j;
     if (note > 127u || t >= NT || (trk_quiet >> t & 1u)) return;   /* (a silent track: none) */
@@ -612,11 +648,16 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
         }
         n = m;
     }
+    if (gs && n > gs) n = gs;                   /* (V2: GENERATE sharing: its chord within its share) */
     for (i = 0; i < n; i++) {
         if (i < no)                             /* its own voice again */
             v = own[i];
-        else if (!pick_voice(t, ns[i], &v))     /* (V2: no voice of its own for it: not played) */
+        else if (!(gs ? gen_pick(t, ns[i], &v) : pick_voice(t, ns[i], &v))) {   /* (V2: no voice of its own for it: not
+                                                 * played) */
+            gen_short += src == SRC_GEN;
             continue;
+        }
+        if (src == SRC_GEN && i >= no && !voice_idle(v) && vc[v].trk != t) gen_took++;
         voice_start(v, t, ns[i]);
         if (mo_seq && src != SRC_KEY && !out_twin(NV, t, ns[i])) ec_put(0x90, t, ns[i] | EC_SEQ);
         lat_note[nlat] = ns[i];

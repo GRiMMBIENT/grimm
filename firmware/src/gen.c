@@ -10,6 +10,8 @@
  *          eighths, mostly on the beat, steadier; STORM: dense sixteenths, short, the volume swinging wildly
  *   OCTAVE its notes from C3 + 12 x it (-3 .. +3: C0 .. C6), the keyboard's OCT not at all
  *   RANGE  1, 2 or 3 octaves up from there
+ * (V2) Two tracks generating or more: each its share of the voices, a new note replacing its own track's oldest
+ * (grimm.c gen_share).
  * While a track generates its pattern plays on unheard (its steps, ratchets and locks not played: seq.c), so it comes
  * back in time when it stops; GENERATE never writes into it. Its notes take the track's voices as a key's do (the
  * voice rule: none taken from another track). Nothing saved: at power-on all off, DRIFT, OCTAVE 0, RANGE 2. The main

@@ -8,6 +8,9 @@
   - a track's key switches it when let go, and not when another key came meanwhile; its key held + D#4: its MODE
     alone, D#4 alone: all four; F#4 G#4 its OCTAVE, A#4 its RANGE: no note outside the range (chords folded in)
   - the tempo: faster, its notes come faster, at once (stopped and playing; INT and INT+OUT)
+  - four tracks generating STORM (PHYS, two choirs, PHASE), chord mode off and on: each its share of the six voices, no
+    generated note takes another track's voice, no chord note within its share left out, every track heard; one
+    track generating: to the byte as before (against the build given as the second argument, if one)
     python3 tests/gen_test.py build/host/grimm"""
 import subprocess
 import sys
@@ -40,6 +43,8 @@ def run(name, ev, end):
                           oc=[int(x) for x in ln.split(" oc ")[1].split()[0].split(",")],
                           rg=[int(x) for x in ln.split(" rg ")[1].split()[0].split(",")],
                           own=int(ln.split(" own ")[1].split()[0]),
+                          gv=[int(x) for x in ln.split(" gv ")[1].split()[:2]],
+                          left=[int(x) for x in ln.split(" gv ")[1].split()[2].split(",")],
                           ph=ln.split(" ph ")[1].split()[0].split(","), srcs=srcs)
     return pr
 
@@ -162,5 +167,43 @@ for clock, play in ((0, 0), (0, 1), (1, 0), (1, 1)):
     check(f"the tempo 60 -> 180 BPM ({'INT+OUT' if clock else 'INT'}, {'playing' if play else 'stopped'}): "
           f"its notes {a:.1f} -> {b:.1f} a second", pr[4000]["own"] == 60 and pr[15000]["own"] == 180 and b > 2.2 * a,
           f"tempo {pr[4000]['own']} -> {pr[15000]['own']}")
+
+# four tracks generating STORM: T1 BOWED BELL (PHYS), T2 GREGORIAN (choir, chord mode on), T3 WRAITH (PHASE), T4 CATHEDRAL
+# CHOIR (choir, chord mode on); chord mode then all off, or all on (SEL held, let go, on the tracks to switch)
+OLD = sys.argv[2] if len(sys.argv) > 2 else None
+LOAD = [(300, "enc 6 17"), (400, "enc 1 1"), (500, "enc 6 36"), (600, "enc 1 1"), (700, "enc 6 25"), (800, "enc 1 1"),
+        (900, "enc 6 38"), (1000, "enc 1 -3")]
+
+
+def chords(on):                                 # (T1, T3 off as loaded: on; T2, T4 on as loaded: off)
+    a, b = (0, 2) if on else (1, 3)
+    return [(1100, f"enc 1 {a}"), (1200, "down 3"), (2000, "up 3"), (2100, f"enc 1 {b - a}"), (2200, "down 3"),
+            (3000, "up 3"), (3100, f"enc 1 {-b}")]
+
+
+ALL4 = [(3500, "down 2")] + sum(([(3600 + 100 * i, f"keys {1 << k:#x}"), (3650 + 100 * i, "keys 0")]
+                                 for i, k in enumerate((1, 3, 5, 8))), [])
+ALL4 += [(4100, "keys 0x400"), (4150, "keys 0"), (4200, "keys 0x400"), (4250, "keys 0"), (4400, "up 2")]   # (ALL STORM)
+for on in (0, 1):
+    pr = run(f"share{on}", LOAD + chords(on) + ALL4 + [(5000 + 50 * i, "probe") for i in range(500)], 30100)
+    last = pr[max(pr)]
+    heard = [sum(1 for p in pr.values() for s, tr, n in p["srcs"] if s == SRC_GEN and tr == t) for t in (1, 2, 3, 4)]
+    most = [max(sum(1 for s, tr, n in p["srcs"] if s == SRC_GEN and tr == t) for p in pr.values()) for t in (1, 2, 3, 4)]
+    check(f"4 tracks STORM, chord mode {'on' if on else 'off'}: all four generating, every track heard ({heard})",
+          last["gen"] == 15 and last["mode"] == [2, 2, 2, 2] and min(heard) > 20, f"gen {last['gen']} {last['mode']}")
+    check(f"4 tracks STORM, chord mode {'on' if on else 'off'}: no generated note took another track's voice, no chord "
+          f"note within its share left out", last["gv"] == [0, 0], f"took, left out: {last['gv']}")
+    if on:
+        check(f"chord mode on: chords within each track's share (6 voices / 4: 2, 2, 1, 1; most at once {most})",
+              most[0] == 2 and most[1] == 2 and most[2] == 1 and most[3] == 1)
+if OLD:
+    keep = BIN
+    for b, nm in ((BIN, "one-new"), (OLD, "one-old")):
+        BIN = b
+        run(nm, SCALE + CHORD + fx_key(1200, 1) + fx_key(1400, 10) + fx_key(1500, 10), 20000)
+    BIN = keep
+    check("one track generating (STORM, chord mode on): to the byte as before",
+          (OUT / "one-new.wav").read_bytes() == (OUT / "one-old.wav").read_bytes())
+
 print("gen test: passed" if not bad else "gen test: FAILED")
 sys.exit(1 if bad else 0)
