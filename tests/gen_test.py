@@ -11,6 +11,7 @@
   - four tracks generating STORM (PHYS, two choirs, PHASE), chord mode off and on: each its share of the six voices, no
     generated note takes another track's voice, no chord note within its share left out, every track heard; one
     track generating: to the byte as before (against the build given as the second argument, if one)
+  - a SAMPLE track's notes: up to the whole loop (its LENGTH), past the MODE's lengths; another source: the MODE's
     python3 tests/gen_test.py build/host/grimm"""
 import subprocess
 import sys
@@ -205,5 +206,17 @@ if OLD:
     check("one track generating (STORM, chord mode on): to the byte as before",
           (OUT / "one-new.wav").read_bytes() == (OUT / "one-old.wav").read_bytes())
 
+# a SAMPLE track's notes: up to its loop (URCHIN, 6.64 s: ~1275 ticks at 120 BPM), past STORM's longest (48 ticks); a VA
+# track's: STORM's
+SAMPLE = [(300, "btn 6"), (400, "btn 6"), (500, "enc 2 2"), (600, "btn 8")]
+for src, ev in (("SAMPLE", SAMPLE), ("VA", [])):
+    pr = run(f"len{src}", ev + fx_key(1200, 1) + fx_key(1400, 10) + fx_key(1500, 10) +
+             [(3000 + 50 * i, "probe") for i in range(600)], 33100)
+    mx = max(p["left"][0] for p in pr.values())
+    if src == "SAMPLE":
+        check(f"STORM on a SAMPLE track: notes up to the whole loop (longest seen {mx} ticks; STORM's 48, the loop 1275)",
+              200 < mx <= 1275)
+    else:
+        check(f"STORM on a VA track: the MODE's lengths (longest seen {mx} ticks, at most 48)", 0 < mx <= 48)
 print("gen test: passed" if not bad else "gen test: FAILED")
 sys.exit(1 if bad else 0)
