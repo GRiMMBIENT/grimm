@@ -29,7 +29,7 @@ static void host_probe(void)
         uint32_t n = 0;
         for (i = 0; i < SEQ_N; i++) n += P->st[i].note != 0;
         printf(" ui page %u sel %u rec %u latch %d,%d,%d,%d new %u steps %u wait %u said %u", page, sel, rec_on,
-               (int)trk[0].latch, (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch, n, sv_wait,
+               (int)trk[0].latch, (int)trk[1].latch, (int)trk[2].latch, (int)trk[3].latch, set.latch & 1u, n, sv_wait,
                sv_wait && fm1_ms - sv_said < SV_SAY_MS);
         P2 = brw_pos[sel] >= 0 ? cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel]) : 0;
         printf(" eng %d slatch %d sname ", (int)trk[sel].eng, P2 ? (int)P2[12] : -1);
@@ -58,6 +58,7 @@ static void host_probe(void)
             for (j2 = 0; j2 < nlat; j2++) printf(" %u:%u:%u", lat_src[j2], lat_trk[j2] + 1u, lat_note[j2]);
             printf(" /srcs");
         }
+        printf(" vel %u", vel_on);              /* (V2: SYSTEM 3's VELOCITY) */
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

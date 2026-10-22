@@ -213,7 +213,14 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
     await cl.put(OBJ.SET, sl, info.fmt);
     const s4 = await cl.get(OBJ.SET, info.setSize);
     check(sameSettings(sl, s4) && settingsOf(s4).latch === 1, "editor: SETTINGS: LATCH (SYSTEM 3) ALWAYS OFF written, read back");
-    await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0 }), info.fmt);
+    {                                                        // (V2: VELOCITY, SYSTEM 3's other: its bit beside LATCH's)
+      const sv = withSettings(s4, { mch: 0, clk: 0, latch: 1, velocity: 1 });
+      await cl.put(OBJ.SET, sv, info.fmt);
+      const s5 = await cl.get(OBJ.SET, info.setSize), v5 = settingsOf(s5);
+      check(sameSettings(sv, s5) && v5.velocity === 1 && v5.latch === 1 && settingsOf(s4).velocity === 0,
+            "editor: SETTINGS: VELOCITY ON written beside LATCH, read back");
+    }
+    await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0, velocity: 0 }), info.fmt);
   }
   {                                                          // GR!MM V2: FX (25): read, set live (MASTER, DRIVE, T2's filter)
     const f0 = await cl.fx();

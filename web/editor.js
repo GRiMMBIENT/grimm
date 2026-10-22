@@ -307,9 +307,10 @@ function refreshButtons() {
   ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory", "b-setread", "b-fxread"].forEach((id) => { $(id).disabled = !c; });
   document.querySelectorAll("#fx input, #fx select").forEach((x) => { x.disabled = !c || !fxVals; });
   $("b-setwrite").disabled = !c || !setBytes;
-  $("set-mch").disabled = $("set-clk").disabled = $("set-latch").disabled = !setBytes;
+  $("set-mch").disabled = $("set-clk").disabled = $("set-latch").disabled = $("set-vel").disabled = !setBytes;
   if (setBytes && setBytes.length <= SET_V1) $("set-clk").disabled = true;   // (GR!MM 1.0: no CLOCK)
-  if (setBytes && setBytes.length <= SET_V2) $("set-latch").disabled = true;   // (before V2's SYSTEM 3: no LATCH)
+  if (setBytes && setBytes.length <= SET_V2) $("set-latch").disabled = $("set-vel").disabled = true;   // (before V2's
+                                                             // SYSTEM 3: no LATCH, no VELOCITY)
   $("b-disconnect").disabled = !conn || busy;
   $("b-connect").disabled = $("b-try").disabled = busy;
   for (let t = 0; t < 4; t++) $("b-load" + t).disabled = empty;
@@ -776,12 +777,13 @@ $("f-restore").onchange = async (e) => {
 
 // ------------------------------------------------------------------ settings (GR!MM V2): MIDI CHANNEL, CLOCK, LATCH
 function drawSettings() {
-  const m = $("set-mch"), c = $("set-clk"), l = $("set-latch"), v2 = !setBytes || setBytes.length > SET_V1;
-  m.textContent = c.textContent = l.textContent = "";
+  const m = $("set-mch"), c = $("set-clk"), l = $("set-latch"), ve = $("set-vel"), v2 = !setBytes || setBytes.length > SET_V1;
+  m.textContent = c.textContent = l.textContent = ve.textContent = "";
   MCH_NAMES.forEach((n, i) => { if (v2 || i <= 13) el("option", { value: i }, m, n); });
   CLOCK_NAMES.forEach((n, i) => el("option", { value: i }, c, n));
   ["FROM SOUND", "ALWAYS OFF"].forEach((n, i) => el("option", { value: i }, l, n));
-  if (setBytes) { const s = settingsOf(setBytes); m.value = s.mch; c.value = s.clk; l.value = s.latch; }
+  ["OFF", "ON"].forEach((n, i) => el("option", { value: i }, ve, n));
+  if (setBytes) { const s = settingsOf(setBytes); m.value = s.mch; c.value = s.clk; l.value = s.latch; ve.value = s.velocity; }
   refreshButtons();
 }
 $("b-setread").onclick = () => job("SETTINGS", async () => {
@@ -790,14 +792,15 @@ $("b-setread").onclick = () => job("SETTINGS", async () => {
   return "SETTINGS READ FROM THE FM-1";
 });
 $("b-setwrite").onclick = () => job("SETTINGS", async () => {
-  const b = withSettings(setBytes, { mch: +$("set-mch").value, clk: +$("set-clk").value, latch: +$("set-latch").value });
+  const b = withSettings(setBytes, { mch: +$("set-mch").value, clk: +$("set-clk").value, latch: +$("set-latch").value,
+                                     velocity: +$("set-vel").value });
   await conn.client.put(OBJ.SET, b, conn.info.fmt, progress);
   const back = await conn.client.get(OBJ.SET, conn.info.setSize);
   if (!sameSettings(b, back)) throw new EditorError("THE SETTINGS DID NOT READ BACK AS SENT", 0);
   setBytes = back;
   drawSettings();
   return `SETTINGS WRITTEN: MIDI CHANNEL ${MCH_NAMES[b[3]]}${b.length > SET_V1 ? ", CLOCK " + CLOCK_NAMES[b[SET_V1]] : ""}` +
-         (b.length > SET_V2 ? `, LATCH ${b[SET_V2] ? "ALWAYS OFF" : "FROM SOUND"}` : "");
+         (b.length > SET_V2 ? `, LATCH ${b[SET_V2] & 1 ? "ALWAYS OFF" : "FROM SOUND"}, VELOCITY ${b[SET_V2] & 2 ? "ON" : "OFF"}` : "");
 });
 drawSettings();
 

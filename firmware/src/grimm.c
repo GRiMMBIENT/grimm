@@ -445,6 +445,13 @@ static void nq_note(uint32_t c, uint32_t t, uint32_t note, uint32_t id)   /* mai
     nq_w = w + 1u;
 }
 static void nq_put(uint32_t c, uint32_t t, uint32_t note) { nq_note(c, t, note, 0); }   /* (RELEASE, RESTART, ..) */
+static volatile uint32_t vel_on;                /* (V2) audio: VELOCITY ON (a MIDI note's volume from how hard) */
+static void nq_vnote(uint32_t c, uint32_t t, uint32_t note, uint32_t id, uint32_t vel)   /* (V2) a MIDI note's ask, its
+                                                 * velocity (1 .. 127) with it: bits 10 .. 15, halved */
+{
+    nq_note(c, t, note, id);
+    nq[(nq_w - 1u) % NQ_LEN] |= (vel >> 1 & 63u) << 10;
+}
 static void ec_put(uint32_t st, uint32_t t, uint32_t note)   /* audio: a USB-MIDI echo of track t for the main loop
                                                  * to send (on t's channel); full: said (the main loop then lets go of
                                                  * what it sent, never a note left on out there) */
@@ -739,7 +746,15 @@ static void ctl_hook(void)
         int echo = (c & NQ_ECHO) != 0;
         c &= ~NQ_ECHO;
         switch (c) {
-        case NQ_ON: case NQ_OFF: case NQ_TOGGLE: key_ask(c, t, id, note, echo); break;   /* (TOGGLE: LATCH ON) */
+        case NQ_ON: case NQ_OFF: case NQ_TOGGLE:   /* (TOGGLE: LATCH ON; V2: VELOCITY ON, a MIDI note's volume from
+                                                 * how hard: (v / 127)^2, its voices' (voices.c gen_vel)) */
+            if (vel_on && (q >> 10 & 63u)) {
+                uint32_t v = (q >> 10 & 63u) * 2u + 1u;
+                gen_vel = (uint8_t)(v * v * 255u / 16129u ? v * v * 255u / 16129u : 1u);
+            }
+            key_ask(c, t, id, note, echo);
+            gen_vel = 0;
+            break;
         case NQ_RELEASE:                        /* LATCH ON -> OFF: the track's notes released (its arp emptied) */
             release_all(t);
             if (trk[t].arp) arp_clear(t);
@@ -807,11 +822,12 @@ static struct {
                                                  * the section) */
     uint8_t ver;                                /* SET_VER (steps 20..24 saved without it: their links moved, sys_load) */
     uint8_t clk;                                /* (V2, SET_VER 2) CLOCK: CK_INT .. CK_TRS; V1.0's settings: INT */
-    uint8_t latch;                              /* (V2, SET_VER 3) SYSTEM 3's LATCH: 0 FROM SOUND (before: so), 1
-                                                 * ALWAYS OFF */
+    uint8_t latch;                              /* (V2, SET_VER 3) SYSTEM 3's LATCH (bit 0): 0 FROM SOUND (before: so),
+                                                 * 1 ALWAYS OFF; its VELOCITY (bit 1): 0 OFF (before: so), 1 ON */
 } set;
 #define SET_VER 3u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
+static volatile int32_t sy_vel;                 /* (V2) SYSTEM 3's VELOCITY (its knob) */
 static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk, sy_latch;   /* SYSTEM's,
                                                  * SYSTEM 2's, SYSTEM 3's knobs (sy_fac: SAMPLES, 1 RESTORE: OCT+
                                                  * writes the factory ones) */
@@ -913,7 +929,7 @@ static const page_t PAGES[NPAGE] = {
     {"FM OP", BTN_EDIT, 1, 1, 1, {"RATIO", "LEVEL", "ATTACK", "DECAY"}},  /* (the operator OP selects) */
     {"MASTER", BTN_FX, 1, 0, 1, {"CUTOFF", "RESONANCE", "TYPE", "POSITION"}},   /* (V2: FX's 5th and 6th, master.c) */
     {"DRIVE", BTN_FX, 1, 0, 1, {"AMOUNT", "TYPE", "TONE", "MIX"}},
-    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "", "", ""}},   /* (V2: a NEW project's tracks' LATCH) */
+    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "VELOCITY", "", ""}},   /* (V2: VELOCITY: a MIDI note's volume) */   /* (V2: a NEW project's tracks' LATCH) */
 };
 static uint32_t pg_key(uint32_t p)              /* its place in its button's round */
 {
@@ -1019,7 +1035,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
     case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : &sy_clk;
-    case PG_SYS3: return k == 0u ? &sy_latch : 0;
+    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : 0;   /* (V2: LATCH, VELOCITY) */
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -1572,7 +1588,8 @@ static void sys_sync(void)
 {
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
-    uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1), la = (uint8_t)clamp(sy_latch, 0, 1);
+    uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
+    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1);   /* (V2: LATCH, VELOCITY) */
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
@@ -1590,7 +1607,7 @@ static void sys_sync(void)
     ck_mode = set.clk, rt_usb_fast = set.clk == CK_USB;   /* (CLOCK: the audio ISR's, platform.c's) */
     ui_acc = UI_ACCENTS[set.col & 3u];
     tune_f = (set.tune * 23666 + set.tune * set.tune * 7) / 10000;   /* (2^(c / 1200) - 1, x 4096) */
-    mo_seq = set.out, snd_latch_off = set.latch;
+    mo_seq = set.out, snd_latch_off = set.latch & 1u, vel_on = set.latch >> 1 & 1u;
 }
 static void sys_load(void)                      /* the settings at power-on into SYSTEM's knobs (version 19's: the
                                                  * octave alone; steps 20..24's: no ver, their links to HOME's T1..T4
@@ -1612,11 +1629,11 @@ static void sys_load(void)                      /* the settings at power-on into
     }
     if (set.mch > MCH_MAX) set.mch = 0;
     if (set.clk >= CK_N) set.clk = CK_INT;
-    if (set.latch > 1u) set.latch = 0;
+    if (set.latch > 3u) set.latch = 0;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
     sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
-    sy_latch = set.latch;
+    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u;
     sys_sync();
     set_dirty = 0;
     if (!set.ver)                               /* (steps 20..24's; V1.0's are version 1: as they are) */
@@ -2162,9 +2179,9 @@ static void app_main(void)
                     midi_held[d1] &= (uint8_t)~(0x11u << m);
                 }
             if (on && trk[t].latch)
-                nq_note(NQ_TOGGLE, t, n, MIDI_ID(d1));
+                nq_vnote(NQ_TOGGLE, t, n, MIDI_ID(d1), d2);   /* (V2: its velocity with it) */
             else if (on) {
-                nq_note(NQ_ON, t, n, MIDI_ID(d1));
+                nq_vnote(NQ_ON, t, n, MIDI_ID(d1), d2);
                 midi_held[d1] |= (uint8_t)(1u << t);
                 if (again) midi_held[d1] |= (uint8_t)(0x10u << t);
             }

@@ -432,14 +432,16 @@ export const SET_V2 = 169;                                   // V2's version 2 (
 export const MCH_NAMES = [...Array.from({ length: 13 }, (_, k) => `${k + 1}-${k + 4}`), "ALL > SEL",
   ...Array.from({ length: 16 }, (_, k) => `CH ${k + 1} > SEL`)];
 export const CLOCK_NAMES = ["INT", "INT+OUT", "USB", "TRS"];
-export function settingsOf(b) {                              // -> { mch, clk, latch } (older: CLOCK INT, LATCH FROM SOUND)
-  return { mch: b[3], clk: b.length > SET_V1 ? b[SET_V1] : 0, latch: b.length > SET_V2 ? b[SET_V2] : 0 };
+export function settingsOf(b) {                              // -> { mch, clk, latch, velocity } (older: CLOCK INT, LATCH
+  const l = b.length > SET_V2 ? b[SET_V2] : 0;               // FROM SOUND, VELOCITY OFF; byte 169: bit 0 LATCH, bit 1
+  return { mch: b[3], clk: b.length > SET_V1 ? b[SET_V1] : 0, latch: l & 1, velocity: l >> 1 & 1 };   // VELOCITY)
 }
-export function withSettings(b, s) {                         // a copy of b with MIDI CHANNEL, CLOCK and LATCH s
+export function withSettings(b, s) {                         // a copy of b with MIDI CHANNEL, CLOCK, LATCH and VELOCITY s
   const o = Uint8Array.from(b);
   o[3] = s.mch;
   if (o.length > SET_V1) o[SET_V1] = s.clk;
-  if (o.length > SET_V2 && s.latch !== undefined) o[SET_V2] = s.latch;
+  if (o.length > SET_V2 && s.latch !== undefined) o[SET_V2] = (o[SET_V2] & ~1) | (s.latch & 1);
+  if (o.length > SET_V2 && s.velocity !== undefined) o[SET_V2] = (o[SET_V2] & ~2) | (s.velocity & 1) << 1;
   return o;
 }
 export function sameSettings(written, back) {                // read back as written (an older one's: all but the version,

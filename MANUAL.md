@@ -11,7 +11,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **Two new effects** on the FX pages: **MASTER**, a stereo filter over everything (LP, HP or BP, at one of three places in the chain), and **DRIVE** (SOFT, FUZZ, CLIP or FOLD, with TONE, MIX and a limiter). See [Effects](#9-effects-fx).
 - **Each track's filter** can be a low-pass, high-pass or band-pass, and can sit before or after the effect sends: MIXER 2's **TYPE** and **POS**. See [HOME](#2-home).
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
-- **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
+- **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched; SYSTEM 3's **VELOCITY** lets MIDI notes play as loud as they were played.
 - **VOICE choirs from real singers:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of six singers on every note, made from recordings of real singers: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
 - **GENERATE:** hold FX and tap a black key to let a track play random notes of the scale by itself, in three moods (DRIFT, PULSE, STORM), each track with its own mode, octave and range, shown on the PERFORM screen. See [Performance](#10-performance-hold-fx).
 - **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. See [HOME](#2-home).
@@ -384,7 +384,7 @@ A track can play by itself: random notes of the **SCALE** (with chord mode on: r
 |---|---|---|---|---|
 | SYSTEM | COLOUR (red, amber, teal, violet) | MIDI CHANNEL | TUNE (±50 cents) | SCREEN OFF |
 | SYSTEM 2 | MIDI LEARN | SEQ MIDI OUT | SAMPLES | CLOCK |
-| SYSTEM 3 | LATCH | – | – | – |
+| SYSTEM 3 | LATCH | VELOCITY | – | – |
 
 - **MIDI CHANNEL:** `1-4` puts T1–T4 on channels 1–4 (or start higher, up to `13-16`); `ALL > SEL` sends every channel to the selected track; `CH 1 > SEL` … `CH 16 > SEL` sends only that channel to the selected track and ignores the others (notes and CCs). The same for USB and the TRS jack.
 - **SCREEN OFF:** the screen goes dark after the chosen time; the music keeps going. Your first touch only wakes it.
@@ -400,6 +400,7 @@ A track can play by itself: random notes of the **SCALE** (with chord mode on: r
   - `FROM SOUND` (`SOUND` on the knob; the default, as GR!MM 1.0): the sound brings the LATCH it was saved with.
   - `ALWAYS OFF` (`OFF` on the knob): loading a sound sets the track's LATCH off (latched notes stop), so every sound starts unlatched, whatever was saved in it. You can still latch it by hand any time, with EDIT's LATCH or **SEL + OCT+**.
   - Projects and slots A–D keep the LATCH they were saved with, and a NEW project's tracks start unlatched.
+- **VELOCITY** (SYSTEM 3): `OFF` (as GR!MM 1.0): every note at full volume. `ON`: a MIDI note (USB or the TRS jack) plays as loud as it was played (soft notes much quieter). The FM-1's own keys, the sequencer and GENERATE stay at full volume either way, and so do notes the arpeggiator plays.
 
 ---
 
@@ -466,7 +467,7 @@ Turn **PRESETS** to step through them by category, then your own.
 - **SOUNDS:** your 64 slots and the 44 factory sounds; **LOAD TO T1–T4** puts one on a track. Rename, clear, import and export single sounds.
 - **SAMPLES:** drop a WAV on a slot and **UPLOAD** it; **RESTORE FACTORY SAMPLES**. **NORMALISE** (on unless you untick it) brings every WAV to the same loudness; off, a sample keeps its own level.
 - **FX:** the project's effects (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE), each track's filter TYPE and POS, and each track's five sends (MIXER 1), live: **READ FROM FM-1**, then every move plays on the FM-1 at once.
-- **SETTINGS:** MIDI CHANNEL, CLOCK and LATCH (FROM SOUND / ALWAYS OFF), read from the FM-1 and written back (the rest of the settings stay as they are).
+- **SETTINGS:** MIDI CHANNEL, CLOCK, LATCH (FROM SOUND / ALWAYS OFF) and VELOCITY (OFF / ON), read from the FM-1 and written back (the rest of the settings stay as they are).
 - **BACKUP:** one file with all your sounds, slots A–D, settings and the four sample slots, and a restore that makes a backup of what's there first. A restore puts the samples back too; a slot that already holds the same sample isn't written again, and a slot that was empty in the backup is emptied. Backups from GR!MM 1.0 (they have no samples) restore too and leave your samples as they are.
 
 The FM-1 only writes to its memory (store, upload, restore) while the sequencer is stopped and nothing sounds; the editor tells you when to wait. Nothing is written without you pressing a button.

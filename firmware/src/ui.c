@@ -201,7 +201,7 @@ static const char *const LONG_LAB[][2] = {
     {"DECAY", "DEC"}, {"SUSTAIN", "SUS"}, {"RELEASE", "REL"}, {"DENSITY", "DENS"}, {"SCATTER", "SCAT"},
     {"REVERSE", "REV"}, {"SECTION", "SECT"}, {"PATTERN", "PATT"}, {"REPEATS", "REPEAT"}, {"OCTAVES", "OCTAVE"},
     {"RATCHET", "RATCH"}, {"VOICING", "VOICNG"}, {"CHANCE", "CHNC"}, {"ACTION", "DO"}, {"MIDI LEARN", "LEARN"},
-    {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"},
+    {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"}, {"VELOCITY", "VELO"},
 };
 static void ui_label(char *d, const char *s)    /* a knob's name on a slab (at most 6 characters: 48 px) */
 {
@@ -338,7 +338,8 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
               LEARN_NAME[clamp(v, 0, 2)]);
         return;
-    case PG_SYS3: put_s(S->val, v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND, ALWAYS OFF */
+    case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
+                                                 * ALWAYS OFF; VELOCITY: OFF, ON */
     case PG_SOUNDS:
         if (k == 0u) { ui_3(S->val, (uint32_t)v + 1u); return; }
         if (k == 1u) { ui_squeeze(S->val, CAT_NAME[clamp(v, 0, NCAT - 1)]); return; }
@@ -1713,14 +1714,14 @@ static void pic_sys2(void)
     }
 }
 
-static void pic_sys3(void)                      /* (V2) SYSTEM 3: LATCH, what it does; the combo for the track's */
+static void pic_sys3(void)                      /* (V2) SYSTEM 3: LATCH, VELOCITY, what they do */
 {
-    ui_caption("LOADING A SOUND", 0);
-    sys_row(0, "LATCH", set.latch ? "ALWAYS OFF" : "FROM SOUND");
-    ui_text(PX0 + 6, 98, set.latch ? "A SOUND LOADED: THE" : "A SOUND BRINGS ITS OWN", 1, UI_M);
-    ui_text(PX0 + 6, 110, set.latch ? "TRACK'S LATCH OFF" : "LATCH (AS GR!MM 1.0)", 1, UI_M);
-    ui_text(PX0 + 6, 140, "SEL + OCT+: THE TRACK'S", 1, UI_M);
-    ui_text(PX0 + 6, 152, "LATCH ON, OFF", 1, UI_M);
+    ui_caption("SOUNDS AND MIDI", 0);
+    sys_row(0, "LATCH", set.latch & 1u ? "ALWAYS OFF" : "FROM SOUND");
+    sys_row(1, "VELOCITY", set.latch & 2u ? "ON" : "OFF");
+    ui_text(PX0 + 6, 116, set.latch & 1u ? "A SOUND LOADED: LATCH OFF" : "A SOUND BRINGS ITS LATCH", 1, UI_M);
+    ui_text(PX0 + 6, 132, set.latch & 2u ? "MIDI NOTES: AS HARD AS" : "MIDI NOTES: ALL AT FULL", 1, UI_M);
+    ui_text(PX0 + 6, 144, set.latch & 2u ? "PLAYED (THE KEYS: FULL)" : "VOLUME (AS GR!MM 1.0)", 1, UI_M);
 }
 
 static void pic_notbuilt(void) { ui_text(120 - 4 * 13, 96, "NOT BUILT YET", 1, UI_M); }

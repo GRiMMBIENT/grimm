@@ -38,3 +38,5 @@ python3 tests/quick_test.py build/host/grimm
 python3 tests/latch_test.py build/host/grimm
 # GR!MM V2: GENERATE (FX held + the black keys): in the SCALE, the pattern unheard and unchanged (tests/gen_test.py)
 python3 tests/gen_test.py build/host/grimm
+# GR!MM V2: VELOCITY, PHASE's LINE 2 and envelopes, GLIDE (tests/play_test.py)
+python3 tests/play_test.py build/host/grimm
