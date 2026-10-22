@@ -294,6 +294,10 @@ static int snd_put(uint32_t i, const uint8_t *rec)   /* slot i := rec (0: cleare
     for (k = 0; k < SND_SIZE; k++) st_img[i * SND_SIZE + k] = rec ? rec[k] : 0xFFu;
     return st_write(0, st_img);
 }
+/* (V2) PHASE's LINE 2 and envelopes in a sound (bytes 18 .. 24, the FM patch's room: a PHASE sound's free; saved
+ * before: 0, all as before): 18 bit 0 RING */
+static void pd_pk(uint8_t *r, uint32_t t) { r[0] = (uint8_t)(trk[t].pd_ring != 0); }
+static void pd_uk(const uint8_t *r, uint32_t t) { trk[t].pd_ring = r[0] & 1u; }
 static void snd_pack(uint8_t *r, uint32_t t, uint32_t cat, uint32_t num)   /* track t's sound as a record */
 {
     uint32_t k, e = (uint32_t)clamp(trk[t].eng, 0, NENG - 1);
@@ -301,6 +305,7 @@ static void snd_pack(uint8_t *r, uint32_t t, uint32_t cat, uint32_t num)   /* tr
     r[0] = SND_MAGIC, r[1] = (uint8_t)cat, r[2] = (uint8_t)num, r[3] = (uint8_t)e;
     if (e == ENG_FM) pk_fm(r + 18, t);          /* (FM: its own patch) */
     if (e == ENG_VOICE) r[18] = (uint8_t)clamp(trk[t].vty, 0, NVT - 1);   /* (V2: VOICE: its TYPE in the patch's room) */
+    if (e == ENG_PHASE) pd_pk(r + 18, t);       /* (V2: PHASE: its LINE 2 and envelopes there) */
     for (k = 0; k < 4u; k++) {
         r[4 + k] = (uint8_t)clamp(trk[t].p[e][k], 0, 255);
         r[8 + k] = (uint8_t)clamp(trk[t].env[k], 0, 127);
@@ -344,6 +349,7 @@ static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into tra
     lfo_uk(r + 14, t);                          /* (saved before the LFO: zeros, DEPTH 0) */
     if (e == ENG_FM) uk_fm(snd_fname(r) ? 0 : r + 18, t);   /* (FM: its patch; a factory sound's: the PATCH as built) */
     if (e == ENG_VOICE) trk[t].vty = r[18] < NVT ? r[18] : VT_SOLO;   /* (V2: its TYPE; saved before: 0, SOLO) */
+    if (e == ENG_PHASE) pd_uk(r + 18, t);       /* (V2: saved before: zeros, all as before) */
     if ((uint32_t)trk[t].eng != e) {
         trk[t].eng = (int32_t)e;
         nq_put(NQ_RESTART, t, 0);
@@ -376,6 +382,34 @@ static uint32_t cat_len(uint32_t c)
 }
 
 /* ---- packing: a track (52 B), a sequence (260 B), a track's step locks (288 B) */
+/* (V2) a track's newer settings in the spare bits of its 52 bytes (their values never use them; every save before
+ * has 0 there: all off, as before): bit 7 of bytes 1 .. 30, 33 .. 36, 38 .. 42, 47 .. 49; bits 3 .. 6 of byte 25
+ * (PHASE's WAVE, 0 .. 7), 4 .. 6 of byte 26 (its WAVE2, 0 .. 8). In order: PHASE's RING */
+static const uint16_t XB_POS[49] = {
+    1 << 3 | 7, 2 << 3 | 7, 3 << 3 | 7, 4 << 3 | 7, 5 << 3 | 7, 6 << 3 | 7, 7 << 3 | 7, 8 << 3 | 7, 9 << 3 | 7, 10 << 3 | 7,
+    11 << 3 | 7, 12 << 3 | 7, 13 << 3 | 7, 14 << 3 | 7, 15 << 3 | 7, 16 << 3 | 7, 17 << 3 | 7, 18 << 3 | 7, 19 << 3 | 7,
+    20 << 3 | 7, 21 << 3 | 7, 22 << 3 | 7, 23 << 3 | 7, 24 << 3 | 7, 25 << 3 | 7, 26 << 3 | 7, 27 << 3 | 7, 28 << 3 | 7,
+    29 << 3 | 7, 30 << 3 | 7, 33 << 3 | 7, 34 << 3 | 7, 35 << 3 | 7, 36 << 3 | 7, 38 << 3 | 7, 39 << 3 | 7, 40 << 3 | 7,
+    41 << 3 | 7, 42 << 3 | 7, 47 << 3 | 7, 48 << 3 | 7, 49 << 3 | 7, 25 << 3 | 3, 25 << 3 | 4, 25 << 3 | 5, 25 << 3 | 6,
+    26 << 3 | 4, 26 << 3 | 5, 26 << 3 | 6};
+static void xb_put(uint8_t *q, uint32_t *at, uint32_t v, uint32_t n)   /* v's n bits into the next n spare bits */
+{
+    uint32_t i;
+    for (i = 0; i < n && *at < sizeof XB_POS / sizeof XB_POS[0]; i++, (*at)++) {
+        uint32_t b = XB_POS[*at];
+        q[b >> 3] = (uint8_t)((q[b >> 3] & ~(1u << (b & 7u))) | (v >> i & 1u) << (b & 7u));
+    }
+}
+static uint32_t xb_get(uint8_t *q, uint32_t *at, uint32_t n)   /* the next n spare bits' value, taken out of q */
+{
+    uint32_t i, v = 0;
+    for (i = 0; i < n && *at < sizeof XB_POS / sizeof XB_POS[0]; i++, (*at)++) {
+        uint32_t b = XB_POS[*at];
+        v |= (uint32_t)(q[b >> 3] >> (b & 7u) & 1u) << i;
+        q[b >> 3] &= (uint8_t)~(1u << (b & 7u));
+    }
+    return v;
+}
 static uint8_t *pk_track(uint8_t *q, uint32_t t)
 {
     uint32_t e, k;
@@ -402,6 +436,10 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
     q[45] = (uint8_t)clamp(trk[t].arp_rate, 0, NARPRATE - 1), q[46] = (uint8_t)(clamp(trk[t].arp_oct, 1, 4) | (clamp(trk[t].tap, 0, 127) >> 5) << 5);
     q[47] = (uint8_t)clamp(trk[t].arp_gate, 10, 100);
     lfo_pk(q + 48, t);                          /* LFO */
+    {                                           /* (V2: its newer settings in the spare bits) */
+        uint32_t at = 0;
+        xb_put(q, &at, trk[t].pd_ring != 0, 1);
+    }
     return q + TRK_PK;
 }
 static void trk_def(uint8_t *q, uint32_t n)     /* a track's bytes from n on (a save before ARP, before the LFO) as at
@@ -423,6 +461,11 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
     uint32_t e, k;
     for (k = 0; k < TRK_PK && k < n; k++) q[k] = q0[k];
     trk_def(q, n);                              /* (what an older save has not: as at power-on) */
+    {                                           /* (V2: its newer settings out of the spare bits, first: the rest as
+                                                 * ever; saved before: 0) */
+        uint32_t at = 0;
+        trk[t].pd_ring = (int32_t)xb_get(q, &at, 1);
+    }
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];
     trk[t].p[ENG_VOICE][1] = q[1 + ENG_VOICE * 4u + 1u] & 31u, trk[t].vty = q[1 + ENG_VOICE * 4u + 1u] >> 5 & 3u;   /* (V2) */

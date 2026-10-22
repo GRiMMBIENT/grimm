@@ -338,6 +338,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
               LEARN_NAME[clamp(v, 0, 2)]);
         return;
+    case PG_PDLINE: put_s(S->val, v ? "ON" : "OFF"); return;   /* (V2: PHASE's LINE 2: RING) */
     case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
                                                  * ALWAYS OFF; VELOCITY: OFF, ON */
     case PG_SOUNDS:
@@ -1060,6 +1061,25 @@ static void pic_phase(void)                     /* the bent waveform of WAVE at 
     }
 }
 
+static void pic_pdline(void)                    /* (V2) LINE 2: line 1 (light) beside line 2 (mid), how they meet */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_PHASE];
+    uint32_t dcw = ((uint32_t)clamp(p[2], 0, 127) * 65535u / 127u * 56000u) >> 16;
+    int32_t x, c, y0;
+    pd_t b;
+    ui_caption("LINE 1", "LINE 2");
+    for (c = 0; c < 2; c++) {
+        pd_setup(&b, (uint32_t)clamp(p[0], 0, 7), dcw);
+        for (y0 = -1, x = 0; x < 26; x++) {
+            int32_t yy = 11 - pd_wave(&b, (uint32_t)x * 65535u / 25u) * 9 / 32767, a = y0 < 0 ? yy : y0, z;
+            for (z = a < yy ? a : yy; z <= (a < yy ? yy : a); z++) ui_cell(c * 28 + x, z, c ? UI_M : UI_L);
+            y0 = yy;
+        }
+    }
+    ui_text(PX0 + 4, PY0 + 96, trk[sel].pd_ring ? "RING  1 X 2" : p[3] ? "MIX  1 + 2" : "LINE 1 ALONE", 1,
+            trk[sel].pd_ring ? ui_acc : UI_M);
+}
+
 static void pic_source(void)                    /* the seven sources, the track's in the accent; LATCH */
 {
     int32_t i, e = (int32_t)sel_eng();
@@ -1732,6 +1752,7 @@ static void ui_pic_draw(void)
     case PG_HOME: pic_home(); return;
     case PG_FMALGO: pic_fmalgo(); return;
     case PG_FMOP: pic_fmop(); return;
+    case PG_PDLINE: pic_pdline(); return;
     case PG_SOUND:
         switch (sel_eng()) {
         case ENG_VA: pic_va(); return;
@@ -1779,7 +1800,7 @@ static uint32_t ui_pic_key(void)
     }
     for (t = 0; t < NT; t++)
         UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
-            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty),
+            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring),
             UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);

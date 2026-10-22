@@ -320,6 +320,15 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const lb = (await cl.track(2)).rec, lr = buildRecord(Object.assign(parseSound(lb, meta), { cat: ls.cat, num: ls.num, name: ls.name }));
   check(eq([...lr], [...buildRecord(ls)]), "editor: TRACK: a sound set live on track 3, read back as set (FM patch too)");
   check(await cl.select(1) === 1 && (await cl.track(0)).sel === 1 && await cl.select(t0[0].sel) === t0[0].sel, "editor: TRACK: a track selected, and back");
+  {                                                          // (GR!MM 2.0: PHASE's LINE 2 and envelopes, a sound's bytes 18 ..)
+    const ps = parseSound(Uint8Array.from(meta.factory[3].rec), meta);   // LAST LIGHT (PHASE)
+    const pd0 = JSON.stringify(ps.pd);
+    ps.pd.ring = 1;
+    await cl.trackSet(2, buildRecord(ps));
+    const pb = parseSound((await cl.track(2)).rec, meta);
+    check(ps.eng === 6 && pd0 === JSON.stringify({ ring: 0 }) && JSON.stringify(pb.pd) === JSON.stringify(ps.pd),
+          `editor: PHASE's LINE 2 set live on track 3, read back (${JSON.stringify(pb.pd)}); a factory sound's all off`);
+  }
   let sent = 0, last = -1, v = 0;
   const snd = new LiveSender(async () => { sent++, last = v; await new Promise((r) => setTimeout(r, 4)); }, 2);
   for (let i = 1; i <= 200; i++) { v = i; snd.set(0); if (i % 20 === 0) await new Promise((r) => setTimeout(r, 1)); }

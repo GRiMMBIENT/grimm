@@ -139,6 +139,16 @@ With chord mode, every note of the chord is a choir. The men sound most natural 
 
 The choir recordings are from **VocalSet** (Wilkins, Seetharaman, Wahl, Pardo, Northwestern University, 2018, <https://doi.org/10.5281/zenodo.1442513>), licensed under Creative Commons Attribution 4.0 (<https://creativecommons.org/licenses/by/4.0/>); GR!MM made single cycles from them (see LICENSING.md).
 
+### PHASE's LINE 2 page
+
+On a **PHASE** track, EDIT has one more page after SOURCE: **LINE 2**. PHASE plays two lines, like a Casio CZ: line 1 is WAVE / WAVE2 bent by DCW; line 2 joins in when DETUNE is up (a copy of line 1, DETUNE cents higher) or when this page asks for it. Everything on it is saved with the sound (and with the project); every sound made before has it all off, so it sounds as it did.
+
+| KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
+|---|---|---|---|
+| – | – | RING: OFF / ON | – |
+
+- **RING:** line 1 × line 2 (ring modulation, as the CZ's) instead of the two mixed: metallic, bell-like, clangorous. Try it with DETUNE up: the further apart the two lines, the stranger.
+
 | PHYS MODEL | What it is | STRUCTURE | DAMP | BOW |
 |---|---|---|---|---|
 | MODAL | a bar, bell or plate: a set of resonating modes | harmonic (bar) → inharmonic (bell, metal) | how long it rings: low = short, high = long | 0: struck; up: excited by a stream of tiny random strikes, so it keeps sounding |

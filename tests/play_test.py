@@ -64,5 +64,44 @@ st[167], st[169] = 3, 2                         # (version 3; LATCH FROM SOUND, 
 out, _, _ = run("vel_load", [(1000, "probe")], 1200, dict(os.environ, GRIMM_SETTINGS_IN=str(OUT / "vel_set.bin")))
 check("VELOCITY loaded from the settings (byte 169, bit 1), LATCH beside it as it was",
       " vel 1 " in out and " latch " in out and "new 0 " in out, out.split(" new ")[1][:6] if " new " in out else out[:80])
+
+# PHASE (WRAITH, preset 25, on T1), its LINE 2 page (EDIT: SOUND, SOURCE, LINE 2): off, the sound as before (to the
+# byte, against the build given as the second argument, if one); RING: another sound, in range; saved, loaded; 1.0: off
+OLD = sys.argv[2] if len(sys.argv) > 2 else None
+PD = [(300, "enc 6 25"), (400, "btn 6"), (450, "btn 6"), (500, "btn 6")]
+PLAY = [(3000, "keys 0x880"), (5000, "keys 0")]
+
+
+def pd_run(name, ev, end=6500, env=None, binary=None):
+    global BIN
+    keep, BIN = BIN, binary or BIN
+    try:
+        return run(name, ev, end, env)
+    finally:
+        BIN = keep
+
+
+out, base_b, base = pd_run("pd_base", PD + [(600, "probe")] + PLAY)
+check("PHASE: the LINE 2 page after SOURCE on a PHASE track", " page 28 " in out, out.split(" ui page ")[1][:8])
+if OLD:
+    _, old_b, _ = pd_run("pd_old", PD + PLAY, binary=OLD)
+    check("PHASE with LINE 2 as it starts: the sound as before, to the byte", old_b == base_b)
+
+
+def pd_on(name, turn, extra=()):
+    out, raw, a = pd_run(name, PD + [(600, turn)] + list(extra) + [(700, "probe")] + PLAY)
+    pk = max(abs(x) for x in a)
+    return out, raw, a, pk
+
+
+out, r_b, r, pk = pd_on("pd_ring", "enc 4 1")
+check("RING on: another sound, in range", " pd1 1" in out and r_b != base_b and pk < 32767 and rms(r, 3200, 4800) > 100,
+      f"peak {pk}")
+SV = PD + [(600, "enc 4 1"), (1700, "keys 0")]
+o1, _, _ = run("pd_save", SV, 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "pdsaves.bin")))
+o2, _, _ = run("pd_load", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "pdsaves.bin")))
+o3, _, _ = run("pd_v10", [(1050, "keys 0"), (1100, "probe")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
+check("RING saved with the project, loaded; a GR!MM 1.0 project: off", " pd1 1" in o2 and " pd1 0" in o3,
+      f"{o2.split(' pd1 ')[1][:3] if ' pd1 ' in o2 else '?'} {o3.split(' pd1 ')[1][:3] if ' pd1 ' in o3 else '?'}")
 print("play test: passed" if not bad else "play test: FAILED")
 sys.exit(1 if bad else 0)
