@@ -13,6 +13,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched.
 - **VOICE choirs from real singers:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of six singers on every note, made from recordings of real singers: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
+- **GENERATE:** hold FX and tap a black key to let a track play random notes of the scale by itself, in three moods: DRIFT, PULSE, STORM. See [Performance](#10-performance-hold-fx).
 - **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. See [HOME](#2-home).
 - **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level meter on MIXER 1.
 - **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
@@ -346,6 +347,23 @@ GRAIN and DELAY both pour into SPACE. All four TAPE knobs at 0 switches TAPE off
 
 FREEZE is the exception: tap it to hold the grain cloud, tap again to release.
 
+### GENERATE: hold FX + a black key
+
+A track can play by itself: random notes of the **SCALE** (with chord mode on: random chords, the track's chord on each), on the tempo (or the MIDI clock it follows, SYSTEM 2's CLOCK), whether the sequencer plays or not. It rests now and then and varies its note lengths, so it breathes, and every note gets a volume and an attack of its own.
+
+| Hold FX + | F#3 | G#3 | A#3 | C#4 | D#4 |
+|---|---|---|---|---|---|
+| | T1 on/off | T2 on/off | T3 on/off | T4 on/off | MODE |
+
+- **MODE** steps through **DRIFT → PULSE → STORM**, the same for all four tracks; the header shows its name for a moment (and switching a track on or off shows `T1 GENERATE DRIFT` or `T1 GENERATE OFF`).
+  - **DRIFT:** few notes, long (2–8 beats), soft, slow attacks, low: ambient.
+  - **PULSE:** a melody on eighths, mostly on the beat, walking the scale in small steps: steadier.
+  - **STORM:** dense, short sixteenths, the volume swinging wildly, wide.
+- While FX is held, the five black keys glow and the keys of the tracks that generate are lit.
+- **The pattern:** while a track generates, its own pattern is not heard; it keeps running silently underneath, so when you switch GENERATE off it comes back in time, exactly as it was. GENERATE never writes into it.
+- It plays the track's own sound through its own voices, like your keys: it never takes another track's voices (a full track skips a note). Mute and solo (GLO) work on it as usual.
+- Nothing is saved: after power-on GENERATE is off on every track, and MODE is DRIFT.
+
 ---
 
 ## 11. System: hold HOME
@@ -402,6 +420,8 @@ Turn **PRESETS** to step through them by category, then your own.
 |---|---|---|
 | EDIT | OCT− / OCT+ | Undo / redo |
 | FX | white keys F3–F4 | Performance tricks (FREEZE … STUTTER) |
+| FX | black keys F#3–C#4 | GENERATE on/off for T1–T4 |
+| FX | black key D#4 | GENERATE's MODE: DRIFT → PULSE → STORM |
 | SEL | (alone, let go) | Chord mode on/off |
 | SEL | a knob (sequencer pages) | Lock that value to the selected step |
 | SEL | OCT− (sequencer pages) | Clear the step's locks |
