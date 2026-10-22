@@ -1573,8 +1573,20 @@ static void pic_song(void)                      /* Song: five of the chain's ste
     }
 }
 
+static uint32_t gen_fl;                         /* (V2) GENERATE's tiles flashing (bit t: a note played ~0.12 s ago) */
+static uint32_t gen_flash(void)                 /* main loop: the tiles' flashes now (from gen_hit, the audio's) */
+{
+    static uint8_t seen[NT];
+    static uint32_t until[NT];
+    uint32_t t, f = 0;
+    for (t = 0; t < NT; t++) {
+        if (gen_hit[t] != seen[t]) seen[t] = gen_hit[t], until[t] = fm1_ms + 120u;
+        f |= (uint32_t)((int32_t)(until[t] - fm1_ms) > 0) << t;
+    }
+    return gen_fl = f;
+}
 static void pic_perform(void)                   /* FxLayer: the eight tricks (FX held + the white keys), on in the
-                                                 * accent (its mutes: GLO's) */
+                                                 * accent (its mutes: GLO's); (V2) GENERATE's four tracks under them */
 {
     static const char *const KEY[8] = {"F3", "G3", "A3", "B3", "C4", "D4", "E4", "F4"};
     static const char *const NM[8][2] = {{"FREEZE", ""}, {"REV", "THROW"}, {"ECHO", "THROW"}, {"TAPE", "STOP"},
@@ -1587,6 +1599,19 @@ static void pic_perform(void)                   /* FxLayer: the eight tricks (FX
         ui_text(x + 3, y + 3, KEY[i], 1, on ? UI_K : UI_M);
         ui_text(x + 2, y + 18, NM[i][0], 1, on ? UI_K : UI_L);
         ui_text(x + 2, y + 28, NM[i][1], 1, on ? UI_K : UI_L);
+    }
+    for (i = 0; i < (int32_t)NT; i++) {         /* (V2) GENERATE, a tile a track (its black key's): on in the accent,
+                                                 * its MODE, its range, a square flashing as it plays a note */
+        int32_t x = 12 + i * 55, y = 117;
+        int on = (int)(gen_on >> i & 1u);
+        char r[12];
+        ui_rect(x, y, 51, 44, on ? ui_acc : UI_D);
+        put_u(put_s(r, "T"), (uint32_t)i + 1u);
+        ui_text(x + 3, y + 3, r, 1, on ? UI_K : UI_M);
+        ui_rect(x + 41, y + 3, 7, 7, gen_fl >> i & 1u ? UI_W : UI_K);
+        ui_text(x + 3, y + 17, GM_NAME[gen_md[i] % NGM], 1, on ? UI_K : UI_L);
+        ui_note(put_s(ui_note(r, gen_low((uint32_t)i)), "-"), gen_high((uint32_t)i));
+        ui_text(x + 3, y + 31, r, 1, on ? UI_K : UI_M);
     }
 }
 
@@ -1759,7 +1784,10 @@ static uint32_t ui_pic_key(void)
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);
     if (PAGES[page].btn == BTN_SEL) UI_H(ch_last), UI_H(ui_oct);
     UI_H(trk_quiet);
-    if (page == PG_PERFORM) UI_H(pf_held), UI_H(ge_freeze);
+    if (page == PG_PERFORM) {                   /* (V2: GENERATE's tiles too) */
+        UI_H(pf_held), UI_H(ge_freeze), UI_H(gen_on), UI_H(gen_flash());
+        for (t = 0; t < NT; t++) UI_H(gen_md[t]), UI_H(gen_oc[t]), UI_H(gen_rg[t]);
+    }
     if (page == PG_SONG) {                      /* the chain, the step playing, the slots' notes */
         UI_H(song_at), UI_H(song_left), UI_H(song_rec), UI_H(song_ri);
         for (k = 0; k < SONG_N; k++) UI_H(song_pat[k]), UI_H(song_rep[k]);
