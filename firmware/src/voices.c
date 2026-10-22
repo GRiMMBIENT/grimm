@@ -137,10 +137,17 @@ static inline uint32_t vinc(int32_t p16)
 static const engine_t *const ENGINES[NENG] = {&VA_ENGINE, &FM_ENGINE, &SAMPLE_ENGINE, &FORMANT_ENGINE, &WHEEL_ENGINE,
                                               &PHYS_ENGINE, &PHASE_ENGINE};   /* (by ENG_) */
 
+/* (V2) GENERATE's notes (gen.c): a voice's volume (0: full; else x / 256) and attack (0: the track's ATTACK; else
+ * GEN_ATK's k - 1), asked with the note (gen_vel, gen_atk: the next note_on's), taken as it begins */
+static uint8_t vc_vel[NV], vc_atk[NV], vc_wvel[NV], vc_watk[NV], gen_vel, gen_atk;
+static const int32_t GEN_ATK[8] = {2434783, 608696, 202899, 81159, 40580, 20290, 10145, 4870};   /* ATTACK steps
+                                                 * (Q24 a control step): 5, 20, 60, 150, 300, 600, 1200, 2500 ms */
+
 /* main loop: voice v plays note for track t (a sounding voice fades out first; the same note of the same track
  * sounding goes on up from where it is) */
 static void voice_start(uint32_t v, uint32_t t, uint32_t note)
 {
+    vc_wvel[v] = gen_vel, vc_watk[v] = gen_atk; /* (V2: GENERATE's; 0 0: the voice as ever) */
     vc[v].want_note = (uint8_t)note;
     vc[v].want_trk = (uint8_t)t;
     vc[v].want_on = 1;
@@ -169,6 +176,7 @@ static void voice_begin(voice_t *v)             /* a note from silence */
     ENGINES[v->eng]->begin(v);
     v->env = 0;
     v->stage = ST_ATK;
+    vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc];   /* (V2: GENERATE's volume, attack) */
 }
 
 /* the tracks' ENV as steps, from the knobs, once a render: ATTACK a linear step (Q24 a control step), DECAY and RELEASE
@@ -208,13 +216,14 @@ static int32_t env_tick(voice_t *v)
             e = 0;
         } else if (v->want_note == v->note && v->want_trk == v->trk && v->eng == trk[v->trk].eng && v->stage != ST_FADE) {
             v->stage = ST_ATK;                  /* the same note again (same engine): on up from where it is */
+            vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc];
         } else {
             v->stage = ST_FADE;                 /* another note: out first, then begin */
         }
     }
     switch (v->stage) {
     case ST_ATK:
-        e += c->atk;
+        e += vc_atk[v - vc] ? GEN_ATK[(vc_atk[v - vc] - 1u) & 7u] : c->atk;   /* (V2: GENERATE's attack, or the track's) */
         if (e >= (1 << 24)) {
             e = 1 << 24;
             v->stage = ST_SUS;
@@ -248,7 +257,7 @@ static int32_t env_tick(voice_t *v)
         break;
     }
     v->env = e;
-    return e >> 9;                              /* Q15 */
+    return vc_vel[v - vc] ? ((e >> 9) * vc_vel[v - vc]) >> 8 : e >> 9;   /* Q15 (V2: GENERATE's volume) */
 }
 
 /* the audio ISR: n frames (a multiple of CTL, at most VB) of every sounding voice into tb[its track] (mono); returns
