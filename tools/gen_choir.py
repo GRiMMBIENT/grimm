@@ -11,7 +11,11 @@ notes on each vowel, without vibrato; men C3 C4 F4, women C4 C5 F5). Changes mad
 singers below, the two lower notes on A E I O U, their steady middle measured into the strengths of their first 64
 harmonics (averaged over ~0.3 s windows), given one phase pattern a singer (their A's, so the vowels morph without
 cancelling), each made as loud as the others, and drawn as one cycle at four sizes (256, 128, 64, 32 samples: 64, 32,
-16, 8 harmonics, band-limited for higher notes), 8 bits a sample.
+16, 8 harmonics, band-limited for higher notes), 8 bits a sample. E, I and U made clearer (A and O as measured): soft
+straight tones keep a vowel's resonances low, and on the higher note singers bring the vowels together; so their
+harmonics are read off the note's mean envelope (the singer's five vowels, dB between the harmonics) plus the vowel's
+own shape from the lower note, where it is sung clearly (how its envelope differs from that note's mean, under ~4 kHz:
+the first three resonances, their peaks twice as high).
 
   python3 tools/gen_choir.py fetch DIR      VocalSet's straight long tones (100 files, ~84 MB) into DIR, from Zenodo
                                             by HTTP ranges (not the whole 2 GB archive)
@@ -32,6 +36,8 @@ NH = 64                                         # harmonics measured (the larges
 SIZES = (256, 128, 64, 32)                      # a cycle's sizes, harmonics: size / 4
 ZONES = {"m": (130.8, 261.6), "f": (261.6, 523.3)}   # the notes used: men C3 C4, women C4 C5 (Hz)
 NSING = 3                                       # singers a voice (men, women): the cleanest by their harmonics
+CLEAR = "eiu"                                   # the vowels made clearer (A, O: as measured: the factory sounds' own)
+PEAKS = 2.0                                     # their resonances' peaks over the singer's mean, x (1: as sung)
 
 
 # ---- fetch: the archive's straight long tones, by HTTP ranges
@@ -173,17 +179,44 @@ def make(d):
         chosen[sex] = sorted(score, key=lambda n: -score[n])[:NSING]
         print(sex, "singers (their notes' median harmonic-to-noise ratio, dB):",
               ", ".join(f"{sex}{n} {score[n]:.1f}" for n in sorted(score, key=lambda n: -score[n])))
-    tabs = []                                   # [sex][singer][zone][vowel] -> (len(SIZES) cycles)
+    def env(mags, f0, f):
+        """the envelope (dB) of harmonics `mags` at f0, at frequencies f: between harmonics linear in dB; under the
+        first, the first; over the last measured, falling 12 dB an octave"""
+        kmax = int(min(NH, np.floor(22050 * 0.95 / f0)))
+        hf = f0 * np.arange(1, kmax + 1)
+        db = 20 * np.log10(np.maximum(mags[:kmax], 1e-6))
+        out = np.interp(f, hf, db)
+        hi = f > hf[-1]
+        out[hi] = db[-1] - 12 * np.log2(f[hi] / hf[-1])
+        return out
+
+    def unit(m):
+        return m / np.sqrt((m ** 2).sum() / 2)
+
+    tabs, scale = [], []                        # [sex][singer][zone][vowel] -> (len(SIZES) cycles)
     for sex in "mf":
         tabs.append([])
         for num in chosen[sex]:
             tabs[-1].append([])
+            lo = sets[(sex, num, 0)]
             for z in (0, 1):
                 s = sets[(sex, num, z)]
+                fz = ZONES[sex][z]
                 ph = s["a"][1]                  # (one phase pattern a singer and note: its A's)
+                f = fz * np.arange(1, NH + 1)
+                mean_z = np.mean([env(unit(s[w][0]), fz, f) for w in VOWELS], axis=0)
+                mean_lo = np.mean([env(unit(lo[w][0]), ZONES[sex][0], f) for w in VOWELS], axis=0)
                 row = []
                 for v in VOWELS:
-                    mg = s[v][0] / np.sqrt((s[v][0] ** 2).sum() / 2)   # (each as loud: RMS 1)
+                    if v in CLEAR:              # (the vowel's own shape from the lower note, its peaks raised, F1 .. F3)
+                        dev = env(unit(lo[v][0]), ZONES[sex][0], f) - mean_lo
+                        dev = np.where(dev > 0, dev * PEAKS, dev) * np.clip((5000.0 - f) / 1500.0, 0.0, 1.0)
+                        mg = 10 ** ((mean_z + dev) / 20)
+                        mg[f >= 22050 * 0.95] = 0
+                        mg[s[v][0] == 0] = 0    # (as measured: over the recording's top, none)
+                    else:
+                        mg = s[v][0]
+                    mg = unit(mg)               # (each as loud: RMS 1)
                     cyc = []
                     for size in SIZES:
                         t = np.arange(size) / size
@@ -191,8 +224,19 @@ def make(d):
                         cyc.append(sum(mg[k] * np.cos(2 * np.pi * (k + 1) * t + ph[k]) for k in range(nh)))
                     row.append(cyc)
                 tabs[-1][-1].append(row)
-    peak = max(np.abs(c).max() for a in tabs for b in a for z in b for v in z for c in v)
+    peak = 0.0                                  # (the 8-bit level as the measured vowels set it, all five: A and
+    for sex in "mf":                            # O to the byte as before)
+        for num in chosen[sex]:
+            for z in (0, 1):
+                s = sets[(sex, num, z)]
+                for v in VOWELS:
+                    mg = unit(s[v][0])
+                    for size in SIZES:
+                        t = np.arange(size) / size
+                        peak = max(peak, np.abs(sum(mg[k] * np.cos(2 * np.pi * (k + 1) * t + s["a"][1][k])
+                                                    for k in range(size // 4))).max())
     g = 127.0 / peak
+    clip = sum(int((np.abs(c * g) > 127).sum()) for a in tabs for b in a for z in b for v in z for c in v)
     total = sum(SIZES)
     lines = ["/* GENERATED by tools/gen_choir.py: do not edit. GR!MM V2: VOICE's choir TYPEs' wavetables, from VocalSet",
              " * (Wilkins, Seetharaman, Wahl, Pardo, Northwestern University, 2018, https://doi.org/10.5281/zenodo.1442513,",
@@ -219,7 +263,7 @@ def make(d):
         lines.append("    },")
     lines.append("};")
     OUT.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-    print(f"{OUT}: {2 * NSING * 2 * 5 * total} bytes of tables")
+    print(f"{OUT}: {2 * NSING * 2 * 5 * total} bytes of tables; samples clipped at 127: {clip}")
 
 
 if __name__ == "__main__":
