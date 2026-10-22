@@ -180,13 +180,13 @@ row of 5 an operator, OP1 first: RATIO (0–31, 0 = 0.5), FINE, LEVEL, ATTACK, D
 | 29 | 127 − CUTOFF (HOME's filter; 0: open) |
 | 30 | RESONANCE (0–127) |
 | 31 | FX − 100, signed (0: 100 %; −100..100 for 0..200 %) |
-| 32 | the filter's TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST) (MIXER 2, V2; GR!MM 1.0: 0) |
+| 32 | the filter's TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST) (MIXER 2, V2) + 8 × the TAPE SEND's low five bits (MIXER 1, V2) (GR!MM 1.0: 0) |
 | 33–36 | ENV: ATTACK, DECAY, SUSTAIN, RELEASE |
 | 37 | bit 0 LATCH; bits 1–7 the DRIVE SEND, 0–127 (MIXER 1, V2; GR!MM 1.0: 0) |
 | 38–42 | LEVEL, DLY SEND, REV SEND, GRAIN SEND, PAN (0–127, PAN 64 the middle) |
 | 43 | the chord byte |
 | 44 | ARP: bit 7 on; bits 0–6 MODE (0 UP, 1 DOWN, 2 UP-DOWN, 3 RANDOM, 4 AS PLAYED, 5 CHORD) |
-| 45–47 | ARP RATE (0–8: 1/1 1/2 1/4 1/8 1/16 1/32 1/4T 1/8T 1/16T), OCTAVES (1–4), GATE (10–100) |
+| 45–47 | ARP RATE (0–8: 1/1 1/2 1/4 1/8 1/16 1/32 1/4T 1/8T 1/16T), OCTAVES (1–4; bits 5–6: the TAPE SEND's top two bits, V2; GR!MM 1.0: 0), GATE (10–100) |
 | 48–51 | LFO: RATE, DEPTH, DESTINATION, SHAPE |
 
 **A sequence (260 bytes):** byte 0 STEPS (1–64), 1 DIVISION (0–7), 2 SWING (0–127), 3 PLAY MODE; then 64 steps of 4
@@ -207,7 +207,7 @@ step n's 4 bits in byte 256 + n / 2, the low nibble for even n, the high for odd
 | 4 | SCREEN OFF: 0 NEVER, 1, 5, 15, 30 MIN |
 | 5 | SEQ MIDI OUT (0 / 1) |
 | 6 | MIDI LEARN's links in use (0–32) |
-| 7–166 | 32 links of 5 bytes, the oldest first: CC, page, knob (0–3), track (0–3), x (SOUND: the source; GRID: the step; SONG: the section; FM ALGO's FINE, FM OP: the operator; MIXER 1: 4 the DRIVE SEND, else knob 0 LEVEL, 1 DLY SEND, 2 REV SEND, 3 GRAIN SEND, as GR!MM 1.0's knobs) |
+| 7–166 | 32 links of 5 bytes, the oldest first: CC, page, knob (0–3), track (0–3), x (SOUND: the source; GRID: the step; SONG: the section; FM ALGO's FINE, FM OP: the operator; MIXER 1: 4 the DRIVE SEND, 5 the TAPE SEND, else knob 0 LEVEL, 1 DLY SEND, 2 REV SEND, 3 GRAIN SEND, as GR!MM 1.0's knobs) |
 | 167 | the settings' version (3; GR!MM 1.0's: 1; V2's first builds': 2) |
 | 168 | CLOCK (V2): 0 INT, 1 INT+OUT, 2 USB, 3 TRS |
 | 169 | LATCH (V2, SYSTEM 3; version 3): 0 FROM SOUND (a sound loaded brings its own LATCH, as 1.0), 1 ALWAYS OFF (a sound loaded sets the track's LATCH off) |
@@ -239,15 +239,15 @@ Request: `op`, then for SET `i`, `v`.
 
 | op | | Reply |
 | --- | --- | --- |
-| 0 | READ | `op`, `rc`, then 44 values (a V2 build before MIXER 1's DRIVE SEND: 28) |
+| 0 | READ | `op`, `rc`, then 48 values (V2 builds before MIXER 1's TAPE SEND: 44; before its DRIVE SEND: 28) |
 | 1 | SET `i` to `v` | `op`, `rc` |
 
 The values, in order: TAPE (WOW, SATURATION, TONE, HISS), GRAIN (SIZE, DENSITY, SCATTER, MIX), DELAY (TIME, FEEDBACK,
 WEAR, MIX), SPACE (SIZE, DAMP, MIX, PRE-DELAY), MASTER (CUTOFF, RESONANCE, TYPE 0 LP / 1 HP / 2 BP, POSITION 0 PRE FX /
 1 POST REVERB / 2 END), DRIVE (AMOUNT, TYPE 0 SOFT / 1 FUZZ / 2 CLIP / 3 FOLD, TONE, MIX): each 0..127 (or its list),
 as the FM-1's knobs; then T1..T4's filter (MIXER 2): TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST); then T1..T4's
-sends (MIXER 1), four a track: DLY, REV, GRAIN, DRIVE (0..127; value 28 + 4 × track + send). A value out of its range
-is set to the nearest end.
+sends (MIXER 1), four a track: DLY, REV, GRAIN, DRIVE (0..127; value 28 + 4 × track + send); then T1..T4's TAPE
+sends (0..127; value 44 + track). A value out of its range is set to the nearest end.
 
 ## Samples (11–16)
 
