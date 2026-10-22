@@ -57,6 +57,29 @@ static void host_probe(void)
             printf(" gv %u %u %u,%u,%u,%u", gen_took, gen_short, gen[0].left, gen[1].left, gen[2].left,
                    gen[3].left);                /* (V2: GENERATE's voices: taken from another track, chord notes not
                                                  * played within the share; the notes' ticks left) */
+            {                                   /* (V2: the tracks' settings as a project saves them (FNV-1a of each
+                                                 * pk_track), their ENV; the 64 sounds' and slots A..D's, and the
+                                                 * sounds saved) */
+                uint8_t q[TRK_PK];
+                uint32_t used = 0;
+                printf(" keep");
+                for (t2 = 0; t2 < NT; t2++) {
+                    pk_track(q, t2);
+                    for (h = 2166136261u, j2 = 0; j2 < TRK_PK; j2++) h = (h ^ q[j2]) * 16777619u;
+                    printf("%s%08x", t2 ? "," : " ", h);
+                }
+                for (t2 = 0; t2 < NT; t2++)
+                    printf("%s%d,%d,%d,%d", t2 ? "/" : " env ", (int)trk[t2].env[0], (int)trk[t2].env[1], (int)trk[t2].env[2],
+                           (int)trk[t2].env[3]);
+                for (h = 2166136261u, t2 = 0; t2 < SND_N; t2++) {
+                    const uint8_t *r = snd_rec(t2);
+                    used += r != 0;
+                    for (j2 = 0; r && j2 < SND_SIZE; j2++) h = (h ^ r[j2]) * 16777619u;
+                }
+                for (t2 = 0; t2 < 4u; t2++)
+                    for (j2 = 0; j2 < SLOT_ALL; j2++) h = (h ^ slots[t2][j2]) * 16777619u;
+                printf(" saved %08x %u", h, used);
+            }
             printf(" srcs");
             for (j2 = 0; j2 < nlat; j2++) printf(" %u:%u:%u", lat_src[j2], lat_trk[j2] + 1u, lat_note[j2]);
             printf(" /srcs");

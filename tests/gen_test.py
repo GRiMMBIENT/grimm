@@ -12,6 +12,8 @@
     generated note takes another track's voice, no chord note within its share left out, every track heard; one
     track generating: to the byte as before (against the build given as the second argument, if one)
   - a SAMPLE track's notes: up to the whole loop (its LENGTH), past the MODE's lengths; another source: the MODE's
+  - GENERATE changes no setting: four tracks generating 60 s in each MODE, chord mode off and on: the tracks' settings
+    (ENV, the sources' knobs, all of a track a project saves), the saved sounds and slots A..D the same, to the byte
     python3 tests/gen_test.py build/host/grimm"""
 import subprocess
 import sys
@@ -46,6 +48,7 @@ def run(name, ev, end):
                           own=int(ln.split(" own ")[1].split()[0]),
                           gv=[int(x) for x in ln.split(" gv ")[1].split()[:2]],
                           left=[int(x) for x in ln.split(" gv ")[1].split()[2].split(",")],
+                          keep=ln.split(" keep ")[1].split(" srcs")[0],
                           ph=ln.split(" ph ")[1].split()[0].split(","), srcs=srcs)
     return pr
 
@@ -218,5 +221,27 @@ for src, ev in (("SAMPLE", SAMPLE), ("VA", [])):
               200 < mx <= 1275)
     else:
         check(f"STORM on a VA track: the MODE's lengths (longest seen {mx} ticks, at most 48)", 0 < mx <= 48)
+
+# GENERATE changes no setting: the four sounds above (each its own ENV), T1's saved into sound 1 (SAVE > SOUNDS: SAVE,
+# OCT+) and the state into slot A (SAVE held + C4); then all four generating 60 s in one MODE; then all off
+SAVE = [(3300, "btn 9"), (3400, "enc 5 1"), (3500, "btn 1"), (3700, "down 9"), (3800, "keys 0x80"), (3850, "keys 0"),
+        (3900, "up 9"), (4000, "btn 8"), (4500, "probe")]
+for on in (0, 1):
+    for mode in range(3):
+        ev = LOAD + chords(on) + SAVE + [(5000, "down 2")]
+        for i, k in enumerate((1, 3, 5, 8)):     # (T1 .. T4 on)
+            ev += [(5100 + 100 * i, f"keys {1 << k:#x}"), (5150 + 100 * i, "keys 0")]
+        for i in range(mode):                    # (D#4 alone: all four's next MODE)
+            ev += [(5600 + 100 * i, "keys 0x400"), (5650 + 100 * i, "keys 0")]
+        ev += [(5900, "up 2"), (6000, "probe"), (66000, "down 2")]
+        for i, k in enumerate((1, 3, 5, 8)):     # (T1 .. T4 off)
+            ev += [(66100 + 100 * i, f"keys {1 << k:#x}"), (66150 + 100 * i, "keys 0")]
+        ev += [(66600, "up 2"), (70000, "probe")]
+        pr = run(f"keep{on}{mode}", ev, 70100)
+        b, g, a = pr[4500], pr[6000], pr[70000]
+        check(f"60 s of 4 tracks generating {['DRIFT', 'PULSE', 'STORM'][mode]}, chord mode {'on' if on else 'off'}: the "
+              f"tracks' settings, ENV, the saved sounds and slots unchanged ({b['keep'].split(' env ')[1].split()[0]})",
+              g["gen"] == 15 and g["mode"] == [mode] * 4 and a["gen"] == 0 and a["keep"] == b["keep"] and
+              b["keep"].split()[-1] == "1", f"before {b['keep']} / after {a['keep']}")
 print("gen test: passed" if not bad else "gen test: FAILED")
 sys.exit(1 if bad else 0)
