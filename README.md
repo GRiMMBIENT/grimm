@@ -99,6 +99,7 @@ GR!MM stands on the shoulders of other people's open work. Full details and lice
 - **DaisySP** and **Mutable Instruments Rings** (MIT), via Felucca's physical models
 - **CrispyZebra** by Leo Kuroshita (GPL-3.0), via Felucca's phase distortion
 - **Press Start 2P** font by CodeMan38 and **Terminus** font by Dimitar Zhekov (SIL Open Font License 1.1)
+- **[VocalSet: A Singing Voice Dataset](https://doi.org/10.5281/zenodo.1442513) by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (Northwestern University, 2018)** (CC BY 4.0, <https://creativecommons.org/licenses/by/4.0/>): VOICE's choir wavetables are made from its singers' long tones (changed: single cycles measured from them, see [LICENSING.md](LICENSING.md))
 
 ## Building from source
 
@@ -106,5 +107,5 @@ See [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Licence
 
-GPL-3.0. See [LICENSE](LICENSE). The four factory samples are CC0 1.0: free to use for anything. Bugs and questions:
+GPL-3.0. See [LICENSE](LICENSE). The four factory samples are CC0 1.0: free to use for anything. The choir wavetables are made from VocalSet, CC BY 4.0 (credit above and in [LICENSING.md](LICENSING.md)). Bugs and questions:
 open an issue on this repository.

@@ -3,7 +3,7 @@
 GR!MM is free software under the GNU General Public License, version 3 only (`GPL-3.0-only`, full text in
 `LICENSE`). One file in it, `firmware/src/fm6_core.c` (msfa), is Apache-2.0 (`LICENSES/Apache-2.0-msfa.txt`), and two,
 `firmware/src/phys_dsp.c` (DaisySP) and `firmware/src/phys_symp.c` (Rings), are MIT (`LICENSES/MIT-DaisySP.txt`,
-`LICENSES/MIT-Rings.txt`); Apache-2.0 and MIT code may be combined into a GPL-3.0 work, and the firmware built with it is GPL-3.0-only as a whole. The four factory samples are CC0 1.0 (`LICENSES/CC0-1.0.txt`). You may use, study, change and share it. If you give someone a firmware built from it, give them its
+`LICENSES/MIT-Rings.txt`); Apache-2.0 and MIT code may be combined into a GPL-3.0 work, and the firmware built with it is GPL-3.0-only as a whole. The four factory samples are CC0 1.0 (`LICENSES/CC0-1.0.txt`). VOICE's choir wavetables are made from recordings of VocalSet, CC BY 4.0 (`LICENSES/CC-BY-4.0.txt`; see [The choir wavetables](#the-choir-wavetables-vocalset)). You may use, study, change and share it. If you give someone a firmware built from it, give them its
 complete source under the same licence too.
 
 GR!MM is a modified version of [Dinghy](https://github.com/zvenson/dinghy) (zvenson), which is based on Felucca and
@@ -46,6 +46,7 @@ Copyright (C) 2026 GR!MM, GPL-3.0-only, unless a line says otherwise.
 | The stress test `tests/stress.sh`, `tests/stress_gen.py`, `tests/stress_check.c`, `tests/device_names.py` |  |
 | The matrix ghost test `firmware/hal/fm1_matrix.h` (the layout in it: the platform's, moved from `fm1_input.h`), its use in `fm1_input.h` (`fm1__keys`), `fm1_led_glow`, the one-bit column shift (`fm1__sr_from`, V2); the matrix simulation in `tests/host.c` (`HOST_MATRIX`) |  |
 | The FX performance layer `firmware/src/perform.c` |  |
+| VOICE's TYPE (V2): the choirs in `firmware/src/formant.c` (`choir_block`: a wavetable a singer, the vowels morphed, detune, drift, vibrato, sway, the tone and the breath), `tools/gen_choir.py` | GR!MM's own code. Its wavetables are VocalSet's (CC BY 4.0, [above](#the-choir-wavetables-vocalset)); its approach follows the vocal wavetables of sample-based "vocal pad" synthesizers in general: none of their code or data is used |
 | The effects of V2: the track filter's TYPE and POS (`firmware/src/grimm.c`), MASTER and DRIVE with its limiter (`firmware/src/master.c`), the SVF's other outputs (`dsp.c` `tsvf_any`), DRIVE's level table (`tools/gen_drive_levels.py`), the editor's FX (command 25, the page's FX section), `tests/fx_test.py` | GR!MM's own code, on the platform's SVF (A. Simper's trapezoidal state-variable filter, as Felucca has it) |
 | The MIDI clock in and out (V2): `firmware/src/clock.c`; its realtime ring in `firmware/src/platform.c`; the host's clock (`tests/host.c`: "clock", "trs", "probe"), `tests/probe.c`, `tests/clock_test.py` | GR!MM's own code. Following a clock (a pulse 4 ticks, interpolated but never past the next pulse; the tempo per beat; START / CONTINUE / STOP; the internal tempo after 0.5 s without pulses) after SLOOP's mclk ([sloop-fm1](https://github.com/isod89/sloop-fm1) `firmware/src/seq.c`, GPL-3.0), itself after Felucca 1.0's `midi_clock.c` and contributions by ChanceTheMaker and keremimo |
 | TRS MIDI IN (V2): `firmware/src/midi_uart.c`, `firmware/hal/fm1_uart.h`, `tests/midi_uart_test.c` | Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments ([Felucca](https://github.com/hugelton/Felucca): the UART, its DMA ring and the parser, RX verified on hardware), as [SLOOP](https://github.com/isod89/sloop-fm1) (isod89) has it, with the ring read by its content: the fix from Felucca [Salt] 0.9-salt14 by ChanceTheMaker, found by keremimo on an FM-1 with an Akai MPC Sample (GPL-3.0); the test after SLOOP's `tests/midi_uart_test.c`. GR!MM: the clock and START / STOP into the realtime ring |
@@ -72,6 +73,12 @@ Copyright (C) 2026 GR!MM, GPL-3.0-only, unless a line says otherwise.
 | What | Licence | Where |
 | --- | --- | --- |
 | GR!MM's four factory samples, URCHIN, LEAVE, NIKOLAI and M-SOFT (`assets/samples/Urchin.wav`, `Leave.wav`, `Nikolai.wav`, `M-Soft.wav`; in the firmware and the browser build's `grimm.wasm` as `firmware/gen/grimm_samples.h`): recordings, Copyright (C) 2026 GR!MM. Free to use for anything, no credit needed | CC0 1.0 Universal | `LICENSES/CC0-1.0.txt` |
+
+## The choir wavetables (VocalSet)
+
+| What | Licence | Where |
+| --- | --- | --- |
+| VOICE's choir TYPEs' wavetables (`firmware/gen/grimm_choir.h`, made by `tools/gen_choir.py`; in the firmware and the browser build's `grimm.wasm`) are made from [VocalSet: A Singing Voice Dataset](https://doi.org/10.5281/zenodo.1442513) by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (Northwestern University, 2018), <https://doi.org/10.5281/zenodo.1442513>. The recordings are licensed under the Creative Commons Attribution 4.0 International licence (<https://creativecommons.org/licenses/by/4.0/>). **Changes made by GR!MM:** of the straight long tones of singers m6, m3 and m4 (men) and f7, f9 and f4 (women), the two lower notes on each vowel (men C3 and C4, women C4 and C5), their steady middle measured into the strengths of the first 64 harmonics, given one phase pattern a singer, levelled, and drawn as single cycles at four band-limited sizes, 8 bits a sample (`tools/gen_choir.py` says how, and fetches the recordings). No recording is included whole. The recordings and the wavetables made from them are provided as is, without warranties (the licence's Section 5). The singers are anonymous in VocalSet; no endorsement by the authors, their university or the singers is implied | CC BY 4.0 | `LICENSES/CC-BY-4.0.txt` |
 
 ## Third-party material
 
