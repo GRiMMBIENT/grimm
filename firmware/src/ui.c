@@ -609,8 +609,9 @@ static void sk_init(void)                       /* (V2) the webs: in each top co
 }
 static void pic_home(void)                      /* Main: the webs, the stars, the eye, a candle a track */
 {
-    static const char *const FLAME[3][4] = {{"..aa..", ".aaaa.", ".alla.", "..la.."}, {"...a..", "..aaa.", ".alla.", "..la.."},
-                                            {"..a...", ".aaa..", ".alla.", "..la.."}};
+    static const char *const FLAME[3][5] = {{"..a...", "..aa..", ".aaaa.", ".alla.", "..la.."},   /* (V2: a row taller) */
+                                            {"....a.", "...a..", "..aaa.", ".alla.", "..la.."},
+                                            {"..a...", "..a...", ".aaa..", ".alla.", "..la.."}};
     static const char *const BODY[9] = {"...m..", ".wlll.", ".wlll.", ".llll.", ".llll.", "lllll.", ".llll.", ".llll.",
                                         "dddddd"};
     uint32_t i;
@@ -620,12 +621,13 @@ static void pic_home(void)                      /* Main: the webs, the stars, th
     ui_eye(80, 39, ey_k, ey_dx, ey_dy);
     for (t = 0; t < (int32_t)NT; t++) {         /* four candles, 27 px apart, centred */
         int32_t x = 43 + t * 45, y = 92, h = cn_h[t], r;
-        const char *f[4];
+        const char *f[5];
         char lab[2] = {(char)('1' + t), 0};
-        if (!ui_in(x, y, 18, 52)) continue;
-        for (r = 0; r < 4; r++) f[r] = r >= 4 - h ? FLAME[cn_s[t] % 3u][r] : "......";
-        if (!h) f[1] = "..m...", f[2] = "...m..";   /* (out: a wisp of smoke) */
-        ui_sprite(x, y, 3, f, 4);
+        if (!ui_in(x, y - 3, 18, 55)) continue;
+        for (r = 0; r < 5; r++) f[r] = h && r >= 4 - h ? FLAME[cn_s[t] % 3u][r] : "......";   /* (V2: lit, a row more
+                                                 * than its height) */
+        if (!h) f[2] = "..m...", f[3] = "...m..";   /* (out: a wisp of smoke) */
+        ui_sprite(x, y - 3, 3, f, 5);
         ui_sprite(x, y + 12, 3, BODY, 9);
         ui_text(x + 5, y + 43, lab, 1, UI_M);
     }
@@ -661,9 +663,9 @@ static void ui_home_frame(int draw)             /* a frame of HOME's picture (dr
             s = (s + 1u + an_rnd(2)) % 3u;
             cn_n[t] = (uint8_t)(an_e[t] >= 6u ? 1u + an_rnd(3) : 6u + an_rnd(14));
         }
-        if (h != cn_h[t] || (s != cn_s[t] && h > 2u)) {
+        if (h != cn_h[t] || (s != cn_s[t] && h > 1u)) {   /* (V2: shapes differ from 2 rows up) */
             cn_h[t] = (uint8_t)h, cn_s[t] = (uint8_t)s;
-            if (draw) ui_home_part(43 + (int32_t)t * 45, 92, 18, 12);
+            if (draw) ui_home_part(43 + (int32_t)t * 45, 89, 18, 15);
         }
         cn_s[t] = (uint8_t)s;
     }
