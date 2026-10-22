@@ -384,10 +384,12 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
     q[38] = (uint8_t)clamp(trk[t].level, 0, 127), q[39] = (uint8_t)clamp(trk[t].dly, 0, 127);
     q[40] = (uint8_t)clamp(trk[t].rev, 0, 127), q[41] = (uint8_t)clamp(trk[t].grn, 0, 127);
     q[42] = (uint8_t)clamp(trk[t].pan, 0, 127);
-    q[32] = (uint8_t)(clamp(trk[t].ftype, 0, NFTYPE - 1) | clamp(trk[t].fpos, 0, 1) << 2);   /* (V2: MIXER 2's TYPE, POS) */
+    q[32] = (uint8_t)(clamp(trk[t].ftype, 0, NFTYPE - 1) | clamp(trk[t].fpos, 0, 1) << 2 |   /* (V2: MIXER 2's TYPE, POS; */
+                      (clamp(trk[t].tap, 0, 127) & 31) << 3);   /* MIXER 1's TAPE send: its low five bits here, its top
+                                                 * two in byte 46's bits 5, 6, over OCTAVES: 1.0 had 0 in both) */
     q[43] = ch_pack(t);
     q[44] = (uint8_t)((trk[t].arp ? 0x80u : 0u) | (uint32_t)clamp(trk[t].arp_mode, 0, NARPMODE - 1));   /* ARP */
-    q[45] = (uint8_t)clamp(trk[t].arp_rate, 0, NARPRATE - 1), q[46] = (uint8_t)clamp(trk[t].arp_oct, 1, 4);
+    q[45] = (uint8_t)clamp(trk[t].arp_rate, 0, NARPRATE - 1), q[46] = (uint8_t)(clamp(trk[t].arp_oct, 1, 4) | (clamp(trk[t].tap, 0, 127) >> 5) << 5);
     q[47] = (uint8_t)clamp(trk[t].arp_gate, 10, 100);
     lfo_pk(q + 48, t);                          /* LFO */
     return q + TRK_PK;
@@ -425,9 +427,10 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
     trk[t].level = q[38], trk[t].dly = q[39], trk[t].rev = q[40], trk[t].grn = q[41], trk[t].pan = q[42];
     trk[t].cut = 127 - clamp(q[29], 0, 127), trk[t].res = clamp(q[30], 0, 127), trk[t].fx = clamp((int8_t)q[31] + 100, 0, 200);
     trk[t].ftype = clamp(q[32] & 3u, 0, NFTYPE - 1), trk[t].fpos = q[32] >> 2 & 1u;   /* (saved before V2: LP PRE) */
+    trk[t].tap = (int32_t)(q[32] >> 3 | (q[46] >> 5 & 3u) << 5);   /* (V2: the TAPE send; before: 0) */
     ch_unpack(t, q[43]);
     trk[t].arp_mode = clamp(q[44] & 0x7Fu, 0, NARPMODE - 1), trk[t].arp_rate = clamp(q[45], 0, NARPRATE - 1);
-    trk[t].arp_oct = clamp(q[46], 1, 4), trk[t].arp_gate = clamp(q[47], 10, 100);
+    trk[t].arp_oct = clamp(q[46] & 7u, 1, 4), trk[t].arp_gate = clamp(q[47], 10, 100);
     trk[t].arp = (int32_t)(q[44] >> 7 & 1u);    /* (on or off: arp.c's arp_watch starts it empty) */
     lfo_uk(q + 48, t);
     if (trk[t].eng != (int32_t)q[0] && q[0] < NENG) {

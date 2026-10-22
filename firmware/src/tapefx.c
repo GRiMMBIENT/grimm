@@ -182,3 +182,40 @@ static void tapefx_render(int32_t *out, uint32_t n)
         tf.on = on;
     }
 }
+
+/* (V2) the tracks' TAPE sends (MIXER 1): their bus x (mono, n) through a tape of its own as TAPE has it, its WOW (the
+ * same wow, its read from ~0 at WOW 0 to TF_BASE at full: no comb with the track at 0), SATURATION (the curve in use;
+ * a new one at once) and TONE, not its HISS (the whole mix's), back into out (L R) in the middle; after the tracks,
+ * before MASTER PRE. No send up: never called (grimm.c app_audio, one block more as they stop) */
+static int32_t ts_line[TF_LEN];
+static struct {
+    uint32_t w, on;                             /* the write index; on (fed the last block: else from an empty line) */
+    int32_t d, lp;                              /* the read at the last block's end (Q8 samples); TONE's low-pass */
+} ts;
+static void tape_send(const int32_t *x, int32_t *out, uint32_t n)
+{
+    int32_t wow = clamp(tf_wow, 0, 127), tone = clamp(tf_tone, 0, 127), tc = 32767 - ((tone * tone * 1606) >> 10);
+    int32_t d1 = 256 + (TF_BASE - 256) * wow / 127 + wear_wow(tf.p1, tf.p2, tf.p3, wow * 161), acc, dD, l = ts.lp, y = 0;
+    uint32_t i, w = ts.w, nw = tf_pub != tf_ack;   /* (a new curve made, not yet taken: it) */
+    const int16_t *c = tf_curve[tf.ci ^ nw];
+    int shape = (nw ? tf_psat : tf.csat) != 0;
+    d1 = d1 < 256 ? 256 : d1;                   /* (a sample back at least: the one just written) */
+    if (!ts.on) {
+        for (i = 0; i < TF_LEN; i++) ts_line[i] = 0;
+        ts.d = d1, l = 0;
+    }
+    acc = ts.d * 256, dD = d1 - ts.d;
+    for (i = 0; i < n; i++, acc += dD) {
+        int32_t D = acc >> 8;
+        uint32_t r0;
+        ts_line[w] = x[i];
+        w = (w + 1u) & (TF_LEN - 1u);
+        r0 = (w - (uint32_t)(D >> 8)) & (TF_LEN - 1u);
+        y = ts_line[r0];
+        if (D & 255) y += ((ts_line[(r0 - 1u) & (TF_LEN - 1u)] - y) * (D & 255)) >> 8;
+        if (shape) y = tf_shape(c, y);
+        if (tone) l += (clamp(y - l, -65535, 65535) * tc) >> 15, y = l;
+        out[2u * i] += y, out[2u * i + 1u] += y;
+    }
+    ts.w = w, ts.d = d1, ts.lp = tone ? l : y;
+}

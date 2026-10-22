@@ -137,9 +137,11 @@ static volatile uint32_t cpu_stage[CS_N];       /* audio: NOW split (GR!MM V2, t
                                                  * a block over NOW's blocks, the key scan's (SCAN: the timer ISR inside
                                                  * the audio ISR) taken out of them and counted on its own */
 static uint32_t cpu_over;                       /* audio: blocks in a row over the budget (the overload guard) */
-static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB], vbus[VB];   /* the tracks (mono); the DLY, REV, GRAIN and
-                                                 * (V2) DRIVE buses */
-static uint32_t dv_used;                        /* audio: the DRIVE bus fed this block (a send up, or coming down) */
+static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB], vbus[VB], pbus[VB];   /* the tracks (mono); the DLY, REV,
+                                                 * GRAIN and (V2) DRIVE, TAPE buses */
+static int32_t *const XBUS[2] = {vbus, pbus};   /* (V2: the DRIVE and TAPE sends' buses: mix_g 5, 6) */
+static uint32_t xb_used;                        /* audio: bit 0 the DRIVE bus, bit 1 the TAPE bus fed this block (a send
+                                                 * up, or coming down) */
 #include "master.c"                             /* GR!MM V2: MASTER (a filter on the whole sound), DRIVE (and a limiter) */
 static volatile uint32_t trk_mute, trk_solo;    /* main loop: GLO held + white keys 1..4, 5..8 (bit t: track t) */
 enum { PF_REV, PF_ECHO, PF_TAPE, PF_BACK, PF_FDOWN, PF_FUP, PF_STUT, NPF };   /* the FX layer's tricks: G3 .. F4 */
@@ -156,7 +158,7 @@ static inline int32_t mulq15w(int32_t a, int32_t b)
 {
     return (a >> 15) * b + (int32_t)(((uint32_t)a & 0x7FFFu) * (uint32_t)b >> 15);
 }
-static int32_t mix_g[NT][6];                    /* audio: each track's gains (L, R, DLY, REV, GRAIN, (V2) DRIVE) as the
+static int32_t mix_g[NT][7];                    /* audio: each track's gains (L, R, DLY, REV, GRAIN, (V2) DRIVE, TAPE) as the
                                                  * last block ended: this block's ramps start there */
 static void mix_add(int32_t *o, uint32_t st, const int32_t *x, int32_t g0, int32_t g1, uint32_t n)   /* o[i st] +=
                                                  * x[i] times the gain, from g0 to g1 over the block (no zipper) */
@@ -261,6 +263,15 @@ static int32_t fx_send(uint32_t t, int32_t s)   /* a send (0..127) times FX (0..
 {
     return s * 258 * clamp(trk[t].fx, 0, 200) / 100;
 }
+static void mix_xb(uint32_t t, const int32_t *x, const int32_t *g, int32_t a, int32_t b, uint32_t n)   /* (V2) x into
+                                                 * the DRIVE and TAPE sends' buses, their gains x a, x b / TF_PX1 (POS's
+                                                 * share) */
+{
+    uint32_t k;
+    for (k = 0; k < 2u; k++)
+        if (g[5u + k] | mix_g[t][5u + k])
+            mix_add(XBUS[k], 1u, x, (mix_g[t][5u + k] * a) >> 8, (g[5u + k] * b) >> 8, n);
+}
 static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the sounding tracks into out and the buses (LEVEL,
                                                  * PAN and the sends as the LFO moves them, lfo.c; the sends times
                                                  * TRACK's FX) */
@@ -270,20 +281,22 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
         int32_t *x = tbuf[t];
         int32_t lv = (trk_quiet >> t & 1u) ? 0 : lfo_move(t, LD_VOLUME, clamp(trk[t].level, 0, 127), 127) * 258;   /* (a
                                                  * silent track: all its gains down, ramped) */
-        int32_t pan = lfo_move(t, LD_PAN, clamp(trk[t].pan, 0, 127), 127), g[6];
+        int32_t pan = lfo_move(t, LD_PAN, clamp(trk[t].pan, 0, 127), 127), g[7];
         g[0] = mulq15(lv, pan <= 64 ? 32767 : (127 - pan) * 520);   /* PAN: the far side down, the near one full */
         g[1] = mulq15(lv, pan >= 64 ? 32767 : pan * 512);
         g[2] = mulq15(lv, pf_held >> PF_ECHO & 1u ? 127 * 258 : fx_send(t, clamp(trk[t].dly, 0, 127)));   /* the sends:
                                                  * after LEVEL (ECHO THROW, REV THROW held: full) */
         g[3] = mulq15(lv, pf_held >> PF_REV & 1u ? 127 * 258 : fx_send(t, lfo_move(t, LD_REV, clamp(trk[t].rev, 0, 127), 127)));
         g[4] = mulq15(lv, fx_send(t, lfo_move(t, LD_GRAIN, clamp(trk[t].grn, 0, 127), 127)));
-        g[5] = trk[t].drv > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send; 0: none,
-                                                 * nothing done) */
-        if ((used >> t & 1u) && (g[5] | mix_g[t][5])) {   /* (its bus cleared as it is first fed this block) */
-            if (!dv_used)
-                for (k = 0; k < n; k++) vbus[k] = 0;
-            dv_used = 1;
-        }
+        g[5] = trk[t].drv > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send, TAPE's;
+                                                 * 0: none, nothing done) */
+        g[6] = trk[t].tap > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].tap, 0, 127))) : 0;
+        for (k = 0; k < 2u; k++)                /* (a bus cleared as it is first fed this block) */
+            if ((used >> t & 1u) && (g[5u + k] | mix_g[t][5u + k]) && !(xb_used >> k & 1u)) {
+                int32_t *b = XBUS[k], i;
+                for (i = 0; i < (int32_t)n; i++) b[i] = 0;
+                xb_used |= 1u << k;
+            }
         int32_t px0 = tf_px[t], pw = trk[t].fpos ? TF_PX1 : 0;
         int32_t px1 = !(used >> t & 1u) ? pw : px0 < pw ? (px0 + 32 < pw ? px0 + 32 : pw) : (px0 - 32 > pw ? px0 - 32 : pw);
         tf_px[t] = px1;                         /* (V2: POS; silent: at once) */
@@ -292,17 +305,16 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             int32_t *bus[3] = {dbus, rbus, gbus};
             if (px0 == TF_PX1 && px1 == TF_PX1) {
                 for (k = 0; k < 3u; k++) mix_add(bus[k], 1u, x, mix_g[t][2u + k], g[2u + k], n);
-                if (g[5] | mix_g[t][5]) mix_add(vbus, 1u, x, mix_g[t][5], g[5], n);
+                mix_xb(t, x, g, TF_PX1, TF_PX1, n);
                 trk_filter(t, x, n);
             } else {
                 for (k = 0; k < 3u; k++)
                     mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * px0) >> 8, (g[2u + k] * px1) >> 8, n);
-                if (g[5] | mix_g[t][5]) mix_add(vbus, 1u, x, (mix_g[t][5] * px0) >> 8, (g[5] * px1) >> 8, n);
+                mix_xb(t, x, g, px0, px1, n);
                 trk_filter(t, x, n);
                 for (k = 0; k < 3u; k++)
                     mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * (TF_PX1 - px0)) >> 8, (g[2u + k] * (TF_PX1 - px1)) >> 8, n);
-                if (g[5] | mix_g[t][5])
-                    mix_add(vbus, 1u, x, (mix_g[t][5] * (TF_PX1 - px0)) >> 8, (g[5] * (TF_PX1 - px1)) >> 8, n);
+                mix_xb(t, x, g, TF_PX1 - px0, TF_PX1 - px1, n);
             }
             mix_add(out, 2u, x, mix_g[t][0], g[0], n);
             mix_add(out + 1, 2u, x, mix_g[t][1], g[1], n);
@@ -313,10 +325,10 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             if (used >> t & 1u) {
                 trk_peak(t, x, n);
                 mix_add5(out, x, mix_g[t], g, n);
-                if (g[5] | mix_g[t][5]) mix_add(vbus, 1u, x, mix_g[t][5], g[5], n);   /* (V2: DRIVE's send) */
+                mix_xb(t, x, g, TF_PX1, TF_PX1, n);   /* (V2: DRIVE's send, TAPE's) */
             }
         }
-        for (k = 0; k < 6u; k++) mix_g[t][k] = g[k];
+        for (k = 0; k < 7u; k++) mix_g[t][k] = g[k];
     }
 }
 
@@ -331,12 +343,20 @@ static void app_audio(int32_t *out, uint32_t n)
     CS_MARK(CS_VOICES);
     for (i = 0; i < n; i++)
         dbus[i] = rbus[i] = gbus[i] = 0;
-    dv_used = 0;
+    xb_used = 0;
     mix_tracks(out, used, n);
     CS_MARK(CS_MIX);
-    if (dv_used) {                              /* (V2) the tracks' DRIVE sends: their bus driven, back into the mix */
+    if (xb_used & 1u) {                         /* (V2) the tracks' DRIVE sends: their bus driven, back into the mix */
         drive_send(out, n);
         CS_MARK(CS_DRIVE);
+    }
+    if ((xb_used & 2u) || ts.on) {              /* (V2) the tracks' TAPE sends: their bus through the tape, back into
+                                                 * the mix (a block more once they stop: the line's last let out) */
+        if (!(xb_used & 2u))
+            for (i = 0; i < n; i++) pbus[i] = 0;
+        tape_send(pbus, out, n);
+        ts.on = xb_used >> 1 & 1u;
+        CS_MARK(CS_TAPE);
     }
     master_filter(out, n, MP_PRE);              /* (V2) MASTER, PRE FX: the tracks' dry mix */
     CS_MARK(CS_MASTER);

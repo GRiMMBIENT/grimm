@@ -70,6 +70,7 @@ typedef struct {
     volatile int32_t ftype, fpos;               /* (V2) MIXER 2: the track filter's TYPE (FT_: LP, HP, BP), POS (0 PRE:
                                                  * the sends hear it filtered; 1 POST: only the dry sound filtered) */
     volatile int32_t drv;                       /* (V2) MIXER 1: the DRIVE send, 0..127 (master.c drive_send) */
+    volatile int32_t tap;                       /* (V2) MIXER 1: the TAPE send, 0..127 (tapefx.c tape_send) */
 } track_t;
 #define TRK_DEF {ENG_VA, {{0, 10, 90, 30}, {0, 64, 64, 20}, {0, 0, 127, 0}, {0, 12, 64, 10}, {4, 0, 40, 0}, {0, 64, 80, 64}, {0, 0, 60, 0}}, 100, 0, 100, 0, 64, 0, \
                  {22, 85, 127, 89}, 0, 0, 0, 0, 0, 4, 1, 50, 64, 0, 0, 0, 127, 0, 100, 0, 0, {{0}}}
