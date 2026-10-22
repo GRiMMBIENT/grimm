@@ -360,9 +360,11 @@ void fm1_timer5_irq(void)
 }
 extern void isr_timer5(void);
 
-/* ---- the sound: ALNK0 I2S, two halves; the app renders, the MASTER knob scales, Q15 -> 24 bit (-6 dBFS ceiling) */
+/* ---- the sound: ALNK0 I2S, two halves; the app renders (V2: and scales by the MASTER knob, fm1_master: its output
+ * stage), Q15 -> 24 bit (-6 dBFS ceiling) */
 static int32_t abuf[2u * HALF_WORDS] __attribute__((aligned(4)));
 static volatile int32_t master_q12 = 2048;
+static int32_t fm1_master(void) { return master_q12; }   /* the MASTER knob, Q12, squared (0 .. 4092) */
 static void app_audio(int32_t *out, uint32_t n);
 static void app_main(void);
 
@@ -379,10 +381,8 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
             o[i] = 0;
         uac_render_start();
         app_audio(o, HALF_FRAMES);
-        for (i = 0; i < HALF_WORDS; i++) {
-            int32_t v = (o[i] * master_q12) >> 12;
-            o[i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
-        }
+        for (i = 0; i < HALF_WORDS; i++)        /* (V2: MASTER applied by the app) */
+            o[i] = o[i] > 32767 ? 32767 : o[i] < -32767 ? -32767 : o[i];
         for (b = 0; b < HALF_FRAMES; b += 32u)
             uac_tap(o + 2u * b, 32u);           /* the computer records what the speaker plays */
         for (i = 0; i < HALF_WORDS; i++)

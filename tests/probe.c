@@ -95,6 +95,13 @@ static void host_probe(void)
                 if (vc[k2].trk == 0 && (vc_gl[k2] < 0 ? -vc_gl[k2] : vc_gl[k2]) > g) g = vc_gl[k2] < 0 ? -vc_gl[k2] : vc_gl[k2];
             printf(" gl1 %d %d", (int)trk[0].glide, (int)g);
         }
+        {                                       /* (V2: the gain staging: SPACE's lines, DELAY's line past their soft
+                                                 * knee, SPACE's pre-delay clipped (samples, so far); T1's chord mode,
+                                                 * its sound's name: tests/level_test.py) */
+            char nm[24];
+            *trk_sname(0, nm) = 0;
+            printf(" lv %u %u %u ch1 %d snd1 %s", lv_rvk, lv_dlk, lv_pre, (int)trk[0].chord, nm[0] ? nm : "-");
+        }
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

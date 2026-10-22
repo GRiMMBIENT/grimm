@@ -215,7 +215,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
         memset(blk, 0, sizeof blk);
         app_audio(blk, HALF_FRAMES);
         for (i = 0; i < 2u * HALF_FRAMES; i++) {
-            int32_t v = (blk[i] * web_master_q12) >> 12;
+            int32_t v = blk[i];                 /* (GR!MM V2: MASTER applied by the app, fm1_master) */
             v = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
             ring[(ring_w * 2u + i) % (RING * 2u)] = (float)v / 65536.0f;   /* << 7 into 24 bits: -6 dBFS, as the I2S */
         }
@@ -268,6 +268,7 @@ EXPORT void web_buttons(uint32_t mask)
     fm1_in.buttons = mask;
 }
 EXPORT void web_enc(uint32_t e, int32_t n) { if (e < 7u) web_enc_steps[e] += n; }
+static int32_t fm1_master(void) { return web_master_q12; }   /* (GR!MM V2: the app's output stage asks) */
 EXPORT void web_master(uint32_t v) { web_knob = (int32_t)(v > 1023u ? 1023u : v); }
 EXPORT void web_midi(uint32_t st, uint32_t d1, uint32_t d2)
 {

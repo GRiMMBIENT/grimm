@@ -2,8 +2,8 @@
 // Copyright (C) 2026 GR!MM
 // The browser build against host mode: runs web/dist/grimm.wasm as web/worklet.js does (Asyncify), one millisecond at
 // a time, with tests/host.c's script, and compares with what tests/run_host.sh made:
-//   - the sound, sample for sample (host mode has no MASTER knob: at MASTER all the way up the web build plays
-//     host * 4080 / 4096, the knob's 1022 squared, as platform.c scales it);
+//   - the sound, sample for sample (GR!MM V2: the app applies MASTER, fm1_master: tests/run_host.sh renders at the
+//     knob's 1022, as here);
 //   - the screen at 2500, 3500, 6000 and 15500 ms, pixel for pixel (build/host/grimm-*.png), all but the CPU row: it shows the
 //     longest app_audio() as this computer's clock measured it (fm1_ticks), which is not the same twice;
 //   - the settings: not saved (nothing changes the octave), as host mode;
@@ -97,12 +97,12 @@ const check = (ok, what) => { console.log((ok ? "  ok    " : "  FAIL  ") + what)
 const wav = readFileSync("build/host/grimm.wav"), host = new Int16Array(wav.buffer, wav.byteOffset + 44, (wav.length - 44) / 2);
 let diff = 0, first = -1, peak = 0;
 for (let i = 0; i < Math.max(host.length, sound.length); i++) {
-  const want = ((host[i] ?? 0) * 4080) >> 12;
+  const want = host[i] ?? 0;
   peak = Math.max(peak, Math.abs(sound[i] ?? 0));
   if (sound[i] !== want) { diff++; if (first < 0) first = i; }
 }
 check(sound.length === host.length, `sound: ${sound.length / 2} frames (host mode ${host.length / 2})`);
-check(diff === 0 && peak > 0, `sound: sample for sample as host mode x 4080/4096 (peak ${peak})` + (diff ? `: ${diff} differ, the first at frame ${first >> 1}` : ""));
+check(diff === 0 && peak > 0, `sound: sample for sample as host mode, MASTER at 1022 both (peak ${peak})` + (diff ? `: ${diff} differ, the first at frame ${first >> 1}` : ""));
 
 // the screen
 function png(path) {                               // 8-bit RGB, not interlaced (as Pillow writes it)

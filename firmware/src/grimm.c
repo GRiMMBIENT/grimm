@@ -117,6 +117,13 @@
 #include "samples.c"
 #include "voices.c"
 #include "grain.c"
+#ifdef DINGHY_HOST
+static uint32_t lv_rvk, lv_dlk, lv_pre;         /* (host: tests/level_test.py: SPACE's lines, DELAY's line past their soft
+                                                 * knee; SPACE's pre-delay clipped, in samples) */
+#define LV_COUNT(c, x, k) ((c) += (x) > (k) || (x) < -(k))
+#else
+#define LV_COUNT(c, x, k) ((void)0)
+#endif
 #include "hall.c"
 #include "tape.c"
 #include "tapefx.c"
@@ -332,6 +339,35 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
     }
 }
 
+/* (V2) the output: 6 dB of headroom after every effect (the mix at half: six loud voices, four tracks fit), MASTER
+ * (platform.c's knob, squared; its top quarter up to 6 dB more: at the top, the level before V2), then a limiter: a
+ * peak past OUT_LIM (just under full scale) at once, let go over ~90 ms: nothing reaches the clip */
+#define OUT_LIM 32440                           /* (-0.09 dBFS) */
+#define OUT_MQ 2304                             /* (MASTER at 3/4: 768^2 / 256) */
+static int32_t out_env;                         /* audio: the limiter's peak (its gain: OUT_LIM / it) */
+static int32_t out_gain(void)                   /* MASTER: Q12, half up to 3/4, then to the old full at the top */
+{
+    int32_t m = clamp(fm1_master(), 0, 4092);
+    return m <= OUT_MQ ? m >> 1 : (m >> 1) + m * (m - OUT_MQ) / (2 * (4092 - OUT_MQ));
+}
+static void out_stage(int32_t *out, uint32_t n)
+{
+    int32_t g = out_gain(), env = out_env;
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        int32_t l = (clamp(out[2u * i], -500000, 500000) * g) >> 12, r = (clamp(out[2u * i + 1u], -500000, 500000) * g) >> 12;
+        int32_t a = l < 0 ? -l : l, b = r < 0 ? -r : r;
+        a = a > b ? a : b;
+        env = a > env - (env >> 12) ? a : env - (env >> 12);   /* (let go, never under this sample) */
+        if (env > OUT_LIM) {
+            int32_t k = (int32_t)(((uint32_t)OUT_LIM << 15) / (uint32_t)env);   /* (Q15) */
+            l = (int32_t)(((int64_t)l * k) >> 15), r = (int32_t)(((int64_t)r * k) >> 15);
+        }
+        out[2u * i] = l, out[2u * i + 1u] = r;
+    }
+    out_env = env;
+}
+
 static void app_audio(int32_t *out, uint32_t n)
 {
     static uint32_t sum, cnt, reset_seen, cs_sum[CS_N];
@@ -375,6 +411,8 @@ static void app_audio(int32_t *out, uint32_t n)
     perform_render(out, n);                     /* then the FX layer's tricks, the last stage before MASTER */
     CS_MARK(CS_PERFORM);
     master_filter(out, n, MP_END);              /* (V2) MASTER, END: the very last */
+    CS_MARK(CS_MASTER);
+    out_stage(out, n);                          /* (V2) the headroom, the MASTER knob, the limiter */
     CS_MARK(CS_MASTER);
 #undef CS_MARK
     for (i = 0; i < 2u * n; i += 32u) {         /* (the output's peaks, left and right, roughly: HOME's eye) */

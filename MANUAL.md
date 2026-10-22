@@ -19,6 +19,7 @@ Version 2.0 · for the M-VAVE FM-1
 - **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level meter on MIXER 1.
 - **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
 - **Cleaner and lighter:** samples uploaded with the editor no longer crackle, PHYS uses much less of the processor (at most four PHYS notes at once), and long backups, DAW loops, latched PHYS notes and the `SAVES WHEN SILENT` message all behave as they should.
+- **Headroom:** every sound plays clean at LEVEL 100, chords and four tracks included. The output has 6 dB of headroom, MASTER's top quarter brings the old loudness back, and a limiter at the very end catches any peak, so nothing ever clips. SPACE and DELAY take their sends 6 dB lower (and give them back), so loud chords no longer grind inside the reverb or the echoes. Up to three quarters of MASTER everything is 6 dB quieter than before: turn MASTER further, or your amp, for the old level.
 - **Nothing is lost when you update:** your sounds, slots A–D, settings, MIDI LEARN links and samples carry over, and backups from 1.0 restore.
 
 ---
@@ -37,7 +38,7 @@ GR!MM has **four tracks (T1–T4)**. Each track plays one sound, has its own seq
 | **PRESETS** knob | Loads the next or previous sound into the selected track. (On the sequencer pages it sets the tempo instead.) |
 | **SELECT** knob | On HOME: tempo. On MIXER 1: picks the tile. On the sequencer: moves the cursor. |
 | **KNOB 1–4** | The four values at the bottom of the screen, whatever page you're on. |
-| **MASTER** knob | Volume. |
+| **MASTER** knob | Volume. Its top quarter adds up to 6 dB more (at the very top: as loud as GR!MM 1.0); a limiter keeps the output from ever clipping. |
 | **OCT− / OCT+** | Octave down / up. In save menus: back / confirm. |
 | **Keys** | Play the selected track. |
 
@@ -483,6 +484,7 @@ Turn **PRESETS** to step through them by category, then your own.
 - **PHYS plays at most four notes at once** (it's the heaviest source). A fifth PHYS note takes the voice of a PHYS note that is fading out (released) if there is one; only when four PHYS notes are all on (held or latched) does it take the oldest of them.
 - **Looping MIDI from a DAW:** if a note arrives again before its note-off (a loop point), the note simply goes on: the arp isn't restarted, and the late note-off of the earlier one doesn't stop the new one. ALL NOTES OFF (CC 123, which DAWs send on stop) lets go of every note MIDI is holding; latched notes stay.
 - **Your sounds, slots A–D, settings and samples survive firmware updates.**
+- **Loudness:** GR!MM 2.0 keeps 6 dB of headroom: up to three quarters of MASTER everything plays 6 dB quieter than in 1.0 (sounds and projects are unchanged, only the output), and the last quarter of MASTER brings it back up to 1.0's level. A limiter at the very end means the output never clips, whatever LEVEL, chords or DRIVE do; at the top of MASTER the loudest chords are limited a little.
 - **MIDI IN:** over USB, and on the **TRS jack** (3.5 mm, MIDI IN only) with a TRS-to-DIN MIDI adapter. (TRS adapters come in different wirings; which one the FM-1's jack needs is still being tested, and this manual will say once it's confirmed.) Notes and CCs from the jack go exactly where USB's do (MIDI CHANNEL, MIDI LEARN); SysEx from the jack is ignored.
 - **Samples:** load your own WAV files into the four slots with the [editor](#15-the-editor) (or, optionally, `tools/fm1_sample_upload.py`, see the README). SYSTEM 2's SAMPLES brings the factory samples back.
 - **Stuck?** Use the Rescue page on the [FM-1 Firmware Hub](https://thefirmwarehub.com/).

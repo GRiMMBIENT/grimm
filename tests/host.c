@@ -183,6 +183,10 @@ static int sysex_send(const uint8_t *p, uint32_t n) { (void)p; (void)n; return 0
 #endif
 
 static void app_audio(int32_t *out, uint32_t n);
+static int32_t host_master = 4092;              /* (GR!MM V2) the MASTER knob as the app reads it (fm1_master, Q12): all
+                                                 * the way up, as the USB audio always was here; GRIMM_MASTER: the knob
+                                                 * 0 .. 1023 (squared, as platform.c) */
+static int32_t fm1_master(void) { return host_master; }
 static void app_main(void);
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message, an encoder turned. A script
@@ -474,7 +478,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
         }
         wav = realloc(wav, (wav_n + HALF_FRAMES) * 4u);
         for (i = 0; i < 2u * HALF_FRAMES; i++) {
-            int32_t v = blk[i];                 /* (USB audio at the MASTER knob all the way up) */
+            int32_t v = blk[i];                 /* (USB audio: the MASTER knob in it, GRIMM_MASTER) */
             wav[2u * wav_n + i] = (int16_t)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
         }
         wav_n += HALF_FRAMES;
@@ -505,6 +509,11 @@ int main(int argc, char **argv)
     memset(fake_flash, 0xFF, sizeof fake_flash);   /* (erased: the factory samples go in at boot) */
     host_jit = getenv("GRIMM_ISR_JITTER") ? (uint32_t)atoi(getenv("GRIMM_ISR_JITTER")) : 0u;
     host_clock_log = getenv("GRIMM_CLOCK_LOG") != 0;
+    if (getenv("GRIMM_MASTER")) {
+        int32_t k = atoi(getenv("GRIMM_MASTER"));
+        k = k < 0 ? 0 : k > 1023 ? 1023 : k;
+        host_master = (k * k) >> 8;
+    }
     if (getenv("GRIMM_AUDIO_HZ")) host_hz = (uint32_t)atoi(getenv("GRIMM_AUDIO_HZ"));
     if (getenv("GRIMM_SETTINGS_IN")) {          /* (tests/clock_test.py: the settings an older GR!MM saved, as stored) */
         FILE *f = fopen(getenv("GRIMM_SETTINGS_IN"), "rb");
