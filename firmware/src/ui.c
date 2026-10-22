@@ -509,15 +509,19 @@ static void ui_eye(int32_t x, int32_t y, int32_t k, int32_t dx, int32_t dy)
  * what the audio ISR left in vis_pk, vis_lr (its peaks) and the notes on (their pitch). Only what changed is drawn.
  *   candles: LEVEL the most a flame can be (muted, LEVEL 0: out, a wisp of smoke); a silent track's burns low, a shape
  *   now and then; a sounding one's grows with its peak, dances (a row up or down) and flickers (three shapes, uneven)
- *   webs (V2: were stars): two spider webs in the top corners, their threads' cells a few at a time brighten to light
- *   and fade back (dew catching the light); more of them the louder it is
+ *   stars: the fog's pixels, a few at a time brighten to light and fade back; more of them the louder it is (as 1.0:
+ *   its 46, where they were, but none on a web or the eye)
+ *   webs (V2): two spider webs in the top corners, their threads' cells a few at a time brighten to light and fade
+ *   back (dew catching the light); more of them the louder it is
  *   the eye: its iris goes towards the sound (left, right: the output's balance; up, down: high, low notes), a cell at
  *   a time; it blinks now and then, and at a sudden loud hit; silent ~4 s, it half-closes and drifts (dozing); the
  *   first sound wakes it with a blink */
-#define NWEB 330u
-static uint8_t sk_x[NWEB], sk_y[NWEB], sk_b[NWEB], sk_ph[NWEB], sk_ok;   /* a web's cell (3 px, from y 27): where, M (a
-                                                 * ring; else D, a thread), its sparkle's frame (0: none) */
-static uint32_t sk_n;                           /* the webs' cells */
+#define NSTAR 46u
+#define NWEB (330u + NSTAR)
+static uint8_t sk_x[NWEB], sk_y[NWEB], sk_b[NWEB], sk_ph[NWEB], sk_ok;   /* a web's cell, then a star (3 px, from y 27):
+                                                 * where, M (a ring, a bright star; else D), its sparkle's frame (0:
+                                                 * none) */
+static uint32_t sk_n, sk_nw;                    /* the cells: the webs' and the stars'; the webs' */
 static uint8_t cn_h[NT], cn_s[NT], cn_n[NT];    /* a candle: its flame's rows (0: out), shape, frames to its next shape */
 static int32_t ey_k = 4, ey_dx, ey_dy, ey_tx, ey_ty, ey_bl, ey_doze;   /* the eye: lids, iris, its target, the blink's
                                                  * frame (0: none), dozing */
@@ -532,12 +536,18 @@ static uint16_t sk_col(uint32_t i)              /* a star's colour now: D or M; 
     uint32_t p = sk_ph[i];
     return !p ? (sk_b[i] ? UI_M : UI_D) : p >= 4u && p <= 9u ? UI_L : UI_M;
 }
-static void sk_add(int32_t x, int32_t y, uint32_t ring)   /* a web's cell (once; a ring's is M) */
+static void sk_add(int32_t x, int32_t y, uint32_t ring)   /* a web's cell (once; a ring's is M), or a star (ring 2 | b:
+                                                 * none on a web's cell or the eye) */
 {
     uint32_t i;
     if (x < 0 || x > 78 || y < 0 || y > 43) return;
+    if ((ring & 2u) && x >= 25 && x <= 54 && y >= 3 && y <= 18) return;   /* (the eye: 80 .. 160, 39 .. 79 px) */
     for (i = 0; i < sk_n; i++)
-        if (sk_x[i] == x && sk_y[i] == y) { sk_b[i] |= (uint8_t)ring; return; }
+        if (sk_x[i] == x && sk_y[i] == y) {
+            if (!(ring & 2u)) sk_b[i] |= (uint8_t)ring;
+            return;
+        }
+    ring &= 1u;
     if (sk_n >= NWEB) return;
     sk_x[sk_n] = (uint8_t)x, sk_y[sk_n] = (uint8_t)y, sk_b[sk_n] = (uint8_t)ring, sk_ph[sk_n] = 0, sk_n++;
 }
@@ -572,9 +582,15 @@ static void sk_init(void)                       /* (V2) the webs: in each top co
                 sk_line(ox + sx * mx, my, ox + sx * x1, y1, 1);
             }
     }
+    sk_nw = sk_n;
+    ui_rnd_s = 7;                               /* (the stars as 1.0 had them: the concepts' random, seed 7) */
+    for (k = 0; k < (int32_t)NSTAR; k++) {
+        int32_t x = (int32_t)ui_rnd(79), y = (int32_t)ui_rnd(44);
+        sk_add(x, y, 2u | (ui_rnd(100) >= 65u));
+    }
     sk_ok = 1;
 }
-static void pic_home(void)                      /* Main: the stars, the eye, a candle a track */
+static void pic_home(void)                      /* Main: the webs, the stars, the eye, a candle a track */
 {
     static const char *const FLAME[3][4] = {{"..aa..", ".aaaa.", ".alla.", "..la.."}, {"...a..", "..aaa.", ".alla.", "..la.."},
                                             {"..a...", ".aaa..", ".alla.", "..la.."}};
@@ -641,11 +657,12 @@ static void ui_home_frame(int draw)             /* a frame of HOME's picture (dr
             sk_ph[i] = sk_ph[i] >= 12u ? 0u : (uint8_t)(sk_ph[i] + 1u);
             if (draw && sk_col(i) != c) ui_home_part(sk_x[i] * 3, 27 + sk_y[i] * 3, 3, 3);
         }
-    for (t = 0; t < 1u + loud / 96u; t++)
-        if (an_rnd(64) < 3u + loud / 12u) {
-            i = an_rnd(sk_n);
-            if (!sk_ph[i]) sk_ph[i] = 1;
-        }
+    for (t = 0; t < 1u + loud / 96u; t++)       /* (the webs, the stars each as often as 1.0's stars) */
+        for (k = 0; k < 2; k++)
+            if (an_rnd(64) < 3u + loud / 12u) {
+                i = k ? sk_nw + an_rnd(sk_n - sk_nw) : an_rnd(sk_nw);
+                if (!sk_ph[i]) sk_ph[i] = 1;
+            }
 
     if (sound) {                                /* the eye: awake (the first sound: a blink), or dozing */
         if (ey_doze) ey_doze = 0, ey_bl = 1;
