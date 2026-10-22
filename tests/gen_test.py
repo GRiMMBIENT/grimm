@@ -5,6 +5,9 @@
   - every note it plays is in the SCALE (C NATURAL MINOR), in each MODE, chord mode off and on
   - a track's pattern: playing; GENERATE on: its steps unheard (none of its sequenced notes on), the pattern itself
     unchanged; off: the pattern plays again, unchanged
+  - a track's key switches it when let go, and not when another key came meanwhile; its key held + D#4: its MODE
+    alone, D#4 alone: all four; F#4 G#4 its OCTAVE, A#4 its RANGE: no note outside the range (chords folded in)
+  - the tempo: faster, its notes come faster, at once (stopped and playing; INT and INT+OUT)
     python3 tests/gen_test.py build/host/grimm"""
 import subprocess
 import sys
@@ -33,7 +36,11 @@ def run(name, ev, end):
             ms = int(ln.split()[1])
             g = ln.split(" gen ")[1].split()
             srcs = [tuple(int(x) for x in s.split(":")) for s in ln.split(" srcs")[1].split(" /srcs")[0].split()]
-            pr[ms] = dict(gen=int(g[0]), mode=int(g[1]), ph=ln.split(" ph ")[1].split()[0].split(","), srcs=srcs)
+            pr[ms] = dict(gen=int(g[0]), mode=[int(x) for x in g[1].split(",")],
+                          oc=[int(x) for x in ln.split(" oc ")[1].split()[0].split(",")],
+                          rg=[int(x) for x in ln.split(" rg ")[1].split()[0].split(",")],
+                          own=int(ln.split(" own ")[1].split()[0]),
+                          ph=ln.split(" ph ")[1].split()[0].split(","), srcs=srcs)
     return pr
 
 
@@ -53,7 +60,7 @@ for chord in (0, 1):
         notes = [n for p in pr.values() for s, t, n in p["srcs"] if s == SRC_GEN]
         out = sorted({n for n in notes if n % 12 not in MINOR})
         check(f"MODE {['DRIFT', 'PULSE', 'STORM'][mode]}{', chord mode' if chord else ''}: {len(notes)} notes seen, all in "
-              "the SCALE", notes and not out and all(p["mode"] == mode for p in pr.values()), f"out of it: {out}")
+              "the SCALE", notes and not out and all(p["mode"] == [mode] * 4 for p in pr.values()), f"out of it: {out}")
 
 # the pattern: four steps recorded on T1 (stopped, REC), PLAY; GENERATE on T1 at 4 s, off at 12 s
 ev = [(200, "btn 13"), (300, "keys 0x80"), (400, "keys 0"), (500, "keys 0x800"), (600, "keys 0"), (700, "keys 0x4000"),
@@ -75,5 +82,85 @@ check("GENERATE never writes into the pattern: the same all along (all four trac
       all(p["ph"] == ph0 for p in pr.values()), "")
 check("GENERATE off: the pattern plays again, nothing generated", len(seq_after) > 5 and not gen_after,
       f"pattern notes {len(seq_after)}, generated at {gen_after[:5]}")
+
+# the keys: a track's key switches it when let go; held with another key (a white one): not switched
+K = {"F#3": 1, "G#3": 3, "A#3": 5, "C#4": 8, "D#4": 10, "F#4": 13, "G#4": 15, "A#4": 17, "G3": 2}
+B = lambda *ks: sum(1 << K[k] for k in ks)      # noqa: E731
+ev = [(3000, "down 2"), (3100, f"keys {B('F#3'):#x}"), (3200, "probe"), (3300, "keys 0"), (3400, "probe"),
+      (3500, f"keys {B('G#3'):#x}"), (3550, f"keys {B('G#3', 'G3'):#x}"), (3600, f"keys {B('G#3'):#x}"), (3700, "keys 0"),
+      (3800, "probe"), (3900, "up 2")]
+pr = run("release", ev, 4000)
+check("a track's key: switched when let go (not when pressed)", pr[3200]["gen"] == 0 and pr[3400]["gen"] == 1,
+      f"{pr[3200]['gen']} {pr[3400]['gen']}")
+check("a track's key held while another key is pressed: not switched", pr[3800]["gen"] == 1, f"{pr[3800]['gen']}")
+
+# MODE, OCTAVE, RANGE: a track's key held: its own; none held: all four (the first one's next)
+ev = [(3000, "down 2")]
+t = 3100
+for st in ((B("G#3"), B("G#3", "D#4"), B("G#3"), 0, "probe"),          # T2 MODE: PULSE
+           (B("D#4"), 0, "probe"),                                       # all: T1's next: PULSE
+           (B("A#3"), B("A#3", "G#4"), B("A#3"), B("A#3", "G#4"), B("A#3"), 0, "probe"),   # T3 OCTAVE +2
+           (B("F#4"), 0, "probe"),                                       # all: T1's OCTAVE - 1: -1
+           (B("C#4"), B("C#4", "A#4"), B("C#4"), 0, "probe"),            # T4 RANGE: 3
+           (B("A#4"), 0, "probe")):                                      # all: T1's next RANGE: 3
+    for m in st:
+        ev.append((t, "probe" if m == "probe" else f"keys {m:#x}"))
+        t += 60
+ev.append((t + 50, "up 2"))
+pr = run("settings", ev, t + 200)
+ps = [pr[ms] for ms in sorted(pr)]
+check("a track's key + D#4: its MODE alone (T2 PULSE)", ps[0]["mode"] == [0, 1, 0, 0] and ps[0]["gen"] == 0,
+      f"{ps[0]['mode']} gen {ps[0]['gen']}")
+check("D#4 alone: all four's MODE together (PULSE)", ps[1]["mode"] == [1, 1, 1, 1], f"{ps[1]['mode']}")
+check("a track's key + G#4 twice: its OCTAVE alone (T3 +2)", ps[2]["oc"] == [0, 0, 2, 0], f"{ps[2]['oc']}")
+check("F#4 alone: all four's OCTAVE (T1's down: -1)", ps[3]["oc"] == [-1, -1, -1, -1], f"{ps[3]['oc']}")
+check("a track's key + A#4: its RANGE alone (T4 3 OCT); A#4 alone: all four (T1's next: 3)",
+      ps[4]["rg"] == [2, 2, 2, 3] and ps[5]["rg"] == [3, 3, 3, 3] and all(p["gen"] == 0 for p in ps),
+      f"{ps[4]['rg']} {ps[5]['rg']} gen {[p['gen'] for p in ps]}")
+
+# the range: T1 OCTAVE -1, RANGE 1 (C2 .. B2), T2 OCTAVE +1, RANGE 3 (C4 .. B6), both STORM, chord mode on T1 (its
+# chord's notes folded into the range); C minor: every note in its range and in the scale
+ev = SCALE + CHORD
+t = 1200
+for st in ((B("F#3"), B("F#3", "F#4"), B("F#3"), B("F#3", "A#4"), B("F#3"), B("F#3", "A#4"), B("F#3"),
+            B("F#3", "D#4"), B("F#3"), B("F#3", "D#4"), B("F#3"), 0, B("F#3"), 0),
+           (B("G#3"), B("G#3", "G#4"), B("G#3"), B("G#3", "A#4"), B("G#3"), B("G#3", "D#4"), B("G#3"),
+            B("G#3", "D#4"), B("G#3"), 0, B("G#3"), 0)):
+    for m in st:
+        ev.append((t, f"keys {m:#x}"))
+        t += 60
+ev = [(1150, "down 2")] + ev + [(t + 50, "up 2")]
+ev += [(t + 500 + 40 * i, "probe") for i in range(500)]
+pr = run("range", ev, t + 500 + 40 * 500 + 200)
+p0 = pr[min(pr)]
+n1 = [n for p in pr.values() for s, tr, n in p["srcs"] if s == SRC_GEN and tr == 1]
+n2 = [n for p in pr.values() for s, tr, n in p["srcs"] if s == SRC_GEN and tr == 2]
+check("the settings for the range test (T1 -1 / 1 OCT, T2 +1 / 3 OCT, both STORM, both on)",
+      p0["oc"][:2] == [-1, 1] and p0["rg"][:2] == [1, 3] and p0["mode"][:2] == [2, 2] and p0["gen"] & 3 == 3,
+      f"{p0}")
+check(f"T1 (chords, folded): {len(n1)} notes seen, all in C2 .. B2 and in the scale",
+      n1 and all(36 <= n <= 47 and n % 12 in MINOR for n in n1), f"{sorted(set(n1))}")
+check(f"T2: {len(n2)} notes seen, all in C4 .. B6 and in the scale, over more than two octaves",
+      n2 and all(60 <= n <= 95 and n % 12 in MINOR for n in n2) and max(n2) - min(n2) > 24, f"{sorted(set(n2))}")
+
+# the tempo: PULSE, T1, 60 BPM, then 180 BPM (SELECT on HOME): its notes three times as often, from then on;
+# stopped and playing, CLOCK INT and INT+OUT
+for clock, play in ((0, 0), (0, 1), (1, 0), (1, 1)):
+    ev = [(500, "down 8"), (1300, "up 8"), (1400, "btn 8"), (1500, f"enc 5 {clock}"), (1600, "btn 6"), (1700, "btn 8"),
+          (1800, "enc 0 -60")] + fx_key(2000, 1) + fx_key(2100, 10) + ([(2300, "btn 12")] if play else [])
+    ev += [(14000, "enc 0 120")]
+    ev += [(3000 + 10 * i, "probe") for i in range(2300)]
+    pr = run(f"tempo{clock}{play}", ev, 26200)
+    starts, prev = [], None
+    for ms in sorted(pr):
+        g = tuple(sorted(n for s, tr, n in pr[ms]["srcs"] if s == SRC_GEN))
+        if g and g != prev:
+            starts.append(ms)
+        prev = g
+    a = len([x for x in starts if 3000 <= x < 14000]) / 11.0
+    b = len([x for x in starts if 14000 <= x < 25000]) / 11.0
+    check(f"the tempo 60 -> 180 BPM ({'INT+OUT' if clock else 'INT'}, {'playing' if play else 'stopped'}): "
+          f"its notes {a:.1f} -> {b:.1f} a second", pr[4000]["own"] == 60 and pr[15000]["own"] == 180 and b > 2.2 * a,
+          f"tempo {pr[4000]['own']} -> {pr[15000]['own']}")
 print("gen test: passed" if not bad else "gen test: FAILED")
 sys.exit(1 if bad else 0)

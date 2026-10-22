@@ -2,30 +2,36 @@
  * Copyright (C) 2026 GR!MM */
 /* GR!MM V2's GENERATE: a track plays random notes of the SCALE (its chord in chord mode, as a key's) on the tempo, the
  * sequencer's clock or a MIDI clock (arp.c's arp_tick, a tick of each track: gen_tick), with rests, lengths, a volume
- * and an attack of their own each note (voices.c: gen_vel, gen_atk). FX held + the black keys F#3 G#3 A#3 C#4: on and
- * off for T1 .. T4 (lit while on, FX held); + D#4: MODE, the same for all four:
- *   DRIFT  a few notes, long (2 .. 8 beats), soft, slow attacks, low (ambient)
- *   PULSE  a melody walking the scale on eighths, mostly on the beat, steadier
- *   STORM  dense sixteenths, short, the volume swinging wildly, wide
+ * and an attack of their own each note (voices.c: gen_vel, gen_atk), within its own range (gen_lo, gen_hi: its chord's
+ * notes past it folded in by octaves, grimm.c note_on). FX held + the black keys (grimm.c): F#3 G#3 A#3 C#4 tapped
+ * (let go, nothing else pressed meanwhile): T1 .. T4 on, off; D#4 MODE, F#4 G#4 its OCTAVE down, up, A#4 its RANGE:
+ * the tracks' black keys held, theirs; none, all four's. Each track's own:
+ *   MODE   DRIFT: a few notes, long (2 .. 8 beats), soft, slow attacks (ambient); PULSE: a melody walking the scale on
+ *          eighths, mostly on the beat, steadier; STORM: dense sixteenths, short, the volume swinging wildly
+ *   OCTAVE its notes from C3 + 12 x it (-3 .. +3: C0 .. C6), the keyboard's OCT not at all
+ *   RANGE  1, 2 or 3 octaves up from there
  * While a track generates its pattern plays on unheard (its steps, ratchets and locks not played: seq.c), so it comes
  * back in time when it stops; GENERATE never writes into it. Its notes take the track's voices as a key's do (the
- * voice rule: none taken from another track). Nothing saved: all off at power-on. The main loop sets gen_on and
- * gen_mode; the audio ISR plays. */
+ * voice rule: none taken from another track). Nothing saved: at power-on all off, DRIFT, OCTAVE 0, RANGE 2. The main
+ * loop sets gen_on, gen_md, gen_oc, gen_rg; the audio ISR plays (gen_hit: a note played, the PERFORM screen's flash). */
 
 enum { GM_DRIFT, GM_PULSE, GM_STORM, NGM };
 static const char *const GM_NAME[NGM] = {"DRIFT", "PULSE", "STORM"};
 #define GEN_ID 200u                             /* its notes' origin (lat_id: past the keys' and MIDI's) */
-static volatile uint32_t gen_mode;              /* main loop: MODE (GM_) */
+#define GEN_C3 48                               /* OCTAVE 0's lowest note */
+static volatile uint8_t gen_md[NT];             /* main loop: a track's MODE (GM_), */
+static volatile int8_t gen_oc[NT];              /* .. OCTAVE (-3 .. 3), */
+static volatile uint8_t gen_rg[NT] = {2, 2, 2, 2};   /* .. RANGE (octaves, 1 .. 3) */
+static volatile uint8_t gen_hit[NT];            /* audio: + 1 a note played (the screen's flash) */
 static const struct {
     uint8_t grid, on, off;                      /* a decision every grid ticks; a note's chance (%), on a beat, off it */
     uint8_t len_lo, len_hi;                     /* its length in grids x 4 (from .. to) */
     uint8_t vel_lo, vel_hi, atk_lo, atk_hi;     /* its volume (x / 256), its attack (GEN_ATK's) */
-    uint8_t low, span, walk;                    /* its notes: from the keys' lowest + low, over span semitones; walk:
-                                                 * steps from the last (0: anywhere) */
+    uint8_t walk;                               /* steps from the last note (semitones; 0: anywhere in the range) */
 } GM[NGM] = {
-    {96, 30, 30, 8, 32, 80, 160, 4, 7, 0, 17, 0},       /* DRIFT: quarters, a third of them, 2 .. 8 beats */
-    {48, 85, 30, 3, 10, 150, 255, 0, 2, 3, 20, 5},      /* PULSE: eighths, on the beat mostly, 0.75 .. 2.5 eighths */
-    {24, 70, 70, 2, 8, 30, 255, 0, 3, 0, 27, 0},        /* STORM: sixteenths, most of them, 0.5 .. 2 sixteenths */
+    {96, 30, 30, 8, 32, 80, 160, 4, 7, 0},      /* DRIFT: quarters, a third of them, 2 .. 8 beats */
+    {48, 85, 30, 3, 10, 150, 255, 0, 2, 5},     /* PULSE: eighths, on the beat mostly, 0.75 .. 2.5 eighths */
+    {24, 70, 70, 2, 8, 30, 255, 0, 3, 0},       /* STORM: sixteenths, most of them, 0.5 .. 2 sixteenths */
 };
 static struct {
     uint16_t wait, left;                        /* ticks to the next decision; to the note's end (0: none on) */
@@ -38,9 +44,29 @@ static uint32_t gen_rnd(uint32_t n)
     gen_rng ^= gen_rng << 13, gen_rng ^= gen_rng >> 17, gen_rng ^= gen_rng << 5;
     return (uint32_t)(((uint64_t)gen_rng * n) >> 32);
 }
+static uint32_t gen_low(uint32_t t)             /* track t's range: its lowest note, */
+{
+    return (uint32_t)(GEN_C3 + 12 * clamp(gen_oc[t], -3, 3));
+}
+static uint32_t gen_high(uint32_t t)            /* .. its highest */
+{
+    uint32_t h = gen_low(t) + 12u * (uint32_t)clamp(gen_rg[t], 1, 3) - 1u;
+    return h > 127u ? 127u : h;
+}
+static uint32_t gen_snap(uint32_t n, uint32_t lo, uint32_t hi)   /* n to the SCALE's nearest note within lo .. hi */
+{
+    uint32_t m = sc_snap(n);
+    if (m < lo)
+        for (m = lo; m < hi && !sc_in((int32_t)m); m++)
+            ;
+    if (m > hi)
+        for (m = hi; m > lo && !sc_in((int32_t)m); m--)
+            ;
+    return m;
+}
 static void gen_tick(uint32_t t)                /* audio: a tick of track t */
 {
-    uint32_t on = gen_on >> t & 1u, m = gen_mode < NGM ? gen_mode : 0u, i, lo, nt;
+    uint32_t on = gen_on >> t & 1u, m = gen_md[t] < NGM ? gen_md[t] : 0u, i, lo, hi, nt;
     if (on != gen[t].was) {                     /* switched: on, the pattern's notes out (it plays on unheard); off,
                                                  * the generated note out */
         gen[t].was = (uint8_t)on;
@@ -58,17 +84,19 @@ static void gen_tick(uint32_t t)                /* audio: a tick of track t */
     gen[t].wait = GM[m].grid;                   /* (a decision: on the grid) */
     if (gen[t].note || gen_rnd(100) >= (gen[t].n++ & 1u ? GM[m].off : GM[m].on)) return;   /* (one sounding: on; else
                                                  * a rest, by chance) */
-    lo = (uint32_t)((int32_t)KEY0 + 12 * clamp(set.oct, -2, 2)) + GM[m].low;
-    nt = lo + gen_rnd(GM[m].span + 1u);
-    if (GM[m].walk && gen[t].last)              /* (PULSE: a few semitones from its last note, within its range) */
+    lo = gen_low(t), hi = gen_high(t);
+    nt = lo + gen_rnd(hi - lo + 1u);
+    if (GM[m].walk && gen[t].last >= lo && gen[t].last <= hi)   /* (PULSE: a few semitones from its last note) */
         nt = (uint32_t)clamp((int32_t)gen[t].last + (int32_t)gen_rnd(2u * GM[m].walk + 1u) - (int32_t)GM[m].walk,
-                             (int32_t)lo, (int32_t)(lo + GM[m].span));
-    nt = sc_snap(nt);                           /* (the SCALE's nearest note) */
+                             (int32_t)lo, (int32_t)hi);
+    nt = gen_snap(nt, lo, hi);                  /* (the SCALE's nearest note, in the range) */
     gen[t].last = (uint8_t)nt;
     gen_vel = (uint8_t)(GM[m].vel_lo + gen_rnd(GM[m].vel_hi - GM[m].vel_lo + 1u));
     gen_atk = (uint8_t)(1u + GM[m].atk_lo + gen_rnd(GM[m].atk_hi - GM[m].atk_lo + 1u));
-    note_on(t, GEN_ID, nt, SRC_GEN, 0, -1);     /* (chord mode: its chord, as a key's) */
-    gen_vel = gen_atk = 0;
+    gen_lo = (uint8_t)lo, gen_hi = (uint8_t)hi;
+    note_on(t, GEN_ID, nt, SRC_GEN, 0, -1);     /* (chord mode: its chord, as a key's, folded into the range) */
+    gen_vel = gen_atk = gen_lo = gen_hi = 0;
     gen[t].note = (uint8_t)nt;
     gen[t].left = (uint16_t)(GM[m].grid * (GM[m].len_lo + gen_rnd(GM[m].len_hi - GM[m].len_lo + 1u)) / 4u);
+    gen_hit[t]++;
 }

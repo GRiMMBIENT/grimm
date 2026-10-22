@@ -47,7 +47,8 @@ static void host_probe(void)
         {                                       /* (V2: GENERATE: on (bit t), MODE; the tracks' patterns' hashes;
                                                  * the notes on by source: sequencer's, generated (track:note)) */
             uint32_t t2, h, j2;
-            printf(" gen %u %u ph", gen_on, gen_mode);
+            printf(" gen %u %u,%u,%u,%u oc %d,%d,%d,%d rg %u,%u,%u,%u ph", gen_on, gen_md[0], gen_md[1], gen_md[2],
+                   gen_md[3], gen_oc[0], gen_oc[1], gen_oc[2], gen_oc[3], gen_rg[0], gen_rg[1], gen_rg[2], gen_rg[3]);
             for (t2 = 0; t2 < NT; t2++) {
                 const uint8_t *b = (const uint8_t *)&seq[t2].pat[0];
                 for (h = 2166136261u, j2 = 0; j2 < sizeof seq[t2].pat[0]; j2++) h = (h ^ b[j2]) * 16777619u;

@@ -140,6 +140,8 @@ static const engine_t *const ENGINES[NENG] = {&VA_ENGINE, &FM_ENGINE, &SAMPLE_EN
 /* (V2) GENERATE's notes (gen.c): a voice's volume (0: full; else x / 256) and attack (0: the track's ATTACK; else
  * GEN_ATK's k - 1), asked with the note (gen_vel, gen_atk: the next note_on's), taken as it begins */
 static uint8_t vc_vel[NV], vc_atk[NV], vc_wvel[NV], vc_watk[NV], gen_vel, gen_atk;
+static uint8_t gen_lo, gen_hi;                  /* (V2) the next note_on's range, GENERATE's (0 0: none): its chord's
+                                                 * notes past it folded in by octaves (grimm.c note_on) */
 static const int32_t GEN_ATK[8] = {2434783, 608696, 202899, 81159, 40580, 20290, 10145, 4870};   /* ATTACK steps
                                                  * (Q24 a control step): 5, 20, 60, 150, 300, 600, 1200, 2500 ms */
 
