@@ -58,6 +58,9 @@ static volatile uint32_t ck_mode;               /* (clock.c) */
 static void ck_out(uint32_t st, uint32_t rem);  /* (clock.c: CLOCK INT+OUT, a message out at its time: STOP's) */
 static int slot_used(uint32_t s);
 static void arp_tick(uint32_t t, int locked);   /* (arp.c: the arps on the sequencer's clock while it plays) */
+static volatile uint32_t gen_on;                /* (V2) main loop: bit t: track t GENERATEs (gen.c): its pattern plays on
+                                                 * unheard */
+static void gen_tick(uint32_t t);               /* (gen.c: a tick of track t, from arp_tick) */
 
 static void seq_clear(void)                     /* main loop: the four sequences empty, 16 steps of 1/16, all OFF */
 {
@@ -151,7 +154,7 @@ static void seq_track_tick(uint32_t t)          /* audio: a tick of track t */
                                                  * next tick) */
         if (S->off_left[i] && !--S->off_left[i])
             note_off(t, S->off_note[i], SRC_SEQ, 0);
-    if (S->r_left && !--S->r_next) {            /* the RATCHET's next hit */
+    if (S->r_left && !--S->r_next && !(gen_on >> t & 1u)) {   /* the RATCHET's next hit */
         S->r_left--;
         seq_note(t, S->r_note, S->r_left ? S->r_gate : S->r_last, S->r_chord);
         S->r_next = S->r_sub;
@@ -160,9 +163,9 @@ static void seq_track_tick(uint32_t t)          /* audio: a tick of track t */
         const seq_step_t *s = &S->pat[clamp(S->cur, 0, SEQ_NPAT - 1)].st[S->pos];
         uint32_t j;
         for (j = 0; j < 4u; j++) lk_v[t][j] = s->lv[j];
-        lk_m[t] = s->note ? s->lmask : 0u;
+        lk_m[t] = s->note && !(gen_on >> t & 1u) ? s->lmask : 0u;   /* (V2: GENERATE: none) */
     }
-    if (S->t == sw)
+    if (S->t == sw && !(gen_on >> t & 1u))      /* (V2: GENERATE on: the step not played, its place kept) */
         seq_fire(t);
     if (++S->t >= stl) {
         S->t = 0;

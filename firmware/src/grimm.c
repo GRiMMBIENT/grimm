@@ -407,7 +407,8 @@ static void app_audio(int32_t *out, uint32_t n)
  * (scale.c), each a voice. Every voice keeps where it came from (lat_id: the physical key, the incoming MIDI note, the
  * step's note): its key let go (struck again, LATCH ON) releases exactly those voices, whatever the octave, SCALE or
  * chord are by then; struck again while on, they start over (never a second set on top) */
-enum { SRC_KEY, SRC_SEQ, SRC_ARP };              /* (SRC_ARP: arp.c's notes, no chord of their own) */
+enum { SRC_KEY, SRC_SEQ, SRC_ARP, SRC_GEN };     /* (SRC_ARP: arp.c's notes, no chord of their own; SRC_GEN: V2's
+                                                 * GENERATE, gen.c) */
 #define KEY_ID(k) (k)                           /* lat_id of a physical key (0 = F3 .. 26), */
 #define MIDI_ID(n) (32u + (n))                  /* of a MIDI note in (its number as it came: 32 .. 159); SEQ: the note */
 static uint8_t lat_note[NV], lat_root[NV], lat_id[NV], lat_trk[NV], lat_voice[NV], lat_src[NV];   /* audio (the
@@ -826,6 +827,7 @@ static int32_t ch_last = -1;                    /* SEL's picture: the note last 
 
 /* ---- the screen: plain text, a row per value; only what changed is drawn */
 #define KEY0 53u                                /* key 0 = F3 */
+#include "gen.c"                                /* GR!MM V2: GENERATE (FX held + the black keys F#3 .. D#4) */
 #define OCT_BOTH (1u << BTN_OCT_DOWN | 1u << BTN_OCT_UP)
 #define HOLD_MS 600u                            /* a button held this long: its hold function (HOME: SYSTEM) */
 
@@ -1722,6 +1724,7 @@ static void app_main(void)
              back_page = PG_HOME, pf_keys = 0, pf_back = PG_HOME, t_touch = 0, as_last = 0, as_next = 0, learn_was = 0,
              fac_was = 0;
     static const uint8_t WK[8] = {0, 2, 4, 6, 7, 9, 11, 12};   /* the white keys from F3: 1..4 recall A..D, 5..8 save them */
+    static const uint8_t BK[5] = {1, 3, 5, 8, 10};   /* (V2) the black keys from F#3: GENERATE's (FX held) */
     int8_t oct_before = 0;                      /* the octave before the last OCT press (undone if it was a reset) */
     ima_init();                                 /* (samples.c: the decoder's tables, before samples_poll checks a slot) */
     seq_init();
@@ -1976,6 +1979,23 @@ static void app_main(void)
                     continue;
                 }
             }
+            if (b_down >> BTN_FX & 1u) {        /* (V2) FX held + the black keys F#3 G#3 A#3 C#4: GENERATE on T1 ..
+                                                 * T4 (on, off); + D#4: its MODE (DRIFT, PULSE, STORM) */
+                uint32_t w;
+                for (w = 0; w < 5u && BK[w] != k; w++)
+                    ;
+                if (w < 4u) {
+                    char m[20];
+                    gen_on ^= 1u << w;
+                    put_s(put_s(put_u(put_s(m, "T"), w + 1u), " GENERATE "), gen_on >> w & 1u ? GM_NAME[gen_mode % NGM] : "OFF");
+                    hd_say(m);
+                }
+                if (w == 4u) gen_mode = (gen_mode + 1u) % NGM, hd_say(GM_NAME[gen_mode]);
+                if (w < 5u) {
+                    b_used |= 1u << BTN_FX;
+                    continue;
+                }
+            }
             if ((b_down >> BTN_FX & 1u) && k == 0u) {   /* FX held + F3: FREEZE */
                 ge_freeze ^= 1u;
                 b_used |= 1u << BTN_FX;
@@ -2113,14 +2133,19 @@ static void app_main(void)
             for (lit = 0, k = 0; k < 4u; k++) lit |= (trk_mute >> k & 1u) << WK[k] | (trk_solo >> k & 1u) << WK[4u + k];
         if (save_held)                          /* (SAVE held: keys 1..4 lit for the slots used) */
             for (lit = 0, k = 0; k < 4u; k++) lit |= (uint32_t)slot_used(k) << WK[k];
-        if (b_down >> BTN_FX & 1u)              /* (FX held: the eight tricks' keys glow; one on: lit) */
+        if (b_down >> BTN_FX & 1u) {            /* (FX held: the eight tricks' keys glow; one on: lit; V2: GENERATE's
+                                                 * five black keys glow, T1 .. T4's lit while they generate) */
             for (k = 0; k < 8u; k++) lit |= (k ? pf_held >> (k - 1u) & 1u : ge_freeze & 1u) << WK[k];
+            for (k = 0; k < 4u; k++) lit |= (gen_on >> k & 1u) << BK[k];
+        }
         for (k = 0; k < 27u; k++) {
-            uint32_t wk;
+            uint32_t wk, bk;
             for (wk = 0; wk < 8u && WK[wk] != k; wk++)
                 ;
+            for (bk = 0; bk < 5u && BK[bk] != k; bk++)
+                ;
             fm1_led_key(KEY_LED(k), lit >> k & 1u);
-            fm1_led_glow(KEY_LED(k), wk < 8u && (b_down >> BTN_FX & 1u));
+            fm1_led_glow(KEY_LED(k), (wk < 8u || bk < 5u) && (b_down >> BTN_FX & 1u));
         }
         fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
         fm1_led_key(BTN_OCT_UP, set.oct > 0);

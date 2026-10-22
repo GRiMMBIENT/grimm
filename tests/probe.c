@@ -44,6 +44,19 @@ static void host_probe(void)
         printf(" t1mix %d,%d,%d,%d", (int)trk[0].level, (int)trk[0].dly, (int)trk[0].rev, (int)trk[0].grn);
         printf(" tp %d,%d,%d,%d ao %d", (int)trk[0].tap, (int)trk[1].tap, (int)trk[2].tap, (int)trk[3].tap,
                (int)trk[0].arp_oct);                    /* (V2: the TAPE sends; T1's ARP OCTAVES, beside them saved) */
+        {                                       /* (V2: GENERATE: on (bit t), MODE; the tracks' patterns' hashes;
+                                                 * the notes on by source: sequencer's, generated (track:note)) */
+            uint32_t t2, h, j2;
+            printf(" gen %u %u ph", gen_on, gen_mode);
+            for (t2 = 0; t2 < NT; t2++) {
+                const uint8_t *b = (const uint8_t *)&seq[t2].pat[0];
+                for (h = 2166136261u, j2 = 0; j2 < sizeof seq[t2].pat[0]; j2++) h = (h ^ b[j2]) * 16777619u;
+                printf("%s%08x", t2 ? "," : " ", h);
+            }
+            printf(" srcs");
+            for (j2 = 0; j2 < nlat; j2++) printf(" %u:%u:%u", lat_src[j2], lat_trk[j2] + 1u, lat_note[j2]);
+            printf(" /srcs");
+        }
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

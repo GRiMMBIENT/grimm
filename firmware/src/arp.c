@@ -122,6 +122,7 @@ static void arp_tick(uint32_t t, int locked)    /* audio: a tick of track t's ar
 {
     arp_t *A = &arp[t];
     uint32_t r, g, due;
+    gen_tick(t);                                /* (V2: GENERATE, on the same clock: gen.c) */
     if (!A->n) return;
     r = ARP_RATE_T[clamp(trk[t].arp_rate, 0, NARPRATE - 1)];
     g = r * (uint32_t)clamp(trk[t].arp_gate, 10, 100) / 100u;
