@@ -42,7 +42,7 @@ Request: none. Reply, in order:
 | --- | --- |
 | 1 | protocol version (2; step 26a's GR!MM: 1, without TRACK) |
 | 1 | object format (1). A PUT's BEGIN must name it |
-| n + 1 | the firmware version, ASCII, 0-terminated ("1.0") |
+| n + 1 | the firmware version, ASCII, 0-terminated ("2.0"; GR!MM 1.0: "1.0") |
 | 1 | user sound slots (64) |
 | 1 | a sound's size (64) |
 | 1 | factory sounds (40) |

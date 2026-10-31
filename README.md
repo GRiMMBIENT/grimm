@@ -112,6 +112,8 @@ GR!MM stands on the shoulders of other people's open work. Full details and lice
 
 See [docs/BUILDING.md](docs/BUILDING.md).
 
+Looking for the old version? GR!MM V1.0 is still on the [releases page](https://github.com/GRiMMBIENT/grimm/releases/tag/v1.0).
+
 ## Licence
 
 GPL-3.0. See [LICENSE](LICENSE). The four factory samples are CC0 1.0: free to use for anything. The choir wavetables are made from VocalSet, CC BY 4.0 (credit above and in [LICENSING.md](LICENSING.md)). Bugs and questions:
