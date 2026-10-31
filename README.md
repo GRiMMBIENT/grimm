@@ -2,12 +2,14 @@
 
 **Dark ambient, dungeon synth and deathdream firmware for the M-VAVE FM-1.**
 
+**[The GR!MM hub](https://grimmbient.github.io/grimm/hub.html)**: install, manual and links.
+
 **[Try it in your browser](https://grimmbient.github.io/grimm/)** (the real firmware, no FM-1 needed) ·
 **[Open the editor](https://grimmbient.github.io/grimm/editor.html)** (edit sounds live, load samples, back up your FM-1)
 
 ![GR!MM on the FM-1: the HOME screen](docs/screens/home.png)
 
-GR!MM turns the FM-1 into a four-track drone and atmosphere machine: seven sound sources, long dark effects, a 64-step sequencer per track, one-key chords, an arpeggiator, song mode and live performance tricks. Everything is drawn in a pixel-brutalist style, with an eye that watches the music and candles that burn with each track.
+GR!MM turns the FM-1 into a four-track drone and atmosphere machine: seven sound sources (with real recorded choirs), long dark effects, a 64-step sequencer per track, tracks that can play by themselves, one-key chords, an arpeggiator, song mode and live performance tricks. Everything is drawn in a pixel-brutalist style, with an eye that watches the music and candles that burn with each track.
 
 Free and open source (GPL-3.0). Unofficial firmware, not made or endorsed by M-VAVE. **Install at your own risk.**
 
@@ -16,14 +18,17 @@ Free and open source (GPL-3.0). Unofficial firmware, not made or endorsed by M-V
 ## What's inside
 
 - **4 tracks**, 6 voices shared between them
-- **7 sources:** VA (analog-style, with supersaw), FM (6-operator, fully editable), SAMPLE (a sample played like a tape loop), VOICE (formant choir), WHEEL (tonewheel organ), PHYS (bowed and struck physical models), PHASE (CZ-style phase distortion)
+- **7 sources:** VA (analog-style, with supersaw), FM (6-operator, fully editable), SAMPLE (a sample played like a tape loop), VOICE (a solo voice, or real choirs: GREGORIAN, NUNS, CATHEDRAL, from recordings of real singers), WHEEL (tonewheel organ), PHYS (bowed and struck physical models), PHASE (CZ-style phase distortion)
+- **GLIDE** on every source; PHASE with a second line, ring mod, noise and its own envelopes
 - **44 factory sounds** in 8 categories (PAD, DRONE, BELL, VOICE, ORGAN, KEYS, OTHER, TEXTURE), plus 64 slots for your own, with names you give them in the editor
 - **4 factory samples** (URCHIN, LEAVE, NIKOLAI, M-SOFT; CC0) in the four sample slots, which you can replace with your own (6.6 s each)
-- **Effects:** TAPE (wow, saturation, hiss over the whole mix), GRAIN (a granular cloud with FREEZE), DELAY (tape echo), SPACE (reverb up to ~32 s, and infinite), MASTER (a stereo LP / HP / BP filter over everything) and DRIVE (soft, fuzz, clip or wavefold, with a limiter)
+- **Effects:** TAPE per track (a TAPE tile per track on MIXER 1: worn-tape slips, saturation, tone, hiss), GRAIN (a granular cloud with FREEZE), DELAY (tape echo), SPACE (reverb up to ~32 s, and infinite), MASTER (a stereo LP / HP / BP filter over everything) and DRIVE (soft, fuzz, clip or wavefold, with a limiter)
+- **Mixer:** level, delay, reverb, tape, grain and drive per track
 - **Per track:** envelope, LFO, a low-, high- or band-pass filter (before or after the effect sends), scale snapping, one-key chords, arpeggiator, latch for drones
 - **Sequencer:** 64 steps per track, chance, ratchets, note lengths, step locks, chord steps, tools (random, mutate, shift, double, copy/paste)
 - **Song mode:** four slots A–D, chained by hand or recorded live
 - **Performance layer:** freeze, reverb and echo throws, tape stop, reverse, filter sweeps, stutter
+- **GENERATE:** each track can play by itself, always in key (DRIFT, PULSE, STORM), following the tempo or a MIDI clock
 - **Autosave:** the FM-1 comes back exactly as you left it
 - **MIDI:** in and out over USB, MIDI in on the TRS jack, MIDI clock in (USB or TRS) and out (USB), MIDI learn, sequencer and arp out; the FM-1 is also a USB audio input for your computer
 - **Battery level** in the HOME header
@@ -36,7 +41,7 @@ Free and open source (GPL-3.0). Unofficial firmware, not made or endorsed by M-V
 
 Updates appear on the hub automatically when a new release is published here.
 
-If GR!MM isn't on the hub yet, or you want to install a release file by hand: download `grimm.fwsc` from
+If you want to install a release file by hand: download `grimm.fwsc` from
 [Releases](../../releases), then, with Python 3 and `py -m pip install mido python-rtmidi`:
 
 ```

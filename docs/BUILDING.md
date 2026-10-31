@@ -3,7 +3,7 @@
 GR!MM is one C program, `firmware/src/grimm.c` (it includes the other `.c` files), on the FM-1 platform of
 [Felucca](https://github.com/hugelton/Felucca) as [SLOOP](https://github.com/isod89/sloop-fm1) and
 [Dinghy](https://github.com/zvenson/dinghy) carry it. The same file builds three ways: for the FM-1, for your
-computer (host mode: the screen as images, the sound as a WAV) and for the browser (the demo and the editor).
+computer (host mode: the screen as images, the sound as a WAV) and for the browser (the web emulator and the editor).
 
 ## Set up once
 
@@ -40,10 +40,10 @@ tests/run_host.sh                           # -> build/host/grimm.wav and screen
 tests/stress.sh 1                           # the stress test (seeds 1, 2, 3), with address and undefined-behaviour checks
 ```
 
-## The browser: demo and editor
+## The browser: web emulator and editor
 
 ```sh
-web/build_web.sh                            # -> web/dist/ (index.html: the demo, editor.html: the editor, grimm.wasm)
+web/build_web.sh                            # -> web/dist/ (index.html: the web emulator, editor.html: the editor, grimm.wasm)
 node web/test_web.mjs                       # after tests/run_host.sh: the browser build against host mode, the editor
 cd web/dist && python3 -m http.server 8000  # then open http://localhost:8000/ (or /editor.html)
 ```
