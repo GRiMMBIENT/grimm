@@ -172,22 +172,32 @@ _, pl, _ = run("links", [(1200, "midi 0xB0 20 64"), (1250, "midi 0xB0 21 127"), 
 mixv = pl.split(" t1mix ")[1].split()[0]
 check("MIDI LEARN: 1.0's MIXER 1 links (LEVEL, REV SEND) as they were; the DRIVE send's", mixv.startswith("64,") and
       mixv.split(",")[2] == "127" and " dv 100,0,0,0" in pl, f"T1 level,dly,rev,grn {mixv}; {pl.split(' dv ')[1][:12]}")
-# (V2) the tracks' TAPE sends (MIXER 1: SELECT to TAPE, KNOB 1): 0, the sound as without; up, T1's chord through a tape
-# of its own as TAPE has it (WOW, SATURATION, TONE) beside its clean sound; saved (beside ARP OCTAVES), loaded; 1.0: none
+# (V2) TAPE a track's own (MIXER 1: SELECT to TAPE, KNOB 1: how far the track goes through it): 0, the sound as without;
+# up, T1's chord through the tape as TAPE has it (WOW, SATURATION, TONE), crossfaded from its clean sound (never both);
+# TAPE's knobs up with every tile 0: nothing; saved (beside ARP OCTAVES), loaded; 1.0: none
 TSEL = [(300, "btn 8"), (310, "enc 0 3")]      # (MIXER 1, TAPE's tile)
 _, _, tz_b = run("tp_zero", TSEL + [(400, "enc 2 60"), (450, "enc 2 -60")])
-check("a TAPE send turned up and back to 0: the sound as without it, to the byte (after its ramp and the line let out)",
+check("a TAPE tile turned up and back to 0: the sound as without it, to the byte (after its ramp)",
       measure(array.array("h", tz_b[44:]), 2500, 4000) == measure(base, 2500, 4000))
-tp, _, tp_b = run("tp_clean", TSEL + [(400, "enc 2 127")])
-r, h, lo_, pk = measure(tp)
-check("T1's TAPE send up, TAPE all 0: a clean copy beside the sound (louder; in range)",
-      r > rb * 1.3 and tp_b != base_b and pk <= 32767, f"rms {r:.0f}/{rb:.0f} peak {pk}")
-_, _, tps_b = run("tp_sat", TSEL + [(400, "enc 2 127")] + FX(1) + [(1200, "enc 3 110")])
-tpw, _, tpw_b = run("tp_wow", TSEL + [(400, "enc 2 127")] + FX(1) + [(1200, "enc 2 127")])
-_, _, wo_b = run("wow_only", FX(1) + [(1200, "enc 2 127")])
-r, h, lo_, pk = measure(tpw)
-check("the TAPE send by TAPE's SATURATION, its WOW (other sounds; the whole mix's TAPE as ever)",
-      tps_b != tp_b and tpw_b != tp_b and tpw_b != wo_b and pk <= 32767, f"peak {pk}")
+_, _, tp_b = run("tp_clean", TSEL + [(400, "enc 2 127")])
+check("T1's TAPE tile up, TAPE all 0: the sound as without it, to the byte (no copy beside it)", tp_b == base_b)
+_, _, tk_b = run("tp_knobs", FX(1) + [(1200, "enc 2 127"), (1250, "enc 3 110"), (1300, "enc 4 90"), (1350, "enc 5 127")])
+check("TAPE's four knobs up, every TAPE tile 0: the sound as without it, to the byte (no bend, no hiss)", tk_b == base_b)
+tps, _, tps_b = run("tp_sat", TSEL + [(400, "enc 2 127")] + FX(1) + [(1200, "enc 3 110")])
+r, h, lo_, pk = measure(tps)
+check("T1's tile up, SATURATION: the chord saturated in its place (not louder than a copy beside it would make it; "
+      "in range)", tps_b != base_b and r < rb * 1.3 and pk <= 32767, f"rms {r:.0f}/{rb:.0f} peak {pk}")
+_, _, tph_b = run("tp_half", TSEL + [(400, "enc 2 64")] + FX(1) + [(1200, "enc 3 110")])
+check("T1's tile at 50 %: another sound than at 100 % and than without", tph_b != tps_b and tph_b != base_b)
+tpw, _, tpw_b = run("tp_wow", TSEL + [(400, "enc 2 127")] + FX(1) + [(1200, "enc 2 127")], 9000)   # (a warble: 3 s on)
+_, _, nw_b = run("tp_nowow", TSEL + [(400, "enc 2 127")], 9000)
+r, h, lo_, pk = measure(tpw, 2500, 8800)
+check("T1's tile up, WOW: the chord bent (another sound; in range)", tpw_b != nw_b and pk <= 32767, f"peak {pk}")
+_, _, tfx_b = run("tp_fx0", TSEL + [(400, "enc 2 127"), (500, "btn 6"), (550, "btn 8"), (600, "enc 5 -100")] + FX(1) +
+                 [(900, "enc 3 110")])         # (T1's tile up, HOME: FX 0; then TAPE: SATURATION)
+_, _, fx0_b = run("fx0", HOME + [(800, "enc 5 -100")])
+check("HOME's FX at 0: T1's TAPE tile too (SATURATION up: the sound as with FX 0 and no tape, to the byte)",
+      tfx_b == fx0_b)
 SV = TSEL + [(400, "enc 2 90"), (1700, "keys 0")]
 _, p1, _ = run("tp_save", SV + [(1800, "btn 10"), (1850, "enc 4 2")], 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "tsaves.bin")))
 _, p2, _ = run("tp_load", [(1050, "keys 0")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "tsaves.bin")))

@@ -63,8 +63,10 @@
  *              again within 3 s to overwrite); the header shows the slots in use (store.c)
  *   autosave   the work (all of it: tracks, mixer, FX, tempo, sequences, slots) saves itself when stopped and untouched
  *              2.5 s, at most every 20 s, only if changed, never while playing nor while a voice sounds (a release, a
- *              latched note: SAVES WHEN SILENT, as SOUNDS' SAVE / CLEAR); at power-on it comes back as left. A watchdog
- *              restart says WATCHDOG RESET at boot (a fault: platform.c's red crash screen, its PC)
+ *              latched note: SAVES WHEN SILENT, as SOUNDS' SAVE / CLEAR); at power-on it comes back as left. (rc11) A
+ *              computer reading the USB audio (a DAW recording): a minute at rest, not 2.5 s: a flash step stops the key
+ *              scan, the LEDs and the stream for ~50 ms. A watchdog restart says WATCHDOG RESET at boot, a supply that
+ *              sagged LOW VOLTAGE RESET (a fault: platform.c's red crash screen, its PC)
  *   ARP        ARP (the track's: MODE UP, DOWN, UP-DOWN, RANDOM, AS PLAYED, CHORD; RATE 1/1 .. 1/32, 1/4T .. 1/16T of
  *              the tempo; OCTAVES 1..4; GATE 10..100 %); held: the track's arp on / off (no page change): its keys and
  *              MIDI notes (their chords) arpeggiated, on the sequencer's clock while it plays (arp.c)
@@ -144,16 +146,15 @@ static volatile uint32_t cpu_stage[CS_N];       /* audio: NOW split (GR!MM V2, t
                                                  * a block over NOW's blocks, the key scan's (SCAN: the timer ISR inside
                                                  * the audio ISR) taken out of them and counted on its own */
 static uint32_t cpu_over;                       /* audio: blocks in a row over the budget (the overload guard) */
-static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB], vbus[VB], pbus[VB];   /* the tracks (mono); the DLY, REV,
-                                                 * GRAIN and (V2) DRIVE, TAPE buses */
-static int32_t *const XBUS[2] = {vbus, pbus};   /* (V2: the DRIVE and TAPE sends' buses: mix_g 5, 6) */
-static uint32_t xb_used;                        /* audio: bit 0 the DRIVE bus, bit 1 the TAPE bus fed this block (a send
-                                                 * up, or coming down) */
+static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB], vbus[VB];   /* the tracks (mono); the DLY, REV, GRAIN and
+                                                 * (V2) DRIVE buses */
+static uint32_t xb_used;                        /* audio: bit 0 the DRIVE bus fed this block (a send up, or coming
+                                                 * down) */
 #include "master.c"                             /* GR!MM V2: MASTER (a filter on the whole sound), DRIVE (and a limiter) */
 static volatile uint32_t trk_mute, trk_solo;    /* main loop: GLO held + white keys 1..4, 5..8 (bit t: track t) */
 enum { PF_REV, PF_ECHO, PF_TAPE, PF_BACK, PF_FDOWN, PF_FUP, PF_STUT, NPF };   /* the FX layer's tricks: G3 .. F4 */
 static volatile uint32_t pf_held;               /* main loop: bit PF_: its key held (FX held + it; perform.c) */
-static void perform_render(int32_t *out, uint32_t n);
+static void perform_render(int32_t *out, uint32_t n, uint32_t pb);
 static volatile uint32_t trk_quiet;             /* audio: the tracks silent (muted, or another soloed: mute_watch) */
 static volatile uint32_t vis_pk[NT], vis_lr[2]; /* audio: each track's peak (before LEVEL), the output's left and right,
                                                  * the highest since the main loop last took them (HOME's moving
@@ -165,7 +166,7 @@ static inline int32_t mulq15w(int32_t a, int32_t b)
 {
     return (a >> 15) * b + (int32_t)(((uint32_t)a & 0x7FFFu) * (uint32_t)b >> 15);
 }
-static int32_t mix_g[NT][7];                    /* audio: each track's gains (L, R, DLY, REV, GRAIN, (V2) DRIVE, TAPE) as the
+static int32_t mix_g[NT][6];                    /* audio: each track's gains (L, R, DLY, REV, GRAIN, (V2) DRIVE) as the
                                                  * last block ended: this block's ramps start there */
 static void mix_add(int32_t *o, uint32_t st, const int32_t *x, int32_t g0, int32_t g1, uint32_t n)   /* o[i st] +=
                                                  * x[i] times the gain, from g0 to g1 over the block (no zipper) */
@@ -218,8 +219,8 @@ static void mix_add5(int32_t *out, const int32_t *x, const int32_t *g0, const in
  * GR!MM V2: MIXER 2's TYPE: LP (as V1.0, the same code), HP (open, bypassed: CUTOFF at the bottom), BP (never open), the
  * same SVF's outputs (dsp.c tsvf_any); POS: PRE (as V1.0: the sends hear it filtered) or POST (mix_tracks: the sends
  * hear the track before it, only its dry sound filtered) */
-static int32_t tf_cs[NT] = {127 << 8, 127 << 8, 127 << 8, 127 << 8}, tf_ic[NT][2];   /* audio: the cutoff now (<< 8),
-                                                 * the states */
+static int32_t tf_cs[NT] = {127 << 8, 127 << 8, 127 << 8, 127 << 8}, tf_ic[NT][4];   /* audio: the cutoff now (<< 8),
+                                                 * the states (V2: and what their steps rounded away, tf_svf) */
 static uint8_t tf_on[NT];
 static int32_t tf_px[NT];                       /* audio: POS's share of the sends taken before the filter, 0 (PRE) ..
                                                  * TF_PX1 (POST): a switch crosses over in 8 blocks (~46 ms), no click */
@@ -230,9 +231,18 @@ static int tf_open(uint32_t t)                   /* the track filter bypassed no
     uint32_t ty = (uint32_t)clamp(trk[t].ftype, 0, NFTYPE - 1);
     return ty == FT_LP ? tgt >= 127 << 8 && cs >= (127 << 8) - 64 : ty == FT_HP && tgt <= 0 && cs <= 64;
 }
+/* (V2) tsvf_any as dsp.c's tsvf_r: what its steps round away carried on (a fading note no longer frozen into a
+ * staircase, then a DC offset till the voice ended, and a click) */
+static inline int32_t tf_svf(const tsvf_t *c, int32_t k, uint32_t type, int32_t in, int32_t *ic1, int32_t *ic2,
+                             int32_t *r1, int32_t *r2)
+{
+    int32_t v1, v2 = tsvf_r(c, in, ic1, ic2, r1, r2, &v1);
+    return type == FT_LP ? v2 : type == FT_HP ? in - ((k * v1) >> 12) - v2 : (k * v1) >> 12;
+}
+#define TF_IN(s) (((s) + (1 << (1 + PB))) >> (2 + PB))   /* (V2) the SVF's input, rounded: Q15 << PB to Q15 >> 2 */
 static void trk_filter(uint32_t t, int32_t *x, uint32_t n)
 {
-    int32_t tgt = lfo_move(t, LD_CUT, clamp(trk[t].cut, 0, 127), 127) << 8, cs = tf_cs[t], ic1, ic2;
+    int32_t tgt = lfo_move(t, LD_CUT, clamp(trk[t].cut, 0, 127), 127) << 8, cs = tf_cs[t], ic1, ic2, r1, r2;
     int32_t r = clamp(trk[t].res, 0, 127) * 7 / 8;
     uint32_t ty = (uint32_t)clamp(trk[t].ftype, 0, NFTYPE - 1), i, j;
     tsvf_t c;
@@ -240,13 +250,16 @@ static void trk_filter(uint32_t t, int32_t *x, uint32_t n)
         tf_cs[t] = ty == FT_LP ? 127 << 8 : 0, tf_on[t] = 0;
         return;
     }
-    if (!tf_on[t]) tf_on[t] = 1, tf_ic[t][0] = 0, tf_ic[t][1] = ty == FT_LP ? x[0] >> 2 : 0;   /* (from bypassed: no step) */
-    ic1 = tf_ic[t][0], ic2 = tf_ic[t][1];
+    if (!tf_on[t]) tf_on[t] = 1, tf_ic[t][0] = 0, tf_ic[t][1] = ty == FT_LP ? TF_IN(x[0]) : 0, tf_ic[t][2] = tf_ic[t][3] = 0;
+                                                /* (from bypassed: no step; V2: x Q15 << PB, the SVF at Q15 >> 2 as
+                                                 * ever) */
+    ic1 = tf_ic[t][0], ic2 = tf_ic[t][1], r1 = tf_ic[t][2], r2 = tf_ic[t][3];
     if (ty == FT_LP) {
         for (i = 0; i < n; i += CTL) {
             cs += (tgt - cs) >> 3;
             tsvf_coef(&c, cs, r);
-            for (j = i; j < i + CTL && j < n; j++) x[j] = soft_knee(tsvf_lp(&c, x[j] >> 2, &ic1, &ic2), 100000) << 2;
+            for (j = i; j < i + CTL && j < n; j++)
+                x[j] = soft_knee(tf_svf(&c, 0, FT_LP, TF_IN(x[j]), &ic1, &ic2, &r1, &r2), 100000) << (2 + PB);
         }
     } else {                                    /* (V2: HP, BP) */
         int32_t k = 8192 - r * 7600 / 127;      /* (tsvf_coef's damping) */
@@ -254,16 +267,29 @@ static void trk_filter(uint32_t t, int32_t *x, uint32_t n)
             cs += (tgt - cs) >> 3;
             tsvf_coef_k(&c, cs, k);
             for (j = i; j < i + CTL && j < n; j++)
-                x[j] = soft_knee(tsvf_any(&c, k, ty, x[j] >> 2, &ic1, &ic2), 100000) << 2;
+                x[j] = soft_knee(tf_svf(&c, k, ty, TF_IN(x[j]), &ic1, &ic2, &r1, &r2), 100000) << (2 + PB);
         }
     }
-    tf_cs[t] = cs, tf_ic[t][0] = ic1, tf_ic[t][1] = ic2;
+    tf_cs[t] = cs, tf_ic[t][0] = ic1, tf_ic[t][1] = ic2, tf_ic[t][2] = r1, tf_ic[t][3] = r2;
+}
+/* (rc9) what HOME says on a track's slab: its filter as good as closed (LP at 66 Hz or under, HP at 8 kHz or over; BP
+ * at either end: hardly anything gets through), its FX 0 with a send up (no DELAY, REVERB, GRAIN, TAPE, DRIVE) */
+static int trk_closed(uint32_t t)
+{
+    int32_t c = clamp(trk[t].cut, 0, 127);
+    uint32_t ty = (uint32_t)clamp(trk[t].ftype, 0, NFTYPE - 1);
+    return ty == FT_LP ? c <= 16 : ty == FT_HP ? c >= 113 : c <= 16 || c >= 113;
+}
+static int trk_dry(uint32_t t)
+{
+    return trk[t].fx <= 0 && (trk[t].dly | trk[t].rev | trk[t].grn | trk[t].tap | trk[t].drv) > 0;
 }
 static void trk_peak(uint32_t t, const int32_t *x, uint32_t n)   /* its peak, roughly: HOME's candle */
 {
     uint32_t pk = 0, a, k;
     for (k = 0; k < n; k += 16u)
         if ((a = (uint32_t)(x[k] < 0 ? -x[k] : x[k])) > pk) pk = a;
+    pk >>= PB;                                  /* (V2: Q15, as HOME and MIXER 1 read it) */
     if (pk > vis_pk[t]) vis_pk[t] = pk;
 }
 static int32_t fx_send(uint32_t t, int32_t s)   /* a send (0..127) times FX (0..200 %): x 258 its Q15 gain, to ~2x */
@@ -271,39 +297,36 @@ static int32_t fx_send(uint32_t t, int32_t s)   /* a send (0..127) times FX (0..
     return s * 258 * clamp(trk[t].fx, 0, 200) / 100;
 }
 static void mix_xb(uint32_t t, const int32_t *x, const int32_t *g, int32_t a, int32_t b, uint32_t n)   /* (V2) x into
-                                                 * the DRIVE and TAPE sends' buses, their gains x a, x b / TF_PX1 (POS's
-                                                 * share) */
+                                                 * the DRIVE send's bus, its gain x a, x b / TF_PX1 (POS's share) */
 {
-    uint32_t k;
-    for (k = 0; k < 2u; k++)
-        if (g[5u + k] | mix_g[t][5u + k])
-            mix_add(XBUS[k], 1u, x, (mix_g[t][5u + k] * a) >> 8, (g[5u + k] * b) >> 8, n);
+    if (g[5] | mix_g[t][5])
+        mix_add(vbus, 1u, x, (mix_g[t][5] * a) >> 8, (g[5] * b) >> 8, n);
 }
 static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the sounding tracks into out and the buses (LEVEL,
                                                  * PAN and the sends as the LFO moves them, lfo.c; the sends times
-                                                 * TRACK's FX) */
+                                                 * TRACK's FX); (V2) each first through TAPE as far as its tile is up */
 {
     uint32_t t, k;
     for (t = 0; t < NT; t++) {
         int32_t *x = tbuf[t];
+        tape_trk(t, used >> t & 1u ? x : 0, n);
         int32_t lv = (trk_quiet >> t & 1u) ? 0 : lfo_move(t, LD_VOLUME, clamp(trk[t].level, 0, 127), 127) * 258;   /* (a
                                                  * silent track: all its gains down, ramped) */
-        int32_t pan = lfo_move(t, LD_PAN, clamp(trk[t].pan, 0, 127), 127), g[7];
+        int32_t pan = lfo_move(t, LD_PAN, clamp(trk[t].pan, 0, 127), 127), g[6];
         g[0] = mulq15(lv, pan <= 64 ? 32767 : (127 - pan) * 520);   /* PAN: the far side down, the near one full */
         g[1] = mulq15(lv, pan >= 64 ? 32767 : pan * 512);
         g[2] = mulq15(lv, pf_held >> PF_ECHO & 1u ? 127 * 258 : fx_send(t, clamp(trk[t].dly, 0, 127)));   /* the sends:
                                                  * after LEVEL (ECHO THROW, REV THROW held: full) */
         g[3] = mulq15(lv, pf_held >> PF_REV & 1u ? 127 * 258 : fx_send(t, lfo_move(t, LD_REV, clamp(trk[t].rev, 0, 127), 127)));
         g[4] = mulq15(lv, fx_send(t, lfo_move(t, LD_GRAIN, clamp(trk[t].grn, 0, 127), 127)));
-        g[5] = trk[t].drv > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send, TAPE's;
-                                                 * 0: none, nothing done) */
-        g[6] = trk[t].tap > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].tap, 0, 127))) : 0;
-        for (k = 0; k < 2u; k++)                /* (a bus cleared as it is first fed this block) */
-            if ((used >> t & 1u) && (g[5u + k] | mix_g[t][5u + k]) && !(xb_used >> k & 1u)) {
-                int32_t *b = XBUS[k], i;
-                for (i = 0; i < (int32_t)n; i++) b[i] = 0;
-                xb_used |= 1u << k;
-            }
+        g[5] = trk[t].drv > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send; 0:
+                                                 * none, nothing done) */
+        if ((used >> t & 1u) && (g[5] | mix_g[t][5]) && !(xb_used & 1u)) {   /* (the bus cleared as it is first fed
+                                                 * this block) */
+            int32_t i;
+            for (i = 0; i < (int32_t)n; i++) vbus[i] = 0;
+            xb_used |= 1u;
+        }
         int32_t px0 = tf_px[t], pw = trk[t].fpos ? TF_PX1 : 0;
         int32_t px1 = !(used >> t & 1u) ? pw : px0 < pw ? (px0 + 32 < pw ? px0 + 32 : pw) : (px0 - 32 > pw ? px0 - 32 : pw);
         tf_px[t] = px1;                         /* (V2: POS; silent: at once) */
@@ -332,17 +355,18 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             if (used >> t & 1u) {
                 trk_peak(t, x, n);
                 mix_add5(out, x, mix_g[t], g, n);
-                mix_xb(t, x, g, TF_PX1, TF_PX1, n);   /* (V2: DRIVE's send, TAPE's) */
+                mix_xb(t, x, g, TF_PX1, TF_PX1, n);   /* (V2: DRIVE's send) */
             }
         }
-        for (k = 0; k < 7u; k++) mix_g[t][k] = g[k];
+        for (k = 0; k < 6u; k++) mix_g[t][k] = g[k];
     }
 }
 
 /* (V2) the output: 6 dB of headroom after every effect (the mix at half: six loud voices, four tracks fit), MASTER
  * (platform.c's knob, squared; its top quarter up to 6 dB more: at the top, the level before V2), then a limiter: a
- * peak past OUT_LIM (just under full scale) at once, let go over ~90 ms: nothing reaches the clip */
-#define OUT_LIM 32440                           /* (-0.09 dBFS) */
+ * peak past OUT_LIM (just under full scale) at once, let go over ~90 ms: nothing reaches the clip. Out: the DAC's 24-bit
+ * words (Q15 << 7, platform.c OUT_FS): MASTER and the headroom lose no resolution; USB a 16-bit copy (out_usb16) */
+#define OUT_LIM 32440                           /* (-0.09 dBFS, Q15; the limiter works on it << 7) */
 #define OUT_MQ 2304                             /* (MASTER at 3/4: 768^2 / 256) */
 static int32_t out_env;                         /* audio: the limiter's peak (its gain: OUT_LIM / it) */
 static int32_t out_gain(void)                   /* MASTER: Q12, half up to 3/4, then to the old full at the top */
@@ -361,23 +385,26 @@ static void out_stage(int32_t *out, uint32_t n)
     uint32_t i;
 #ifdef GRIMM_LEVEL_TEST
     for (i = 0; i < 2u * n; i++) {
-        int32_t a = out[i] < 0 ? -out[i] : out[i];
+        int32_t a = (out[i] < 0 ? -out[i] : out[i]) >> PB;
         if (a > lt_pi) lt_pi = a;
     }
 #endif
     for (i = 0; i < n; i++) {
-        int32_t l = (clamp(out[2u * i], -500000, 500000) * g) >> 12, r = (clamp(out[2u * i + 1u], -500000, 500000) * g) >> 12;
+        int32_t l = (int32_t)(((int64_t)clamp(out[2u * i], -(500000 << PB), 500000 << PB) * g) >> (12 + PB - 7));   /* (Q15
+                                                 * << PB x Q12 -> the 24-bit word, Q15 << 7) */
+        int32_t r = (int32_t)(((int64_t)clamp(out[2u * i + 1u], -(500000 << PB), 500000 << PB) * g) >> (12 + PB - 7));
         int32_t a = l < 0 ? -l : l, b = r < 0 ? -r : r;
         a = a > b ? a : b;
         env = a > env - (env >> 12) ? a : env - (env >> 12);   /* (let go, never under this sample) */
-        if (env > OUT_LIM) {
-            int32_t k = (int32_t)(((uint32_t)OUT_LIM << 15) / (uint32_t)env);   /* (Q15) */
+        if (env > OUT_LIM << 7) {
+            int32_t k = (int32_t)(((uint32_t)OUT_LIM << 15) / (uint32_t)((env + 127) >> 7));   /* (Q15; the peak rounded
+                                                 * up: never past the ceiling) */
             l = (int32_t)(((int64_t)l * k) >> 15), r = (int32_t)(((int64_t)r * k) >> 15);
         }
         out[2u * i] = l, out[2u * i + 1u] = r;
 #ifdef GRIMM_LEVEL_TEST
-        if ((l < 0 ? -l : l) > lt_po) lt_po = l < 0 ? -l : l;
-        if ((r < 0 ? -r : r) > lt_po) lt_po = r < 0 ? -r : r;
+        if ((l < 0 ? -l : l) >> 7 > lt_po) lt_po = (l < 0 ? -l : l) >> 7;
+        if ((r < 0 ? -r : r) >> 7 > lt_po) lt_po = (r < 0 ? -r : r) >> 7;
 #endif
     }
     out_env = env;
@@ -386,55 +413,97 @@ static void out_stage(int32_t *out, uint32_t n)
 #endif
 }
 
+static int32_t fxo[2u * VB] __attribute__((section(".pool")));   /* (V2) the effects' returns, Q15, before they join
+                                                 * the mix (Q15 << PB) */
+static void q_down(int32_t *x, uint32_t n)      /* (V2) n samples Q15 << PB -> Q15 (rounded): an effect's range */
+{
+    uint32_t i;
+    for (i = 0; i < n; i++) x[i] = (x[i] + (1 << (PB - 1))) >> PB;
+}
+static void q_up(int32_t *x, uint32_t n)        /* .. and back (an effect's work at Q15: its own resolution) */
+{
+    uint32_t i;
+    for (i = 0; i < n; i++) x[i] <<= PB;
+}
+static void fx_zero(uint32_t n) { uint32_t i; for (i = 0; i < 2u * n; i++) fxo[i] = 0; }
+static void fx_join(int32_t *out, uint32_t n)   /* the returns (Q15) into the mix (Q15 << PB) */
+{
+    uint32_t i;
+    for (i = 0; i < 2u * n; i++) out[i] += fxo[i] << PB;
+}
+static void mf_at(int32_t *out, uint32_t n, uint32_t at)   /* MASTER's filter at at: at Q15 while it works */
+{
+    if (!master_here(at)) return;
+    q_down(out, 2u * n);
+    master_filter(out, n, at);
+    q_up(out, 2u * n);
+}
+static void out_usb16(const int32_t *o, int32_t *u, uint32_t n)   /* (V2) n of the app's 24-bit words as 16 bit (USB audio,
+                                                 * host mode's WAV): rounded, no dither (a dither hissed with nothing
+                                                 * playing: what is under half a 16-bit step is silence) */
+{
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        int32_t v = (o[i] + 64) >> 7;
+        u[i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
+    }
+}
+
 static void app_audio(int32_t *out, uint32_t n)
 {
     static uint32_t sum, cnt, reset_seen, cs_sum[CS_N];
-    uint32_t t0 = fm1_ticks(), dt, used, i, tp = t0, s0 = isr_in_audio, sp = s0, t, s;
+    uint32_t t0 = fm1_ticks(), dt, used, i, tp = t0, s0 = isr_in_audio, sp = s0, t, s, lo;
     ck_e = rt_now(), ck_j = 0;                  /* (the MIDI clock: this block's time, clock.c) */
 #define CS_MARK(k) (t = fm1_ticks(), s = isr_in_audio, cs_sum[k] += t - tp - (s - sp), tp = t, sp = s)
     if (n > VB) n = VB;
+    tape_begin();                               /* (V2: TAPE: how far each track goes through it; WOW, the warbles:
+                                                 * the bend for the voices) */
     used = voices_render(tbuf, n);
     CS_MARK(CS_VOICES);
     for (i = 0; i < n; i++)
         dbus[i] = rbus[i] = gbus[i] = 0;
     xb_used = 0;
-    mix_tracks(out, used, n);
+    mix_tracks(out, used, n);                   /* (V2: the mix and the buses Q15 << PB; the buses to the effects'
+                                                 * range, their returns (fxo) back up into the mix) */
+    q_down(dbus, n), q_down(rbus, n), q_down(gbus, n);
     CS_MARK(CS_MIX);
     if (xb_used & 1u) {                         /* (V2) the tracks' DRIVE sends: their bus driven, back into the mix */
-        drive_send(out, n);
+        q_down(vbus, n);
+        fx_zero(n);
+        drive_send(fxo, n);
+        fx_join(out, n);
         CS_MARK(CS_DRIVE);
     }
-    if ((xb_used & 2u) || ts.on) {              /* (V2) the tracks' TAPE sends: their bus through the tape, back into
-                                                 * the mix (a block more once they stop: the line's last let out) */
-        if (!(xb_used & 2u))
-            for (i = 0; i < n; i++) pbus[i] = 0;
-        tape_send(pbus, out, n);
-        ts.on = xb_used >> 1 & 1u;
-        CS_MARK(CS_TAPE);
-    }
-    master_filter(out, n, MP_PRE);              /* (V2) MASTER, PRE FX: the tracks' dry mix */
+    mf_at(out, n, MP_PRE);                      /* (V2) MASTER, PRE FX: the tracks' dry mix */
     CS_MARK(CS_MASTER);
-    grain_render(gbus, out, rbus, n);           /* GRAIN: the GRAIN bus in; the cloud out, and into the REV bus */
+    fx_zero(n);
+    grain_render(gbus, fxo, rbus, n);           /* GRAIN: the GRAIN bus in; the cloud out, and into the REV bus */
     CS_MARK(CS_GRAIN);
-    tape_render(dbus, out, rbus, n);            /* DELAY: the DLY bus in; the echoes out, and into the REV bus */
+    tape_render(dbus, fxo, rbus, n);            /* DELAY: the DLY bus in; the echoes out, and into the REV bus */
     CS_MARK(CS_DELAY);
-    hall_render(rbus, out, n);                  /* SPACE: the REV bus in, the reverb out */
+    hall_render(rbus, fxo, n);                  /* SPACE: the REV bus in, the reverb out */
+    fx_join(out, n);
     CS_MARK(CS_SPACE);
+    lo = master_here(MP_POST) || dr_amt > 0 || (tf.hl | tf.hn) != 0 || master_here(MP_END);
+    if (lo) q_down(out, 2u * n);                /* (V2: MASTER's filter, DRIVE, TAPE's HISS work at Q15: one of them on, the mix
+                                                 * down to it once, back up after the last) */
     master_filter(out, n, MP_POST);             /* (V2) MASTER, POST REVERB */
     CS_MARK(CS_MASTER);
     drive_render(out, n);                       /* (V2) DRIVE and its limiter, */
     CS_MARK(CS_DRIVE);
-    tapefx_render(out, n);                      /* TAPE: all of it, */
+    tapefx_render(out, n);                      /* TAPE's HISS (V2: the tracks through it: mix_tracks), */
     CS_MARK(CS_TAPE);
-    perform_render(out, n);                     /* then the FX layer's tricks, the last stage before MASTER */
+    perform_render(out, n, lo ? 0u : PB);       /* then the FX layer's tricks, the last stage before MASTER */
     CS_MARK(CS_PERFORM);
     master_filter(out, n, MP_END);              /* (V2) MASTER, END: the very last */
+    if (lo) q_up(out, 2u * n);
     CS_MARK(CS_MASTER);
     out_stage(out, n);                          /* (V2) the headroom, the MASTER knob, the limiter */
     CS_MARK(CS_MASTER);
 #undef CS_MARK
     for (i = 0; i < 2u * n; i += 32u) {         /* (the output's peaks, left and right, roughly: HOME's eye) */
-        uint32_t l = (uint32_t)(out[i] < 0 ? -out[i] : out[i]), r = (uint32_t)(out[i + 1u] < 0 ? -out[i + 1u] : out[i + 1u]);
+        uint32_t l = (uint32_t)(out[i] < 0 ? -out[i] : out[i]) >> 7, r = (uint32_t)(out[i + 1u] < 0 ? -out[i + 1u] : out[i + 1u]) >> 7;   /*
+                                                 * (V2: the 24-bit words, as Q15) */
         if (l > vis_lr[0]) vis_lr[0] = l;
         if (r > vis_lr[1]) vis_lr[1] = r;
     }
@@ -454,6 +523,9 @@ static void app_audio(int32_t *out, uint32_t n)
     if (fm1_ms >= PEAK_AFTER_MS && dt > cpu_peak)
         cpu_peak = dt;
     cpu_over = dt > BUDGET_TICKS ? cpu_over + 1u : 0u;   /* (ctl_hook: 8 in a row, a voice out) */
+#ifdef DINGHY_HOST
+    if (fm1_ms >= host_over_from && fm1_ms < host_over_to) cpu_over = 8u;   /* (GRIMM_OVERLOAD: an overload, faked) */
+#endif
 }
 /* ---- the notes: up to NV on in all, the oldest first, each with its track, its voice and where it came from (the keys or
  * MIDI, or the sequencer). They live in the audio ISR, a control block at a time (ctl_hook), so the sequencer starts and
@@ -742,26 +814,47 @@ static int voices_silent(void)                  /* no voice sounds: no note on (
         if (!voice_idle(v)) return 0;
     return 1;
 }
-static int quiet(void)                          /* nothing sounds, not even a release or an effect's tail */
+#define QUIET_TAIL_MS 10000u                    /* (rc9) an effect still sounding this long after the last voice: as quiet */
+static int quiet(void)                          /* nothing sounds, not even a release or an effect's tail (main loop) */
 {
-    return voices_silent() && tape_idle() && hall_idle() && grain_idle();   /* (TAPE's hiss is not a sound that
-                                                 * waits: it stops a moment) */
+    static uint32_t loud_t;                     /* (rc9) when a voice last sounded */
+    if (!voices_silent()) {
+        loud_t = fm1_ms;
+        return 0;
+    }
+    if (tape_idle() && hall_idle() && grain_idle()) return 1;   /* (TAPE's hiss is not a sound that waits: it stops a
+                                                 * moment) */
+    return fm1_ms - loud_t >= QUIET_TAIL_MS;    /* (rc9: a tail that never ends, DELAY's FEEDBACK past unity, SPACE's INF,
+                                                 * a GRAIN freeze: 10 s after the last voice the saves, uploads and the
+                                                 * editor's writes go on; the flash's ~50 ms stops it a moment. Before,
+                                                 * they waited for ever) */
 }
 /* audio: the overload guard. Blocks that run over their time (6 voices of the heaviest sources, chords, all the
  * effects) leave the main loop no time: the screen stops, then the watchdog restarts the FM-1. Eight blocks in a row
  * over their time (~46 ms behind, not a block near it: the key scan's interrupt counts in a block's time, the FX
- * layer's glowing keys too, and a near one is no harm): the oldest note (none: a release) fades out in ~10 ms; then
- * ~4 blocks' wait */
+ * layer's glowing keys too, and a near one is no harm): a voice fades out in ~10 ms; then ~4 blocks' wait. (rc9) Which:
+ * a release first (the quietest), then the oldest note the sequencer, an arp or GENERATE played, the hands' (a latched
+ * drone) last; each counted (shed_n: the header says so, the main loop) */
+static volatile uint32_t shed_n;                /* audio: voices the guard let go */
 static void shed_voice(void)
 {
     static uint32_t hold;
-    uint32_t v = 0;
+    uint32_t v = NV, w, i;
+    int32_t lv = 0x7FFFFFFF;
     if (hold) { hold--; return; }
     if (cpu_over < 8u) return;
-    if (nlat) v = drop_oldest();
-    else
-        while (v < NV && (voice_idle(v) || vc[v].stage == ST_FADE)) v++;
-    if (v < NV) voice_fade(v);
+    for (w = 0; w < NV; w++)                    /* (a release: the quietest) */
+        if (vc[w].stage == ST_REL && !voice_latched(w) && voice_level(w) < lv) lv = voice_level(w), v = w;
+    if (v == NV) {
+        for (i = 0; i < nlat && lat_src[i] == SRC_KEY; i++)   /* (a note no hand plays: the oldest) */
+            ;
+        if (i < nlat) v = drop_at(i);
+        else if (nlat) v = drop_oldest();       /* (the hands' oldest) */
+        else
+            for (v = 0; v < NV && (voice_idle(v) || vc[v].stage == ST_FADE); v++)
+                ;
+    }
+    if (v < NV) voice_fade(v), shed_n++;
     hold = 4u * (VB / CTL);                     /* (ctl_hook runs a control step: 8 a block) */
 }
 
@@ -880,6 +973,49 @@ static void ctl_hook(void)
 }
 
 #include "perform.c"                            /* the FX layer: the tricks on the output (FX held + G3 .. F4) */
+
+/* (rc9) what moved a track's mix lately: its LEVEL, CUTOFF, RESONANCE, FX, sends, TAPE, PAN, each change with what made
+ * it (a knob on a page, a MIDI CC's link, the editor, a load: power-on, a slot, undo, a project) and when; the last
+ * CL_N, in RAM (the editor reads them: object 10, editor.c). A value that moves with no one turning it says where it
+ * came from */
+#define CL_N 64u
+enum { CL_KNOB, CL_CC, CL_EDITOR, CL_LOAD };
+enum { CF_LEVEL, CF_CUT, CF_RES, CF_FX, CF_DLY, CF_REV, CF_GRN, CF_TAPE, CF_DRIVE, CF_PAN, CF_N };
+typedef struct {
+    uint32_t ms;                                /* fm1_ms */
+    uint8_t src, pg, f, t;                      /* CL_; the page (a knob's, CC's), CF_, the track */
+    int16_t from, to;
+} clog_t;
+static clog_t clog[CL_N];
+static volatile uint32_t clog_n;                /* entries made (the latest: clog[(clog_n - 1) % CL_N]) */
+static volatile int32_t *cf_ptr(uint32_t t, uint32_t f)   /* track t's value CF_ f */
+{
+    volatile int32_t *const P[CF_N] = {&trk[t].level, &trk[t].cut, &trk[t].res, &trk[t].fx, &trk[t].dly, &trk[t].rev,
+                                       &trk[t].grn, &trk[t].tap, &trk[t].drv, &trk[t].pan};
+    return P[f % CF_N];
+}
+static int cf_of(const volatile int32_t *p, uint32_t *t)   /* p one of them: its CF_ (and track), else -1 */
+{
+    uint32_t i, f;
+    for (i = 0; i < NT; i++)
+        for (f = 0; f < CF_N; f++)
+            if (cf_ptr(i, f) == p) { *t = i; return (int)f; }
+    return -1;
+}
+static void clog_add(uint32_t src, uint32_t pg, uint32_t f, uint32_t t, int32_t from, int32_t to)
+{
+    clog_t *e = &clog[clog_n % CL_N];
+    e->ms = fm1_ms, e->src = (uint8_t)src, e->pg = (uint8_t)pg, e->f = (uint8_t)f, e->t = (uint8_t)t;
+    e->from = (int16_t)clamp(from, -32768, 32767), e->to = (int16_t)clamp(to, -32768, 32767);
+    clog_n++;
+}
+static void clog_p(uint32_t src, uint32_t pg, const volatile int32_t *p, int32_t from)   /* p changed from from: logged if
+                                                 * it is one of them */
+{
+    uint32_t t;
+    int f = p && *p != from ? cf_of(p, &t) : -1;
+    if (f >= 0) clog_add(src, pg, (uint32_t)f, t, from, *p);
+}
 #include "store.c"                              /* SOUNDS, the working project (autosave), slots A..D, undo (store.c) */
 
 /* main loop: SAVE's pages and its held layer, PRESETS, undo, the header's message for a moment */
@@ -944,6 +1080,10 @@ static char *ui_time(char *s, uint32_t q16);    /* (ui.c: a time as text; V2: GL
 static char hd_msg[24];                         /* (ui.c: in the header's place until hd_until) */
 static int32_t bat_lvl = -1;                    /* the battery's level (batt_poll; ui.c's header) */
 static uint32_t hd_until, as_err;               /* (as_err: an autosave failed, it is tried again) */
+#define SAVE_REST_REC_MS 60000u                 /* (rc11) the hands at rest this long before an autosave, or the settings'
+                                                 * save, while a computer reads the USB audio (a flash step stops the key
+                                                 * scan, the LEDs and the stream ~50 ms: the lights flickered, the
+                                                 * recording had a hole); else 2.5 s, 2 s */
 static uint32_t as_wait, sv_wait;               /* an autosave waits for the voices to fall silent; that, or a SOUNDS
                                                  * SAVE / CLEAR, waits (ui.c: SAVES WHEN SILENT) */
 static uint32_t sv_said;                        /* (V2) when that wait began: the header says so SV_SAY_MS, then gives
@@ -1537,6 +1677,7 @@ static int32_t enc_accel(uint32_t e, int32_t d, int32_t range)
     m = per >= 80u ? 1u : per >= 40u ? 2u : per >= 20u ? 4u : 8u;
     return d * (int32_t)(m < (uint32_t)mx ? m : (uint32_t)mx);
 }
+static uint32_t knob_src = CL_KNOB;             /* (rc9: what turns it, for the log: CL_KNOB, CL_CC) */
 static void knob_step(uint32_t pg, uint32_t k, int32_t d)   /* KNOB k + 1 on page pg d steps on */
 {
     volatile int32_t *p = knob_param(pg, k);
@@ -1553,6 +1694,7 @@ static void knob_step(uint32_t pg, uint32_t k, int32_t d)   /* KNOB k + 1 on pag
     else if (pg == PG_GRID && k == 0u && sc_scale > 0) *p = sc_walk(*p, d);   /* (a SCALE: its notes only) */
     else if (pg == PG_GRID && k == 0u && !*p && d > 0) *p = 60;   /* NOTE from OFF: C4, then on from there */
     else *p = clamp(*p + d, lo, hi);
+    clog_p(knob_src, pg, p, old);               /* (rc9: a track's mix: logged) */
     if (pg == PG_GRID) grid_put();              /* (the step: its bytes) */
     if (pg == PG_SOUNDS && k == 2u) sv_step(0);   /* (a new TYPE: SLOT onto its list) */
     if (pg == PG_SOUND && k == 0u && sel_eng() == ENG_FM && *p != old) fm_builtin(sel, *p);   /* (PATCH: the built-in one
@@ -1648,10 +1790,12 @@ static void cc_apply(const uint8_t *L, uint32_t val)   /* a linked CC: its param
             *p = v ? (int32_t)sc_snap((uint32_t)v) : 0;
             grid_put();
             if (!*p) st->lmask = 0, st->chord = 0;
-        } else if (pg == PG_MIX1)
+        } else if (pg == PG_MIX1) {
+            int32_t was = *p;
             *p = clamp(v, 0, 127);              /* (V2: mx_link's target, not the page's knob now) */
-        else
-            knob_step(pg, k, v - *p);
+            clog_p(CL_CC, pg, p, was);
+        } else
+            knob_src = CL_CC, knob_step(pg, k, v - *p), knob_src = CL_KNOB;
     }
     seq[sel].cursor = cu, sel = s, fm_op = op;
     if (pg == PG_SONG && (k == 1u || k == 2u)) song_sect = ss;
@@ -1950,9 +2094,14 @@ static void app_main(void)
         hd_until = 15000u;
     }
 #if !defined DINGHY_HOST && !defined GRIMM_WEB
-    if (fm1_boot.p3_rst & 4u) {                 /* the watchdog restarted it (the main loop stood 8 s; a fault shows
-                                                 * the red crash screen instead): said for ~15 s */
+    if (hl_boot.kind == 1u) {                   /* the watchdog restarted it (the main loop stood 8 s; a fault shows
+                                                 * the red crash screen instead): said for ~15 s (rc11: not when only the
+                                                 * chip's flag is left from an earlier one: platform.c hl_boot) */
         put_s(hd_msg, "WATCHDOG RESET");
+        hd_until = 15000u;
+    } else if (hl_boot.kind == 2u) {            /* (rc11) the supply sagged below what the chip runs on (VDDIO, VCM, 1.2 V
+                                                 * low): it restarted itself, not a power-on */
+        put_s(hd_msg, "LOW VOLTAGE RESET");
         hd_until = 15000u;
     }
 #endif
@@ -2372,9 +2521,15 @@ static void app_main(void)
             if (w && !sv_wait) sv_said = fm1_ms;
             sv_wait = w;
         }
-        if (set_dirty && quiet() && !playing && fm1_ms - set_t > 2000u) {   /* 2 s after the change, when silent */
+        if (set_dirty && quiet() && !playing && fm1_ms - set_t > (usb_recording() ? SAVE_REST_REC_MS : 2000u)) {   /* 2 s
+                                                 * after the change, when silent (rc11: a computer recording from the USB
+                                                 * audio: a minute, SAVE_REST_REC_MS) */
             settings_save(&set, sizeof set);
             set_dirty = 0;
+        }
+        {                                       /* (rc9) the overload guard let a voice go: said */
+            static uint32_t shed_seen;
+            if (shed_n != shed_seen) shed_seen = shed_n, hd_say("CPU FULL: NOTE DROPPED");
         }
         if (!playing && sv_pend >= 0 && voices_silent()) {   /* SOUNDS: a SAVE or CLEAR that waited (the stop, silence) */
             sv_sound((uint32_t)sv_pend, sv_pend_slot, sv_pend_cat, sv_pend_trk);
@@ -2384,7 +2539,8 @@ static void app_main(void)
          * sounding (a release, a latched note: it waits, the header says so); a failed one: again in 3 s, the header
          * says so */
         if (playing) as_wait = 0;
-        if (!playing && !ed_open() && fm1_ms - t_touch >= 2500u && (!as_last || fm1_ms - as_last >= 20000u) &&
+        if (!playing && !ed_open() && fm1_ms - t_touch >= (usb_recording() ? SAVE_REST_REC_MS : 2500u) &&
+            (!as_last || fm1_ms - as_last >= 20000u) &&
             fm1_ms >= as_next) {                /* (an editor's PUT open: its bytes are in st_img) */
             uint32_t g = st_gen;
             as_next = fm1_ms + 500u;

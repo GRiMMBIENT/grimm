@@ -14,7 +14,7 @@ the settings and (GR!MM V2) the four sample slots to a file, write it all back, 
 Writing needs the FM-1 stopped and silent (no note, no release, no DELAY or SPACE tail). The backup file is JSON:
 {"format": "grimm-backup", "version": 1, "proto", "fmt", "firmware", "objects": [{"id", "len", "crc", "data"
 (base64)}], "samples": [4 x null (empty) or {"slot", "name", "len", "crc", "data" (base64: the slot's header,
-data)}]}. "samples" is GR!MM V2's: a backup without it (made with or of GR!MM 1.0) restores and leaves the sample slots as
+data)}], (rc9) "work", "log": the working project, the mix's change log (base64; read only, never restored)}. "samples" is GR!MM V2's: a backup without it (made with or of GR!MM 1.0) restores and leaves the sample slots as
 they are; with it, a restore makes the four slots as in the file (an empty one emptied; one already so: not written
 again). Needs mido and python-rtmidi (py -m pip install mido python-rtmidi), as tools\\fm1_install.py.
 """
@@ -34,6 +34,7 @@ from fm1_sample_upload import (BUSY, BUSY_TEXT, CMD_BEGIN, CMD_END, CMD_ERASE, C
 INFO, GET, PUT, TRACK = 20, 21, 22, 23
 BEGIN, DATA, COMMIT, ABORT = 0, 1, 2, 3
 O_SET, O_SLOT, O_SMP, O_SND, O_FACT = 0, 1, 5, 16, 80   # (O_SMP: GR!MM V2, the sample slots 5..8, GET only)
+O_WORK, O_LOG, WORK_LEN, LOG_LEN = 9, 10, 2576, 4 + 64 * 12   # (rc9, GET only: the working project as it is now, the mix's change log)
 SET_V1, SET_V2 = 168, 169                       # the settings of GR!MM 1.0 (version 1), of V2's version 2: a V2 takes them
 SMP_RC = {1: "bad arguments", 2: "flash erase failed", 3: "flash write failed", 4: "out of order", 5: "header or CRC",
           7: "no flash"}
@@ -154,11 +155,16 @@ def backup(link, inf):
         d = get(link, o, size)
         objs.append(dict(id=o, len=size, crc=zlib.crc32(d), data=base64.b64encode(d).decode()))
     smp = samples(link, inf)
-    print("\r  read: settings, slots A-D, " + f"{inf['sounds']} sounds" +
+    work = get(link, O_WORK, WORK_LEN, missing=True)   # (rc9: the working project, the mix's change log; before: none)
+    log = work and get(link, O_LOG, LOG_LEN, missing=True)
+    print("\r  read: settings, slots A-D, " + f"{inf['sounds']} sounds" + (", the working project" if work else "") +
           (", the sample slots" if smp is not None else " (not the samples: this GR!MM cannot read them back)") +
           f"; replies missed and asked again: {missed}" + "".join(f"\n    ({m})" for m in missed_at))
     b = dict(format="grimm-backup", version=1, proto=inf["proto"], fmt=inf["fmt"], firmware=inf["firmware"],
              date=time.strftime("%Y-%m-%d %H:%M:%S"), objects=objs)
+    if work:                                    # (for reading only: a restore does not write them)
+        b["work"] = base64.b64encode(work).decode()
+        b["log"] = log and base64.b64encode(log).decode()
     if smp is not None:
         b["samples"] = [d and dict(slot=k + 1, name=printable(d[8:16].rstrip(b"\0")), len=len(d), crc=zlib.crc32(d),
                                    data=base64.b64encode(d).decode()) for k, d in enumerate(smp)]

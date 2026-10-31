@@ -211,7 +211,9 @@ static void stress_factory(void)                /* "factory" */
     e = r[3];
     lfo_pk(lf, sel);
     for (k = 0; k < 4u; k++)
-        if ((uint32_t)trk[sel].p[e][k] != r[4 + k] || (uint32_t)trk[sel].env[k] != r[8 + k] || lf[k] != r[14 + k])
+        if (trk[sel].p[e][k] != clamp(r[4 + k], 0, ENGINES[e]->max[k]) || trk[sel].env[k] != clamp(r[8 + k], 0, 127) ||
+            lf[k] != r[14 + k])                 /* (rc9: a sound's values loaded within their knobs' ranges: the user
+                                                 * sound this test writes has some past them) */
             stress_fail("factory: the track's sound not the one browsed to (knob)", k);
     if ((uint32_t)trk[sel].eng != e || (uint32_t)trk[sel].latch != (r[12] & 1u) || (uint32_t)trk[sel].glide != (uint32_t)(r[12] >> 1) || ch_pack(sel) != r[13])
         stress_fail("factory: the track's source, LATCH or CHORD not the browsed sound's (source)", (uint32_t)trk[sel].eng);
@@ -448,8 +450,9 @@ static void stress_editor(void)                 /* "x_editor" */
     uint32_t i, rc = 0;
     st_fhead(ED_INFO), st_ed(1);
     if (st_sxn < 20u || st_sxr[5] != ED_PROTO || st_sxr[6] != ED_FMT) stress_fail("x_editor: no INFO (length)", st_sxn);
-    st_fhead(ED_CPU), st_ed(1);                 /* (24 CPU: the stages, the budget, NOW, PEAK, the split) */
-    if (st_sxn != 7u + 5u * (3u + CS_N) || st_sxr[5] != CS_N || ed_rd35(st_sxr + 6) != BUDGET_TICKS ||
+    st_fhead(ED_CPU), st_ed(1);                 /* (24 CPU: the stages, the budget, NOW, PEAK, the split; rc9: USB's drops;
+                                                 * rc11: HL_N health values) */
+    if (st_sxn != 7u + 5u * (4u + CS_N + HL_N) || st_sxr[5] != CS_N || ed_rd35(st_sxr + 6) != BUDGET_TICKS ||
         ed_rd35(st_sxr + 11) != cpu_now || st_sxr[st_sxn - 1u] != 0xF7u)
         stress_fail("x_editor: CPU not as it should be (length)", st_sxn);
     {                                           /* (25 FX: READ, a SET read back, the value as it was again; V2: the

@@ -25,37 +25,44 @@ static const uint16_t DR_LEVEL[NDTYPE][9] = {   /* each TYPE's gain (Q12) at AMO
                                                  * +6 dB (tools/gen_drive_levels.py) */
     {4096, 4096, 4096, 3956, 3286, 2691, 2251, 1924, 1698}, {4365, 3404, 2741, 2253, 1716, 1393, 1226, 1142, 1099},
     {4014, 3068, 2488, 2120, 1706, 1491, 1388, 1333, 1304}, {4014, 3083, 2650, 2474, 2240, 2204, 2186, 2186, 2184}};
-static int32_t mf_cs[NMPOS], mf_ic[NMPOS][2][2], mf_mx[NMPOS], dr_lp[2], dr_env;   /* audio: MASTER at each POSITION:
+static int32_t mf_cs[NMPOS], mf_ic[NMPOS][2][4], mf_mx[NMPOS], dr_lp[2], dr_env;   /* audio: MASTER at each POSITION:
                                                  * its cutoff now, its states, its share (0 .. MF_ONE); DRIVE's TONE's,
                                                  * the limiter's peak */
 #define MF_ONE 256
 #define MF_STEP 32                              /* (a share's change a block: 8 blocks) */
 /* one side's m frames (p: every other int, L or R) through the SVF c, its TYPE's output; the states in s (the chip:
- * one loop a TYPE, the coefficients and the states in registers) */
+ * one loop a TYPE, the coefficients and the states in registers). V2: dsp.c's tsvf_r, what its steps round away
+ * carried on (r1, r2), and its input rounded: a fading note no longer frozen into a DC offset, there after it ended */
 #define MF_RUN(OUT) for (; m; m--, p += 2) {                                                                          \
-        int32_t in = *p >> 1, v3 = in - s2, v1 = (a1 * s1 + a2 * v3) >> 13, v2 = s2 + ((a2 * s1 + a3 * v3) >> 13), y;   \
-        s1 = clamp(2 * v1 - s1, -150000, 150000), s2 = clamp(2 * v2 - s2, -150000, 150000), y = (OUT);             \
+        int32_t in = (*p + 1) >> 1, v1, v2 = tsvf_r(c, in, &s1, &s2, &r1, &r2, &v1), y = (OUT);                    \
+        (void)v2;                                                                                                 \
         *p = soft_knee(y, 60000) << 1;                                                                            \
     }
 static void mf_side(int32_t *p, uint32_t m, const tsvf_t *c, int32_t k, uint32_t ty, int32_t *s)
 {
-    int32_t a1 = c->a1, a2 = c->a2, a3 = c->a3, s1 = s[0], s2 = s[1];
+    int32_t s1 = s[0], s2 = s[1], r1 = s[2], r2 = s[3];
     if (ty == FT_LP) MF_RUN(v2)
     else if (ty == FT_HP) MF_RUN(in - ((k * v1) >> 12) - v2)
     else MF_RUN((k * v1) >> 12)
-    s[0] = s1, s[1] = s2;
+    s[0] = s1, s[1] = s2, s[2] = r1, s[3] = r2;
 }
 #undef MF_RUN
 static void mf_side_mix(int32_t *p, uint32_t m, const tsvf_t *c, int32_t k, uint32_t ty, int32_t *s, int32_t a, int32_t da)
 {                                               /* as mf_side, the filtered sound's share a (Q16 of MF_ONE) a frame, + da */
-    int32_t a1 = c->a1, a2 = c->a2, a3 = c->a3, s1 = s[0], s2 = s[1];
+    int32_t s1 = s[0], s2 = s[1], r1 = s[2], r2 = s[3];
     for (; m; m--, p += 2, a += da) {
-        int32_t in = *p >> 1, v3 = in - s2, v1 = (a1 * s1 + a2 * v3) >> 13, v2 = s2 + ((a2 * s1 + a3 * v3) >> 13), y;
-        s1 = clamp(2 * v1 - s1, -150000, 150000), s2 = clamp(2 * v2 - s2, -150000, 150000);
+        int32_t in = (*p + 1) >> 1, v1, v2 = tsvf_r(c, in, &s1, &s2, &r1, &r2, &v1), y;
         y = soft_knee(ty == FT_LP ? v2 : ty == FT_HP ? in - ((k * v1) >> 12) - v2 : (k * v1) >> 12, 60000) << 1;
         *p += ((y - *p) * (a >> 16)) >> 8;
     }
-    s[0] = s1, s[1] = s2;
+    s[0] = s1, s[1] = s2, s[2] = r1, s[3] = r2;
+}
+static int master_here(uint32_t at)             /* (V2) master_filter does something at at this block */
+{
+    uint32_t ty = (uint32_t)clamp(mf_type, 0, NFTYPE - 1);
+    int32_t tgt = clamp(mf_cut, 0, 127) << 8;
+    int open = ty == FT_LP ? tgt >= 127 << 8 : ty == FT_HP && tgt <= 0;
+    return mf_mx[at] || ((uint32_t)clamp(mf_pos, 0, NMPOS - 1) == at && !open);
 }
 static void master_filter(int32_t *out, uint32_t n, uint32_t at)   /* audio: MASTER at POSITION at (MP_), its share */
 {
@@ -71,7 +78,7 @@ static void master_filter(int32_t *out, uint32_t n, uint32_t at)   /* audio: MAS
     mf_mx[at] = a1;
     if (!a0) {                                  /* (coming in: from its cutoff now, its states clear; it fades in) */
         mf_cs[at] = tgt;
-        mf_ic[at][0][0] = mf_ic[at][0][1] = mf_ic[at][1][0] = mf_ic[at][1][1] = 0;
+        for (m = 0; m < 4u; m++) mf_ic[at][0][m] = mf_ic[at][1][m] = 0;
     }
     cs = mf_cs[at];
     da = (int32_t)(((a1 - a0) << 16) / (int32_t)n);

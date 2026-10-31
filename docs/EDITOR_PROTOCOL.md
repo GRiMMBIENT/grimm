@@ -58,6 +58,8 @@ Request: none. Reply, in order:
 | 0 | the settings | 170 (1.0: 168) | yes | yes |
 | 1–4 | slots A–D | 2532 | yes | yes |
 | 5–8 | sample slots 1–4 (GR!MM V2) | 512 + the data's length | yes | no |
+| 9 | the working project as it is now (GR!MM V2 rc9) | 2576 | yes | no |
+| 10 | the mix's change log (GR!MM V2 rc9) | 772 | yes | no |
 | 16–79 | user sounds 1–64 (id 16 + slot) | 64 | yes | yes |
 | 80–123 | factory sounds 1–44 (id 80 + index, in the firmware's order; GR!MM 1.0: 80–119) | 64 | yes | no |
 
@@ -70,6 +72,18 @@ A sample slot reads as the flash holds it: the header (480 bytes, as an upload's
 (`0xFF`), then the ADPCM data; its length is the header's u32 at byte 16. Only a ready slot (INFO 15: state 1) is
 there; an empty one, or one being checked, answers rc 1, as does a GR!MM before V2. Read the first 512 bytes, then the
 data from 512. It is written back as an upload (11 BEGIN, 12 WRITE from 512, 13 END with the header), not by PUT.
+
+The working project (9) is what the autosave keeps: the four tracks (LEVEL, the sends, CUTOFF, RESONANCE, FX, PAN, the
+TAPE tile ...), the effects, tempo, the sequences, the song, the mutes and solos, the FM patches, MASTER and DRIVE,
+packed as the save sector holds it (firmware/src/store.c pk_work). It is packed again for each GET (a value moving
+meanwhile: the later chunks have it). While a PUT is open it answers rc 1. A backup (tools/fm1_editor_test.py) keeps
+it as `work`, for reading only: a restore does not write it.
+
+The change log (10) says what moved a track's mix lately: u32 the entries made so far, then 64 entries of 12 bytes,
+the oldest overwritten (entry `n % 64` is the next): u32 the time (ms since power-on), u8 the source (0 a knob, 1 a
+MIDI CC's link, 2 the editor, 3 a load: power-on, a slot, undo, a project), u8 the page (a knob's or link's; 255 a
+load), u8 the value (0 LEVEL, 1 CUTOFF, 2 RESONANCE, 3 FX, 4 DLY, 5 REV, 6 GRAIN, 7 TAPE, 8 DRIVE, 9 PAN), u8 the
+track (0–3), i16 from, i16 to. In RAM only: a power-off clears it.
 
 ## 21 GET
 
@@ -224,11 +238,21 @@ Pages (a link's page): 0 SOUND, 1 SOURCE, 2 ENV, 3 LFO, 4 SCALE, 5 CHORD, 6 SONG
 Where the audio time goes, as SYSTEM 2's CPU row measures it; `tools/fm1_cpu.py` prints it. It has no protocol number
 of its own (INFO stays 2); a GR!MM before V2 does not answer it.
 
-Request: none. Reply: `n` (the stages, 10), then u35 values in the FM-1's timer ticks (24 a microsecond): the budget of a
+Request: none (rc11: or the byte 1, below). Reply: `n` (the stages, 10), then u35 values in the FM-1's timer ticks (24 a microsecond): the budget of a
 256-frame block (139320, 5.8 ms), NOW, PEAK, then NOW's split over the same ~0.5 s: the sources (VOICES), the tracks'
 filters, levels and sends (MIX), GRAIN, DELAY, SPACE, TAPE, PERFORM, MASTER, DRIVE, and SCAN (the key scan's timer
 interrupts that land inside the audio, taken out of the stages they interrupt). NOW minus them all is the rest of the
-audio callback.
+audio callback. Then (rc9) one more u35: the USB recording's dropouts since power-on, then (rc11) 25 more, the FM-1's
+health: the USB audio ring dry, full, no packet ready, the host stopped reading; USB bus resets, suspends, frames frozen;
+the longest time between two watchdog feeds (it bites at ~8 s), the longest gap between two key scan ticks (100 us),
+the ticks past 0.2 ms, 1 ms, 10 ms, the longest tick; the flash's longest interrupts-off time and how often past 1 ms
+(timer ticks); the battery divider's lowest and highest reading; starts since power-on, the resets nobody asked for
+(RAM kept over them, no restart of the FM-1's own before: an update, USB boot, the fault screen), of them the
+watchdog's and the supply-low ones (a supply that sagged); the last four starts' P33 RST_SRC bytes (01 power-on, 02
+VDDIO low, 04 watchdog, 08 VCM, 10 long press, 20 1.2 V low, 40 soft; the chip keeps the watchdog's after a restart
+of the FM-1's own, so it alone proves nothing); this start's byte, with its kind above it (1 watchdog, 2 low
+voltage); the faults; the uptime in ms. A request with one argument byte 1 starts the peaks and counts over
+(`tools/fm1_cpu.py --clear`; `--health` prints them).
 
 ## 25 FX (GR!MM V2)
 

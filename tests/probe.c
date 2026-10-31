@@ -102,6 +102,31 @@ static void host_probe(void)
             *trk_sname(0, nm) = 0;
             printf(" lv %u %u %u ch1 %d snd1 %s", lv_rvk, lv_dlk, lv_pre, (int)trk[0].chord, nm[0] ? nm : "-");
         }
+        printf(" mix");                         /* (rc9: each track's LEVEL, CUTOFF, RES, FX, DLY, REV, GRN, TAPE,
+                                                 * DRIVE, PAN; the mutes, solos; the change log's count) */
+        for (i = 0; i < NT; i++)
+            printf("%s%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", i ? "/" : " ", (int)trk[i].level, (int)trk[i].cut, (int)trk[i].res,
+                   (int)trk[i].fx, (int)trk[i].dly, (int)trk[i].rev, (int)trk[i].grn, (int)trk[i].tap, (int)trk[i].drv,
+                   (int)trk[i].pan);
+        printf(" setd %u slabs", set_dirty);   /* (rc9: the settings changed and not saved yet; the page's four slabs'
+                                                 * labels, "_" for a space, and their warning: HOME's CUT, DRY) */
+        for (i = 0; i < 4u; i++) {
+            const char *l = ui_sl[i].lab;
+            putchar(' ');
+            for (; *l; l++) putchar(*l == ' ' ? '_' : *l);
+            printf(":%u", ui_sl[i].warn);
+        }
+        printf(" mute %u solo %u clog %u shed %u hd ", trk_mute, trk_solo, clog_n, shed_n);   /* (rc9: the overload guard's
+                                                 * voices let go; the header's message, "_" for a space) */
+        for (i = 0; hd_msg[i] && fm1_ms < hd_until; i++) putchar(hd_msg[i] == ' ' ? '_' : hd_msg[i]);
+        if (!hd_msg[0] || fm1_ms >= hd_until) putchar('-');
+        printf(" p1 %d,%d,%d,%d fxk", (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][0],
+               (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][1], (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][2],
+               (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][3]);   /* (rc9: T1's source's four; the 16 effects' knobs
+                                                 * as a project saves them: TAPE, GRAIN, DELAY, SPACE) */
+        for (i = 0; i < 16u; i++) printf("%s%d", i ? "," : " ", (int)*PK_FX[i]);
+        printf(" chd");                        /* (rc11: each track's chord mode / CHORD TYPE / VOICING: tests/chord_test.py) */
+        for (i = 0; i < NT; i++) printf(" %d/%d/%d", (int)trk[i].chord, (int)trk[i].ch_type, (int)trk[i].ch_voice);
         printf(" voices");                      /* (each voice: its stage (0 off, 1 attack, 2 sustain, 3 release, 4
                                                  * fade), track, note, in the notes-on list or not) */
         for (i = 0; i < NV; i++) printf(" %u/%u/%u/%d", (unsigned)vc[i].stage, (unsigned)vc[i].trk + 1u,

@@ -152,7 +152,7 @@ static void phase_begin(voice_t *v)             /* a note from silence (phase_no
 static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1)
 {
     uint32_t w1 = (uint32_t)clamp(p[0], 0, 7), w2 = (uint32_t)clamp(p[1], 0, 8), i;
-    int32_t depth = clamp(p[2], 0, 127) << 8, pitch = VP16(v), damp = amp1 - amp0;
+    int32_t depth = clamp(p[2], 0, 127) << 8, pitch = VP16(v), a0 = amp_lv(amp0, VOICE_LV), damp = amp_lv(amp1, VOICE_LV) - a0;
     uint32_t dcw, inc, inc2;
     int32_t det = clamp(p[3], 0, 127), ring = trk[v->trk & 3u].pd_ring != 0, noise = trk[v->trk & 3u].pd_noise != 0;
     int32_t wl2 = clamp(trk[v->trk & 3u].pd_wav, 0, 8), dl2 = clamp(trk[v->trk & 3u].pd_dcw, 0, 127);
@@ -195,7 +195,7 @@ static void phase_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
                 tg1 ^= 1;
             s = ring ? (s * s2) >> 15 : (s + s2) >> 1;   /* (both within +-32767; V2: RING, their product) */
         }
-        mono[i] += mulq15(mulq15(s, amp_at(amp0, damp, (int32_t)i)), VOICE_LV);
+        mono[i] += vca(s, amp_at(a0, damp, (int32_t)i));   /* (V2: Q15 << PB) */
     }
     v->ph[0] = ph0;
     v->ph[1] = ph1;

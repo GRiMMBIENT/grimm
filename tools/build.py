@@ -53,6 +53,9 @@ PRODUCT = "FM-1_966"                # GR!MM: 966, every release (1.x, 2.x) (FM-1
 VERSION = None                      # APP_VER for release builds (else DEFAULT_VERSION)
 DEFAULT_VERSION = "2.0"
 DEFINES = []                        # --define: a test build's -D names for the app
+RAM_FREE_MIN = 4096                 # (V2) RAM after .data + .bss: at least this free
+STACK_FREE_MIN = 4096               # (V2) each stack (firmware/app.ld) its worst case (tools/stack_check.py) at least
+                                    # this under its size
 
 
 def toolchain():
@@ -225,6 +228,15 @@ def check(img, syms, dis, rt):
     notes.append(f"image {len(img)} B of {APP_SLOT}; RAM .data+.bss {ram} B of 98304; pool {pool} B of 344064")
     if ram > 96 * 1024:
         errors.append(f"RAM .data+.bss {ram} B > 96 KiB")
+    if 96 * 1024 - ram < RAM_FREE_MIN:      # (V2) never filled to the brim: a floor, whatever comes to need it
+        errors.append(f"RAM .data+.bss {ram} B: {96 * 1024 - ram} B free, under {RAM_FREE_MIN}")
+    st = subprocess.run([sys.executable, str(SRC / "tools" / "stack_check.py"), str(OUT / "grimm.dis"), "--min-margin",
+                         str(STACK_FREE_MIN)], capture_output=True, text=True)
+    for ln in st.stdout.splitlines()[1:]:   # (V2) the stacks' worst case (tools/stack_check.py), each at least
+        if ln.strip().startswith(("user stack", "system stack")):   # STACK_FREE_MIN under its region
+            notes.append(ln.strip().split(" free)")[0] + " free)")
+    if st.returncode:
+        errors.append("stack check: " + " | ".join(ln.strip() for ln in st.stdout.splitlines()[1:]))
     return errors, notes
 
 

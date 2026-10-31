@@ -172,24 +172,29 @@ for clock, play in ((0, 0), (0, 1), (1, 0), (1, 1)):
           f"its notes {a:.1f} -> {b:.1f} a second", pr[4000]["own"] == 60 and pr[15000]["own"] == 180 and b > 2.2 * a,
           f"tempo {pr[4000]['own']} -> {pr[15000]['own']}")
 
-# four tracks generating STORM: T1 BOWED BELL (PHYS), T2 GREGORIAN (choir, chord mode on), T3 WRAITH (PHASE), T4 CATHEDRAL
-# CHOIR (choir, chord mode on); chord mode then all off, or all on (SEL held, let go, on the tracks to switch)
+# four tracks generating STORM: T1 BOWED BELL (PHYS), T2 GREGORIAN (choir), T3 WRAITH (PHASE), T4 CATHEDRAL CHOIR (choir);
+# chord mode all off (as loaded), or all on (SEL held, let go, on each track)
 OLD = sys.argv[2] if len(sys.argv) > 2 else None
 LOAD = [(300, "enc 6 17"), (400, "enc 1 1"), (500, "enc 6 36"), (600, "enc 1 1"), (700, "enc 6 25"), (800, "enc 1 1"),
         (900, "enc 6 38"), (1000, "enc 1 -3")]
 
 
-def chords(on):                                 # (T1, T3 off as loaded: on; T2, T4 on as loaded: off)
-    a, b = (0, 2) if on else (1, 3)
-    return [(1100, f"enc 1 {a}"), (1200, "down 3"), (2000, "up 3"), (2100, f"enc 1 {b - a}"), (2200, "down 3"),
-            (3000, "up 3"), (3100, f"enc 1 {-b}")]
+def chords(on):                                 # (all four off as loaded (rc12: no factory sound sets it): on: SEL held, let go, on each)
+    if not on:
+        return []
+    return [(1050, "down 3"), (1700, "up 3"), (1750, "enc 1 1"), (1800, "down 3"), (2450, "up 3"), (2500, "enc 1 1"),
+            (2550, "down 3"), (3200, "up 3"), (3250, "enc 1 1"), (3300, "down 3"), (3950, "up 3"), (4000, "enc 1 -3")]
+
+
+def late(ev, d=1500):                           # (what follows the chords: 1.5 s later; they take 4 x 0.65 s)
+    return [(t + d, e) for t, e in ev]
 
 
 ALL4 = [(3500, "down 2")] + sum(([(3600 + 100 * i, f"keys {1 << k:#x}"), (3650 + 100 * i, "keys 0")]
                                  for i, k in enumerate((1, 3, 5, 8))), [])
 ALL4 += [(4100, "keys 0x400"), (4150, "keys 0"), (4200, "keys 0x400"), (4250, "keys 0"), (4400, "up 2")]   # (ALL STORM)
 for on in (0, 1):
-    pr = run(f"share{on}", LOAD + chords(on) + ALL4 + [(5000 + 50 * i, "probe") for i in range(500)], 30100)
+    pr = run(f"share{on}", LOAD + chords(on) + late(ALL4 + [(5000 + 50 * i, "probe") for i in range(500)]), 31600)
     last = pr[max(pr)]
     heard = [sum(1 for p in pr.values() for s, tr, n in p["srcs"] if s == SRC_GEN and tr == t) for t in (1, 2, 3, 4)]
     most = [max(sum(1 for s, tr, n in p["srcs"] if s == SRC_GEN and tr == t) for p in pr.values()) for t in (1, 2, 3, 4)]
@@ -228,17 +233,17 @@ SAVE = [(3300, "btn 9"), (3400, "enc 5 1"), (3500, "btn 1"), (3700, "down 9"), (
         (3900, "up 9"), (4000, "btn 8"), (4500, "probe")]
 for on in (0, 1):
     for mode in range(3):
-        ev = LOAD + chords(on) + SAVE + [(5000, "down 2")]
+        ev = LOAD + chords(on) + late(SAVE + [(5000, "down 2")])
         for i, k in enumerate((1, 3, 5, 8)):     # (T1 .. T4 on)
-            ev += [(5100 + 100 * i, f"keys {1 << k:#x}"), (5150 + 100 * i, "keys 0")]
+            ev += late([(5100 + 100 * i, f"keys {1 << k:#x}"), (5150 + 100 * i, "keys 0")])
         for i in range(mode):                    # (D#4 alone: all four's next MODE)
-            ev += [(5600 + 100 * i, "keys 0x400"), (5650 + 100 * i, "keys 0")]
-        ev += [(5900, "up 2"), (6000, "probe"), (66000, "down 2")]
+            ev += late([(5600 + 100 * i, "keys 0x400"), (5650 + 100 * i, "keys 0")])
+        ev += late([(5900, "up 2"), (6000, "probe"), (66000, "down 2")])
         for i, k in enumerate((1, 3, 5, 8)):     # (T1 .. T4 off)
-            ev += [(66100 + 100 * i, f"keys {1 << k:#x}"), (66150 + 100 * i, "keys 0")]
-        ev += [(66600, "up 2"), (70000, "probe")]
-        pr = run(f"keep{on}{mode}", ev, 70100)
-        b, g, a = pr[4500], pr[6000], pr[70000]
+            ev += late([(66100 + 100 * i, f"keys {1 << k:#x}"), (66150 + 100 * i, "keys 0")])
+        ev += late([(66600, "up 2"), (70000, "probe")])
+        pr = run(f"keep{on}{mode}", ev, 71600)
+        b, g, a = pr[6000], pr[7500], pr[71500]
         check(f"60 s of 4 tracks generating {['DRIFT', 'PULSE', 'STORM'][mode]}, chord mode {'on' if on else 'off'}: the "
               f"tracks' settings, ENV, the saved sounds and slots unchanged ({b['keep'].split(' env ')[1].split()[0]})",
               g["gen"] == 15 and g["mode"] == [mode] * 4 and a["gen"] == 0 and a["keep"] == b["keep"] and

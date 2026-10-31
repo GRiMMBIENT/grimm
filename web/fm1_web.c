@@ -122,6 +122,11 @@ static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
 }
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { (void)st; (void)d1; (void)d2; }
 static uint32_t midi_room(void) { return 64u; }
+static uint32_t usb_drops(void) { return 0u; }   /* (rc9: no USB audio here) */
+static int usb_recording(void) { return 0; }
+#define HL_N 25u                                /* (rc11: the health values: none here) */
+static void hl_read(uint32_t *v) { uint32_t k; for (k = 0; k < HL_N; k++) v[k] = 0; }
+static void hl_clear(void) {}
 static int32_t batt_raw(void) { return -1; }   /* (no battery in a browser: no icon) */
 static int usb_powered(void) { return 0; }
 
@@ -215,9 +220,9 @@ static void platform_poll(void)                 /* one call = one millisecond */
         memset(blk, 0, sizeof blk);
         app_audio(blk, HALF_FRAMES);
         for (i = 0; i < 2u * HALF_FRAMES; i++) {
-            int32_t v = blk[i];                 /* (GR!MM V2: MASTER applied by the app, fm1_master) */
-            v = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
-            ring[(ring_w * 2u + i) % (RING * 2u)] = (float)v / 65536.0f;   /* << 7 into 24 bits: -6 dBFS, as the I2S */
+            int32_t v = blk[i];                 /* (GR!MM V2: MASTER applied by the app, fm1_master; its 24-bit words) */
+            v = v > OUT_FS ? OUT_FS : v < -OUT_FS ? -OUT_FS : v;
+            ring[(ring_w * 2u + i) % (RING * 2u)] = (float)v / 8388608.0f;   /* (24 bits: -6 dBFS, as the I2S) */
         }
         ring_w += HALF_FRAMES;
     }

@@ -7,6 +7,7 @@
   - four tracks together (four mixes, chord mode off and on, DLY sends up): the same
   - SPACE's and DELAY's lines never past their soft knee, SPACE's pre-delay never clipped (the buses 6 dB lower in)
   - MASTER: up to 3/4 the output 6 dB under what it was before V2; at the top as loud as before (a note)
+  (the peaks: the 24-bit words the DAC gets, GRIMM_RAW_OUT; USB's 16-bit copy is rounded)
     python3 tests/level_test.py build/host/grimm"""
 import array
 import os
@@ -31,18 +32,18 @@ def check(what, ok, detail=""):
 def run(name, ev, end, master=1023):
     (OUT / f"{name}.txt").write_text("".join(f"{t} {e}\n" for t, e in sorted(ev, key=lambda x: x[0])) + f"{end} end\n")
     out = subprocess.run([BIN, str(OUT / name), str(OUT / f"{name}.txt")], capture_output=True, text=True,
-                         env=dict(os.environ, GRIMM_MASTER=str(master))).stdout
+                         env=dict(os.environ, GRIMM_MASTER=str(master), GRIMM_RAW_OUT=str(OUT / f"{name}.raw"))).stdout
     pr = {}
     for ln in out.splitlines():
         if ln.startswith("probe "):
             lv = ln.split(" lv ")[1].split()
             pr[int(ln.split()[1])] = dict(lv=[int(x) for x in lv[:3]], ch=int(lv[4]), snd=ln.split(" snd1 ")[1].split(" voices")[0].strip())
-    a = array.array("h", (OUT / f"{name}.wav").read_bytes()[44:])
+    a = array.array("i", (OUT / f"{name}.raw").read_bytes())   # (the 24-bit words the DAC gets, not USB's rounded copy)
     return pr, a
 
 
-def peak(a, t0=0):
-    return max(abs(x) for x in a[2 * 44100 * t0 // 1000:])
+def peak(a, t0=0):                              # (as Q15, rounded up: 32440 is the limiter's ceiling)
+    return (max(abs(x) for x in a[2 * 44100 * t0 // 1000:]) + 127) >> 7
 
 
 # the factory sounds, by PRESETS (T1, from power-on: 1 .. 44), and whether each loads with chord mode on

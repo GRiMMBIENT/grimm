@@ -13,7 +13,8 @@
  *                              -> op, t, the selected track, rc (READ: then pack7 track t's sound now, then its name
  *                                 as HOME shows it, if it has one)
  *   24 CPU                     -> the budget, NOW, PEAK, then NOW split by stage (grimm.c cpu_stage), u35 fm1_ticks
- *                              each (GR!MM V2: a diagnostic, tools/fm1_cpu.py; no protocol number of its own)
+ *                              each (GR!MM V2: a diagnostic, tools/fm1_cpu.py; no protocol number of its own); rc9:
+ *                              then u35 the USB recording's dropouts since power-on
  *   25 FX   op 0 READ          -> op, rc, the project's effects as their pages' knobs (TAPE, GRAIN, DELAY, SPACE, MASTER,
  *                                 DRIVE: four each, 24), the tracks' filter TYPE | POS << 2 (4), the tracks' sends DLY,
  *                                 REV, GRAIN, DRIVE (16: T1's four first), their TAPE sends (4) (an older page reads
@@ -36,7 +37,7 @@
 enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24, ED_EFFECTS = 25 };
 static const uint8_t ED_FXPG[6] = {PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_MASTER, PG_DRIVE};   /* (FX's i / 4) */
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
-enum { EO_SET = 0, EO_SLOT = 1, EO_SMP = 5, EO_SND = 16, EO_FACT = 80 };
+enum { EO_SET = 0, EO_SLOT = 1, EO_SMP = 5, EO_WORK = 9, EO_LOG = 10, EO_SND = 16, EO_FACT = 80 };
 _Static_assert(EO_SMP + SMP_SLOTS <= EO_SND && EO_FACT + SND_NFACT <= 128u, "the editor's objects: one 7-bit byte each");
 enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: arguments, the object (CRC, size, format,
                                                  * contents), stop / silence first, the flash, no BEGIN (or 15 s old) */
@@ -44,6 +45,7 @@ enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: argumen
 #define ED_FX (st_img + 2560u)                  /* a factory sound as a 64 B record */
 #define ED_TX (st_img + 3072u)                  /* a reply */
 _Static_assert(SLOT_ALL <= 2560u && 6u + 12u + 293u + 1u <= 1024u, "the editor's room in st_img");
+_Static_assert(WORK_PK <= 3072u && EO_SMP + SMP_SLOTS <= EO_WORK, "the working project read in st_img, under the reply");
 static int32_t ed_obj = -1;                     /* the PUT begun (its object), -1 none */
 static uint32_t ed_len, ed_crc, ed_got, ed_t;
 
@@ -54,12 +56,25 @@ static uint32_t ed_size(uint32_t o)             /* object o's size (0: none) */
     if (o >= EO_SLOT && o < EO_SLOT + 4u) return SLOT_ALL;
     if ((o >= EO_SND && o < EO_SND + SND_N) || (o >= EO_FACT && o < EO_FACT + SND_NFACT)) return SND_SIZE;
     if (o >= EO_SMP && o < EO_SMP + SMP_SLOTS && smp[o - EO_SMP].ready) return SMP_DATA_OFF + smp[o - EO_SMP].len;
+    if (o == EO_WORK) return ed_open() ? 0u : WORK_PK;   /* (rc9: GET only; not while a PUT's bytes are in st_img) */
+    if (o == EO_LOG) return sizeof clog + 4u;
     return 0;                                   /* (V2: a sample slot: its header, data; not ready: none) */
 }
 static const uint8_t *ed_bytes(uint32_t o)      /* object o as it is now (0: no flash) */
 {
     uint32_t k;
     if (o == EO_SET) return (const uint8_t *)&set;
+    if (o == EO_WORK) {                         /* (rc9) the working project as it is now (as the autosave packs it;
+                                                 * packed again for each GET) */
+        pk_work(st_img);
+        return st_img;
+    }
+    if (o == EO_LOG) {                          /* (rc9) the mix's change log: entries made (u32), then clog[] */
+        uint32_t n = clog_n;
+        st_img[0] = (uint8_t)n, st_img[1] = (uint8_t)(n >> 8), st_img[2] = (uint8_t)(n >> 16), st_img[3] = (uint8_t)(n >> 24);
+        memcpy(st_img + 4, clog, sizeof clog);
+        return st_img;
+    }
     if (o >= EO_SMP && o < EO_SND) return sample_flash() ? sample_flash() + (o - EO_SMP) * SMP_SLOT_SIZE : 0;
     if (o < EO_SND) return slots[o - EO_SLOT];
     if (o < EO_FACT) return save_flash(0) ? save_flash(0) + (o - EO_SND) * SND_SIZE : 0;
@@ -172,11 +187,15 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         return 1;
     }
     if (cmd == ED_CPU) {                        /* -> the stages' count, then u35: the budget, NOW, PEAK, each stage */
-        uint8_t a[1 + 5u * (3u + CS_N)], *w = a + 1;
-        uint32_t k;
+        uint8_t a[1 + 5u * (4u + CS_N + HL_N)], *w = a + 1;
+        uint32_t k, hl[HL_N];
+        if (n && f[0] == 1u) hl_clear();        /* (rc11: asked with 1: the peaks and counts start over) */
         a[0] = CS_N;
         w = ed_wr35(w, BUDGET_TICKS), w = ed_wr35(w, cpu_now), w = ed_wr35(w, cpu_peak);
         for (k = 0; k < CS_N; k++) w = ed_wr35(w, cpu_stage[k]);
+        w = ed_wr35(w, usb_drops());            /* (rc9: then the USB recording's dropouts since power-on) */
+        hl_read(hl);                            /* (rc11: then the health values, platform.c hl_read) */
+        for (k = 0; k < HL_N; k++) w = ed_wr35(w, hl[k]);
         ed_send(cmd, a, (uint32_t)(w - a), 0, 0, 0);
         return 1;
     }
@@ -186,8 +205,16 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         a[0] = (uint8_t)op, a[1] = ER_OK;
         if (op == 1u && n >= 3u && f[1] < 48u) {
             i = f[1];
-            if (i >= 44u) trk[i - 44u].tap = f[2] & 0x7Fu;   /* (V2: MIXER 1's TAPE sends) */
-            else if (i >= 28u) *mx_send((i - 28u) / 4u, (i - 28u) % 4u) = f[2] & 0x7Fu;   /* (V2: MIXER 1's sends) */
+            if (i >= 44u) {                     /* (V2: MIXER 1's TAPE sends; rc9: logged) */
+                int32_t was = trk[i - 44u].tap;
+                trk[i - 44u].tap = f[2] & 0x7Fu;
+                clog_p(CL_EDITOR, PG_MIX1, &trk[i - 44u].tap, was);
+            } else if (i >= 28u) {              /* (V2: MIXER 1's sends) */
+                volatile int32_t *p = mx_send((i - 28u) / 4u, (i - 28u) % 4u);
+                int32_t was = *p;
+                *p = f[2] & 0x7Fu;
+                clog_p(CL_EDITOR, PG_MIX1, p, was);
+            }
             else if (i >= 24u) t = i - 24u, trk[t].ftype = clamp(f[2] & 3u, 0, NFTYPE - 1), trk[t].fpos = f[2] >> 2 & 1u;
             else {
                 uint32_t pg = ED_FXPG[i / 4u], k = i % 4u;

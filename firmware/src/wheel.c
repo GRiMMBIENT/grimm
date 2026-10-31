@@ -170,7 +170,7 @@ static void wheel_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
 {
     drw_trk_t *T = &drw_t[v->trk % NT];
     drw_vc_t *V = &drw_v[v - vc];
-    int32_t acc[CTL], perc1, clk0, clk1, damp = amp1 - amp0;
+    int32_t acc[CTL], perc1, clk0, clk1, a0 = amp_lv(amp0, VOICE_LV), damp = amp_lv(amp1, VOICE_LV) - a0;
     uint32_t i, k, inc0 = vinc(VP16(v));
     if (T->stamp != vblock) {                   /* (the track's first voice this block) */
         T->stamp = vblock;
@@ -238,7 +238,7 @@ static void wheel_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
             acc[i] = (softclip((acc[i] * dg) >> 9) * dcomp) >> 8;
     }
     for (i = 0; i < (uint32_t)CTL; i++)         /* acc: Q15 with headroom to 4.0 */
-        mono[i] += mulq15(mulq15(acc[i] >> 1, amp_at(amp0, damp, (int32_t)i)), VOICE_LV) << 1;
+        mono[i] += (int32_t)(((int64_t)(acc[i] >> 1) * amp_at(a0, damp, (int32_t)i)) >> 14);   /* (V2: Q15 << PB) */
 }
 
 static void wheel_text(const volatile int32_t *p, uint32_t k, char *s)   /* parameter k as the screen shows it */

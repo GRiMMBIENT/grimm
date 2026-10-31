@@ -225,8 +225,23 @@ static void fl_plain_window_init(void)
     __asm__ volatile("csync\n\tsti" ::: "memory");
 }
 
-static inline uint32_t irq_save(void) { __asm__ volatile("cli" ::: "memory"); return 0; }
-static inline void irq_restore(uint32_t f) { (void)f; __asm__ volatile("csync\n\tsti" ::: "memory"); }
+/* GR!MM rc11: how long the interrupts stay off in one flash step (an erase ~50 ms: the key scan, the LEDs and the USB
+ * audio all stand still): the longest, and how many went past 1 ms (TIMER4 ticks); the CPU command reads them */
+static uint32_t fl_irq_t0, fl_irq_max, fl_irq_slow;
+static inline uint32_t irq_save(void)
+{
+    __asm__ volatile("cli" ::: "memory");
+    fl_irq_t0 = T4_CNT;
+    return 0;
+}
+static inline void irq_restore(uint32_t f)
+{
+    uint32_t d = T4_CNT - fl_irq_t0;
+    (void)f;
+    if (d > fl_irq_max) fl_irq_max = d;
+    fl_irq_slow += d > 24000u;
+    __asm__ volatile("csync\n\tsti" ::: "memory");
+}
 
 static int fl_erase4k(uint32_t off, uint32_t *took_us)
 {

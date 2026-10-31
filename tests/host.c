@@ -110,6 +110,12 @@ static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { (void)d2; stress_
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  MIDI out %02X %u %u\n", fm1_ms, st, d1, d2); }
 #endif
 static uint32_t midi_room(void) { return 64u; }
+static uint32_t usb_drops(void) { return 0u; }   /* (rc9: no USB audio here) */
+static uint32_t host_rec_from = 1, host_rec_to;   /* (GRIMM_USB_REC=FROM,TO: a computer reads the USB audio from FROM to TO ms) */
+static int usb_recording(void) { return fm1_ms >= host_rec_from && fm1_ms < host_rec_to; }
+#define HL_N 25u                                /* (rc11: the health values: none here) */
+static void hl_read(uint32_t *v) { uint32_t k; for (k = 0; k < HL_N; k++) v[k] = 0; }
+static void hl_clear(void) {}
 #ifdef GRIMM_STRESS                             /* (the stress test: a battery going round its levels, 4 s a step) */
 static int32_t batt_raw(void) { return 500 + (int32_t)((fm1_ms / 4000u * 13u) % 110u); }
 static int usb_powered(void) { return (fm1_ms / 60000u) % 3u == 2u; }
@@ -152,6 +158,7 @@ static int save_flash_erase(uint32_t i)
     if (i >= SAVE_NSECT) return -8;
     (void)save_flash(0);
     memset(fake_save[i], 0xFF, 4096u);
+    printf("%6u ms  flash sector %u erased (a save)\n", fm1_ms, i);   /* (tests/rc11_test.py: when) */
     return 0;
 }
 static void compat_exit(void);                  /* (tests/compat.c) */
@@ -187,6 +194,8 @@ static int32_t host_master = 4092;              /* (GR!MM V2) the MASTER knob as
                                                  * the way up, as the USB audio always was here; GRIMM_MASTER: the knob
                                                  * 0 .. 1023 (squared, as platform.c) */
 static int32_t fm1_master(void) { return host_master; }
+static FILE *host_raw;                          /* (GR!MM V2) GRIMM_RAW_OUT: the app's 24-bit words as they are (int32, L R),
+                                                 * beside the WAV (USB's rounded 16-bit copy) */
 static void app_main(void);
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message, an encoder turned. A script
@@ -376,6 +385,8 @@ static void host_matrix(void)
 static uint64_t host_frames;                    /* frames rendered: an audio block's time is its first frame's, as on the
                                                  * FM-1 (its ISR comes on the DMA), not the millisecond it is made in */
 static int host_in_audio;
+static uint32_t host_over_from, host_over_to;   /* (rc9) GRIMM_OVERLOAD=FROM,TO (ms): the overload guard's count held
+                                                 * at its limit meanwhile, as an FM-1 running over its time */
 static uint32_t host_jit, host_jit_rng = 1u;   /* GRIMM_ISR_JITTER (us): the audio ISR starts late by 0 .. it, as the
                                                  * FM-1's can (the timer's ISR outranks it), its time read so */
 static uint32_t host_hz = FS;                   /* GRIMM_AUDIO_HZ: the audio's true rate against the timer's 24 MHz (an
@@ -477,9 +488,13 @@ static void platform_poll(void)                 /* one call = one millisecond */
             if (++cnt == 86u) { host_cpu_now = sum / 86u; sum = cnt = 0; }   /* as grimm.c's NOW: ~0.5 s */
         }
         wav = realloc(wav, (wav_n + HALF_FRAMES) * 4u);
-        for (i = 0; i < 2u * HALF_FRAMES; i++) {
-            int32_t v = blk[i];                 /* (USB audio: the MASTER knob in it, GRIMM_MASTER) */
-            wav[2u * wav_n + i] = (int16_t)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
+        {                                       /* (USB audio: the MASTER knob in it, GRIMM_MASTER; V2: the 24-bit words
+                                                 * as platform.c sends them, 16 bit, rounded) */
+            int32_t u[2u * HALF_FRAMES];
+            for (i = 0; i < 2u * HALF_FRAMES; i++) blk[i] = blk[i] > OUT_FS ? OUT_FS : blk[i] < -OUT_FS ? -OUT_FS : blk[i];
+            if (host_raw) fwrite(blk, 4, 2u * HALF_FRAMES, host_raw);
+            for (i = 0; i < 2u * HALF_FRAMES; i += 64u) out_usb16(blk + i, u + i, 64u);
+            for (i = 0; i < 2u * HALF_FRAMES; i++) wav[2u * wav_n + i] = (int16_t)u[i];
         }
         wav_n += HALF_FRAMES;
     }
@@ -508,7 +523,10 @@ int main(int argc, char **argv)
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);
     memset(fake_flash, 0xFF, sizeof fake_flash);   /* (erased: the factory samples go in at boot) */
     host_jit = getenv("GRIMM_ISR_JITTER") ? (uint32_t)atoi(getenv("GRIMM_ISR_JITTER")) : 0u;
+    if (getenv("GRIMM_OVERLOAD")) sscanf(getenv("GRIMM_OVERLOAD"), "%u,%u", &host_over_from, &host_over_to);
+    if (getenv("GRIMM_USB_REC")) sscanf(getenv("GRIMM_USB_REC"), "%u,%u", &host_rec_from, &host_rec_to);
     host_clock_log = getenv("GRIMM_CLOCK_LOG") != 0;
+    if (getenv("GRIMM_RAW_OUT") && !(host_raw = fopen(getenv("GRIMM_RAW_OUT"), "wb"))) { perror("GRIMM_RAW_OUT"); exit(1); }
     if (getenv("GRIMM_MASTER")) {
         int32_t k = atoi(getenv("GRIMM_MASTER"));
         k = k < 0 ? 0 : k > 1023 ? 1023 : k;

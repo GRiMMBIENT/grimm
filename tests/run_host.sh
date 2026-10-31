@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/host
 cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-2.0}\"" -Ifirmware/src -Ifirmware/gen -o build/host/grimm firmware/src/grimm.c
-GRIMM_MASTER=1022 build/host/grimm build/host/grimm   # (V2: MASTER as web/test_web.mjs turns it: 1022, Q12 4080)
+GRIMM_MASTER=1022 GRIMM_RAW_OUT=build/host/grimm.raw build/host/grimm build/host/grimm   # (V2: MASTER as web/test_web.mjs turns it: 1022, Q12 4080)
 python3 - <<'PY'
 from pathlib import Path
 from PIL import Image
@@ -42,3 +42,21 @@ python3 tests/gen_test.py build/host/grimm
 python3 tests/play_test.py build/host/grimm
 # GR!MM V2: the gain staging: no clip at any MASTER, SPACE and DELAY under their knee (tests/level_test.py)
 python3 tests/level_test.py build/host/grimm
+# GR!MM V2: TAPE off is TAPE off: TAPE's knobs and every TAPE tile at 0, the output to the bit as the reference
+# (tests/tapeoff_test.py, tests/data/tapeoff.sha256: a pad, a choir, a SAMPLE track, VOICE, GENERATE, the FX)
+python3 tests/tapeoff_test.py build/host/grimm
+# GR!MM V2 (rc9): PRESETS through every sound on T1 and T2 while it plays, FX off and on: every one sounds, no
+# track's mix moved but by its knob, the sends still work (tests/presets_test.py; the rc8 no-sound report)
+python3 tests/presets_test.py build/host/grimm
+# GR!MM V2 rc9's fixes (build/bugs/AUDIT-rc8.md): NEW, HOME's CUT / DRY, the LFO on VOLUME, a sound past its
+# ranges, the overload guard, the saves under a tail that never ends (tests/rc9_test.py)
+python3 tests/rc9_test.py build/host/grimm
+# GR!MM V2 rc9: the USB audio ring (firmware/src/uac_ring.h) in time: no dropout at any CPU load
+cc -O2 -Wall -Ifirmware/src -o build/host/uac_ring_test tests/uac_ring_test.c
+build/host/uac_ring_test
+# GR!MM V2.0 rc11: chord mode is per track: a track's chord on / off, CHORD TYPE and VOICING apply to that track only,
+# through every way a note plays (tests/chord_test.py)
+python3 tests/chord_test.py build/host/grimm
+# GR!MM V2.0 rc11: no flash step (autosave, the settings' save) while a computer reads the USB audio: it stopped the key scan,
+# the LEDs and the stream ~50 ms (tests/rc11_test.py)
+python3 tests/rc11_test.py build/host/grimm

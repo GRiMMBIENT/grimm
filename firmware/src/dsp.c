@@ -73,7 +73,8 @@ static inline void tsvf_coef_k(tsvf_t *c, int32_t cut, int32_t k)   /* cut: 0..1
 }
 static inline void tsvf_coef(tsvf_t *c, int32_t cut, int32_t reso)   /* reso 0..127: damping 2.0 .. ~0.15 */
 {
-    tsvf_coef_k(c, cut, 8192 - reso * 7600 / 127);
+    tsvf_coef_k(c, cut, 8192 - clamp(reso, 0, 127) * 7600 / 127);   /* (rc9: past 127 the damping went negative: the
+                                                 * filter unstable) */
 }
 
 static inline int32_t tsvf_lp(const tsvf_t *c, int32_t in, int32_t *ic1, int32_t *ic2)
@@ -98,6 +99,23 @@ static inline int32_t tsvf_any(const tsvf_t *c, int32_t k, uint32_t type, int32_
     *ic1 = clamp(2 * v1 - *ic1, -150000, 150000);
     *ic2 = clamp(2 * v2 - *ic2, -150000, 150000);
     return type == FT_LP ? v2 : type == FT_HP ? in - ((k * v1) >> 12) - v2 : (k * v1) >> 12;
+}
+
+/* GR!MM V2: the same SVF with what each step rounds away carried on into the next (r1, r2: Q13 remainders), for the
+ * filters after the voices' ENV (the tracks', MASTER's): a quiet tail's steps add up as they should, where alone they
+ * round to nothing at a low cutoff and the state sticks (a fading note frozen into a staircase, then a DC offset).
+ * Returns v2 (the low-pass), v1 in *v1 */
+static inline int32_t tsvf_r(const tsvf_t *c, int32_t in, int32_t *ic1, int32_t *ic2, int32_t *r1, int32_t *r2,
+                             int32_t *v1)
+{
+    int32_t v3 = in - *ic2;
+    int32_t p = c->a1 * *ic1 + c->a2 * v3 + *r1, q = c->a2 * *ic1 + c->a3 * v3 + *r2;
+    int32_t w1 = p >> 13, v2 = *ic2 + (q >> 13);
+    *r1 = p & 8191, *r2 = q & 8191;
+    *ic1 = clamp(2 * w1 - *ic1, -150000, 150000);
+    *ic2 = clamp(2 * v2 - *ic2, -150000, 150000);
+    *v1 = w1;
+    return v2;
 }
 
 /* linear up to k, then a soft knee: only the peaks above k saturate (|y| - k must stay < 2^30) */

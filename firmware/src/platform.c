@@ -57,6 +57,8 @@ static void rt_out(uint32_t st, uint32_t due)   /* audio ISR: a realtime byte ou
     ro_w = w + 1u;
 }
 
+#define OUT_FS (32767 << 7)                     /* (V2) the app's output words: the DAC's 24 bits, Q15 << 7 (-6 dBFS ceiling) */
+static void out_usb16(const int32_t *o, int32_t *u, uint32_t n);   /* (grimm.c: those words as 16 bit, rounded: USB) */
 #if defined GRIMM_WEB
 #include "../../web/fm1_web.c"                 /* in a browser: a fake FM-1 (web/fm1_web.c) */
 #elif defined DINGHY_HOST
@@ -86,6 +88,16 @@ static void rt_out(uint32_t st, uint32_t due)   /* audio ISR: a realtime byte ou
 
 bootguard_t bootguard __attribute__((section(".noinit")));
 static volatile uint32_t fm1_ms;                /* milliseconds since power-on (TIMER5) */
+/* GR!MM rc11: health. What the timer ISR, the flash and the watchdog saw (TIMER4 ticks, 24 a us), for the editor's CPU
+ * command (tools/fm1_cpu.py): the longest gap between two timer ticks (10 kHz: 100 us; the key scan and the LEDs stand
+ * still meanwhile), how many were past 0.2 ms, 1 ms, 10 ms, the longest tick; the battery divider's range. And, kept in
+ * .noinit over a reset (a power-on starts it empty): how often it started, and the resets nobody asked for: RAM kept,
+ * no restart of ours (an update, USB boot, the fault screen: clean) before it. The chip's own cause (P33 RST_SRC) stays
+ * set after a watchdog reset until a power cycle: through it alone, every later restart looked like one */
+static struct { uint32_t gap, late, stall, lost, dur, bat_lo, bat_hi; } hl = {0, 0, 0, 0, 0, 1023, 0};
+typedef struct { uint32_t magic, boots, unexp, wdt, low, why, clean, kind; } hl_boot_t;   /* kind: 1 watchdog, 2 low voltage */
+hl_boot_t hl_boot __attribute__((section(".noinit")));   /* (not static: the compiler would take its magic for 0 or HL_MAGIC) */
+#define HL_MAGIC 0x484C3132u                    /* "HL12" (a new layout: a new magic) */
 
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")
 #include "libc.c"
@@ -209,6 +221,7 @@ static void ota_commit(const uint8_t *parm)
     bootguard_clear(&bootguard);
     usb_detach();
     fm1_delay_ms(30);
+    hl_boot.clean = 1;                          /* (rc11: our own restart: not an unexpected reset) */
     fm1_enter_update(parm);
 }
 #include "recovery.c"
@@ -311,6 +324,32 @@ static void midi_send(uint32_t st, uint32_t d1, uint32_t d2)   /* from the main 
 }
 static int32_t batt_raw(void) { return fm1_adc_read(FM1_ADC_BATT); }   /* the battery divider (PB1, ADC ch3): raw
                                                  * 0..1023 (-1: no reading) */
+static uint32_t usb_drops(void) { return uac.underruns + uac.overruns; }   /* (rc9) the USB recording's dropouts so far:
+                                                 * a frame repeated (ring dry), a block dropped (full) */
+#define HL_N 25u
+static void hl_read(uint32_t *v)                /* (rc11) the CPU command's health values, in this order */
+{
+    v[0] = uac.underruns, v[1] = uac.overruns, v[2] = uac.missed, v[3] = uac.stalls;   /* USB audio: ring dry, ring full,
+                                                 * no packet ready, the host stopped reading */
+    v[4] = usb.resets, v[5] = usb.suspends, v[6] = usb.frame_stalls;   /* USB: bus resets (re-enumeration), suspends,
+                                                 * the frame number frozen for 100 ms */
+    v[7] = fm1_wdt_gap, v[8] = hl.gap, v[9] = hl.late, v[10] = hl.stall, v[11] = hl.lost, v[12] = hl.dur;
+    v[13] = fl_irq_max, v[14] = fl_irq_slow;    /* flash: the longest the interrupts were off; the times past 1 ms */
+    v[15] = hl.bat_lo, v[16] = hl.bat_hi;       /* the battery divider's lowest and highest reading (0 .. 1023) */
+    v[17] = hl_boot.boots, v[18] = hl_boot.unexp, v[19] = hl_boot.wdt, v[20] = hl_boot.low;   /* starts since power-on;
+                                                 * resets nobody asked for: all, the watchdog's, a supply that sagged */
+    v[21] = hl_boot.why, v[22] = fm1_boot.p3_rst | hl_boot.kind << 8;   /* the last four P33 RST_SRC bytes; this start's, and
+                                                 * its kind (above them) */
+    v[23] = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count : 0u, v[24] = fm1_ms;   /* faults, uptime */
+}
+static void hl_clear(void)                      /* the peaks and counts since now (the starts stay) */
+{
+    hl.gap = hl.late = hl.stall = hl.lost = hl.dur = hl.bat_hi = 0, hl.bat_lo = 1023u;
+    fm1_wdt_gap = fl_irq_max = fl_irq_slow = 0;
+}
+static int usb_recording(void) { return usb.config && !usb.suspended && uac.alt && uac.flowing; }   /* (rc11) a computer
+                                                 * reads the USB audio now (a DAW with the FM-1 as its input, recording
+                                                 * or not): the stream goes on all the time */
 static int usb_powered(void) { return usb.config && !usb.suspended; }   /* a USB host has it (and powers it); there is
                                                  * no charger line: a charger alone is not seen */
 static uint32_t midi_room(void)                 /* messages midi_send can still queue (0: one more would be dropped;
@@ -326,9 +365,16 @@ static volatile uint8_t in_audio;
 void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed, last, acc;
-    uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
+    uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u, d;
     fm1_timer5_ack();
     fm1_input_tick();
+    if (last) {                                 /* (rc11: the gap since the tick before) */
+        d = t0 - last;
+        if (d > hl.gap) hl.gap = d;
+        hl.late += d > 200u * FM1_TICKS_PER_US;
+        hl.stall += d > 1000u * FM1_TICKS_PER_US;
+        hl.lost += d > 10000u * FM1_TICKS_PER_US;
+    }
     acc += t0 - last;
     last = t0;
     while (acc >= 1000u * FM1_TICKS_PER_US) {
@@ -348,7 +394,9 @@ void fm1_timer5_irq(void)
         if (sub % 5u == 3u)
             uart_midi_poll();
         rt_flush();
-        isr_in_audio += fm1_ticks() - t0;
+        d = fm1_ticks() - t0;
+        isr_in_audio += d;
+        if (d > hl.dur) hl.dur = d;
         return;
     }
     rt_flush();
@@ -357,11 +405,13 @@ void fm1_timer5_irq(void)
     if (sub % 5u == 3u)
         uart_midi_poll();                       /* (2 kHz: ~7 bytes a call at most, 31250 baud) */
     owed = 0;
+    d = fm1_ticks() - t0;
+    if (d > hl.dur) hl.dur = d;
 }
 extern void isr_timer5(void);
 
 /* ---- the sound: ALNK0 I2S, two halves; the app renders (V2: and scales by the MASTER knob, fm1_master: its output
- * stage), Q15 -> 24 bit (-6 dBFS ceiling) */
+ * stage, straight into the 24-bit words: Q15 << 7, the -6 dBFS ceiling as before; USB audio a 16-bit copy) */
 static int32_t abuf[2u * HALF_WORDS] __attribute__((aligned(4)));
 static volatile int32_t master_q12 = 2048;
 static int32_t fm1_master(void) { return master_q12; }   /* the MASTER knob, Q12, squared (0 .. 4092) */
@@ -381,12 +431,15 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
             o[i] = 0;
         uac_render_start();
         app_audio(o, HALF_FRAMES);
-        for (i = 0; i < HALF_WORDS; i++)        /* (V2: MASTER applied by the app) */
-            o[i] = o[i] > 32767 ? 32767 : o[i] < -32767 ? -32767 : o[i];
-        for (b = 0; b < HALF_FRAMES; b += 32u)
-            uac_tap(o + 2u * b, 32u);           /* the computer records what the speaker plays */
-        for (i = 0; i < HALF_WORDS; i++)
-            o[i] <<= 7;
+        for (i = 0; i < HALF_WORDS; i++)        /* (V2: MASTER applied by the app; its 24-bit words, kept in range: the
+                                                 * limit's sign from the word's, -OUT_FS a constant the ROM check flags) */
+            if ((o[i] < 0 ? -o[i] : o[i]) > OUT_FS) o[i] = (o[i] >> 31) ^ OUT_FS;
+        for (b = 0; uac.feed && b < HALF_FRAMES; b += 32u) {   /* the computer records what the speaker plays (16 bit,
+                                                 * rounded; not recording: nothing to make) */
+            int32_t u[64];
+            out_usb16(o + 2u * b, u, 64u);
+            uac_tap(u, 32u);
+        }
         fm1_audio_ack_half();
     }
     in_audio = 0;
@@ -400,6 +453,16 @@ static void platform_poll(void)
     int32_t a;
     fm1_wdt_feed();
     usb_retry(fm1_ms);
+    {                                           /* (rc11: the battery divider ~100 times a second: a supply that sags) */
+        static uint32_t bt;
+        if (fm1_ms - bt >= 10u) {
+            bt = fm1_ms;
+            if ((a = batt_raw()) >= 0) {
+                if ((uint32_t)a < hl.bat_lo) hl.bat_lo = (uint32_t)a;
+                if ((uint32_t)a > hl.bat_hi) hl.bat_hi = (uint32_t)a;
+            }
+        }
+    }
     {   /* the updater's frames to ota_service; an F0 7D frame waits for the app (sysex_get), a second at most */
         const uint8_t *fp;
         uint32_t fn;
@@ -425,6 +488,7 @@ static void platform_poll(void)
         usb_detach();
         fm1_delay_ms(30);
         bootguard.pending = 0;
+        hl_boot.clean = 1;
         fm1_enter_uboot();
     }
     if (fm1_ms >= 30000u && bootguard.pending)
@@ -453,6 +517,7 @@ static void fm1_fault(const fm1_crash_t *c)
     t0 = fm1_ticks();
     while ((uint32_t)(fm1_ticks() - t0) < 8000u * 1000u * FM1_TICKS_PER_US)
         fm1_wdt_feed();
+    hl_boot.clean = 1;                          /* (the fault is counted: fm1_crash) */
     fm1_reboot();
 }
 
@@ -464,6 +529,17 @@ void fm1_cstart(void)
     fm1_time_init();
     fm1_reset_reason();
     p3 = fm1_boot.p3_rst;
+    {                                           /* (rc11) how it started: RAM kept and no restart of ours before it: the
+                                                 * watchdog (P33 bit 2), else a supply that sagged (bits 1, 3, 5) */
+        uint32_t fresh = hl_boot.magic != HL_MAGIC, bad;
+        if (fresh)
+            hl_boot.magic = HL_MAGIC, hl_boot.boots = hl_boot.unexp = hl_boot.wdt = hl_boot.low = hl_boot.why = hl_boot.clean = 0;
+        bad = !fresh && !hl_boot.clean;
+        hl_boot.clean = 0;
+        hl_boot.kind = bad ? ((p3 & 4u) ? 1u : (p3 & 0x2Au) ? 2u : 0u) : 0u;
+        hl_boot.boots++, hl_boot.unexp += bad, hl_boot.wdt += hl_boot.kind == 1u, hl_boot.low += hl_boot.kind == 2u;
+        hl_boot.why = hl_boot.why << 8 | p3;
+    }
     fm1_wdt_arm(0x0D);
     if ((p3 & 1u) && !(p3 & (4u | 0x40u)))
         bootguard_clear(&bootguard);

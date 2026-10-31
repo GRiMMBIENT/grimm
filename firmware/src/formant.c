@@ -180,7 +180,7 @@ static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
 /* CTL frames of voice v, added to mono[] (eng_formant.c formant_render) */
 static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32_t amp0, int32_t amp1)
 {
-    int32_t *st = vx_s[v - vc], pitch = VP16(v), damp = amp1 - amp0;
+    int32_t *st = vx_s[v - vc], pitch = VP16(v), a0 = amp_lv(amp0, VOICE_LV), damp = amp_lv(amp1, VOICE_LV) - a0;
     fres_t rr[4];
     int32_t buzz, oq, tilt, gv, gn, og, ogk, br = clamp(p[3], 0, 127);
     uint32_t inc = vinc(pitch), i, te, tp, rp, rn, ty = (uint32_t)trk[v->trk & 3u].vty;
@@ -233,7 +233,7 @@ static void formant_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
         y7 = clamp(a, -(1 << 28), 1 << 28);     /* int32 state stays far from overflow */
         s = soft_knee(clamp((int32_t)(((int64_t)y7 * og + (int64_t)(y7 - y8) * ogk) >> 21), -200000, 200000), 24000);
         ph += inc;
-        mono[i] += mulq15(mulq15(s, amp_at(amp0, damp, (int32_t)i)), VOICE_LV);   /* (Felucca: s x 2 at its level) */
+        mono[i] += vca(s, amp_at(a0, damp, (int32_t)i));   /* (Felucca: s x 2 at its level; V2: Q15 << PB) */
     }
     v->ph[0] = ph;
     v->ph[1] = (uint32_t)y7;
@@ -256,7 +256,8 @@ static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
     } sg[VT_SING];
     typeof(&sg[0]) q, qe;
     uint32_t n = (uint32_t)(v - vc), ns = VT[ty].n, i, k;
-    int32_t pitch = VP16(v), damp = amp1 - amp0, br = clamp(p[3], 0, 127), sp = clamp(p[1], 0, 24);
+    int32_t pitch = VP16(v), a0 = amp_lv(amp0, VOICE_LV), damp = amp_lv(amp1, VOICE_LV) - a0, br = clamp(p[3], 0, 127);
+    int32_t sp = clamp(p[1], 0, 24);
     int32_t pos = (clamp(p[0], 0, 127) * 4 * 256) / 127, vi, mf, l = vx_c[n].lp, nl = vx_c[n].nl;
     int32_t tc = clamp(1500 + clamp(p[2], 0, 127) * clamp(p[2], 0, 127) * 2, 0, 32767), gv = 32767 - br * br * 2, gn = br * br >> 1;   /*
                                                  * (BUZZ: ~330 Hz, 2.5 kHz at 64, 4.7 at 85, open at the top) */
@@ -311,7 +312,7 @@ static void choir_block(voice_t *v, const volatile int32_t *p, int32_t *mono, in
             x += ((nz - nl) * gn) >> 13;
         }
         l += (int32_t)(((int64_t)(x - l) * tc) >> 15);   /* (BUZZ: the tone) */
-        mono[i] += mulq15((int32_t)(((int64_t)l * amp_at(amp0, damp, (int32_t)i)) >> 15), VOICE_LV);
+        mono[i] += vca(l, amp_at(a0, damp, (int32_t)i));   /* (V2: Q15 << PB) */
     }
     for (k = 0, q = sg; k < ns; k++, q++) vx_c[n].ph[k] = q->ph;
     vx_c[n].lp = l, vx_c[n].nl = nl;

@@ -138,15 +138,16 @@ static const uint8_t SND_FACTORY[][SND_FSIZE] = {
     /* TEXTURES */
     FSND(CAT_TEXTURE, 1, ENG_VOICE, 96, 12, 0, 127, 100, 90, 120, 105, 1, 0x00, 30, 90, 4, 0), /* WIND THRU STONE */
     /* (V2) CHOIRS: VOICE's choir TYPEs (real singers' cycles), a clear vowel (O, A), BUZZ (their tone) warm to open, a
-     * little BREATH, SHIFT their spread, ATTACK ~0.3 .. 0.45 s, a long RELEASE (~5 .. 8 s), no LFO; chord mode on (bit
-     * 7): parallel fifths (organum), minor chords. SPACE isn't a sound's (the project's, the track's REV send): the
+     * little BREATH, SHIFT their spread, ATTACK ~0.3 .. 0.45 s, a long RELEASE (~5 .. 8 s), no LFO; chord mode OFF (rc12: a
+     * factory sound never switches it on), their CHORD TYPE and VOICING set for it: parallel fifths (organum), minor
+     * chords. SPACE isn't a sound's (the project's, the track's REV send): the
      * manual says how to set it */
-    FSNDV(CAT_VOICE, 6, VT_GREG, 95, 12, 75, 15, 82, 90, 120, 110, 0, 0x95, 40, 0, 0, 0),  /* GREGORIAN: O, FIFTH OPEN */
+    FSNDV(CAT_VOICE, 6, VT_GREG, 95, 12, 75, 15, 82, 90, 120, 110, 0, 0x15, 40, 0, 0, 0),  /* GREGORIAN: O, FIFTH OPEN (chord mode off) */
     FSNDV(CAT_VOICE, 7, VT_GREG, 0, 9, 85, 18, 80, 90, 120, 106, 0, 0x00, 40, 0, 0, 0),    /* PLAINCHANT: A, one line,
                                                                                              * close */
-    FSNDV(CAT_VOICE, 8, VT_CATH, 0, 15, 80, 12, 85, 90, 105, 112, 0, 0xA1, 40, 0, 0, 0),   /* CATHEDRAL CHOIR: A, MIN
+    FSNDV(CAT_VOICE, 8, VT_CATH, 0, 15, 80, 12, 85, 90, 105, 112, 0, 0x21, 40, 0, 0, 0),   /* CATHEDRAL CHOIR: A, MIN
                                                                                              * SPREAD, wide */
-    FSNDV(CAT_VOICE, 9, VT_NUNS, 95, 12, 90, 20, 84, 90, 120, 108, 0, 0x91, 40, 0, 0, 0),  /* NUNS: O, MIN OPEN */
+    FSNDV(CAT_VOICE, 9, VT_NUNS, 95, 12, 90, 20, 84, 90, 120, 108, 0, 0x11, 40, 0, 0, 0),  /* NUNS: O, MIN OPEN */
 };
 static const char *const SND_FNAME[] = {
     "CRYPT PAD", "ASH VEIL", "FROZEN HALL", "LAST LIGHT", "MOSS", "BLACK VELVET",
@@ -349,10 +350,11 @@ static uint8_t snd_latch_off;                   /* (V2) SYSTEM 3's LATCH ALWAYS 
                                                  * LATCH OFF (grimm.c's sys_sync) */
 static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into track t (a new source: its notes go over) */
 {
-    uint32_t k, e = r[3], la;
-    for (k = 0; k < 4u; k++) {
-        trk[t].p[e][k] = r[4 + k];
-        trk[t].env[k] = r[8 + k];
+    uint32_t k, e = r[3] < NENG ? r[3] : 0u, la;
+    for (k = 0; k < 4u; k++) {                  /* (rc9: within the knobs' ranges: a sound the editor wrote, a broken
+                                                 * one, can't put a value past them, nor a filter out of control) */
+        trk[t].p[e][k] = clamp(r[4 + k], 0, ENGINES[e]->max[k]);
+        trk[t].env[k] = clamp(r[8 + k], 0, 127);
     }
     la = snd_latch_off ? 0u : r[12] & 1u;       /* (V2: SYSTEM 3's ALWAYS OFF: LATCH OFF, whatever the sound's) */
     trk[t].glide = r[12] >> 1;                  /* (V2: GLIDE; saved before: 0, off) */
@@ -496,10 +498,12 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
         trk[t].pd_pe = (int32_t)xb_get(q, &at, 7), trk[t].pd_pe = trk[t].pd_pe >= 64 ? trk[t].pd_pe - 128 : trk[t].pd_pe;
         trk[t].pd_pd = (int32_t)xb_get(q, &at, 7);
     }
-    for (e = 0; e < NENG; e++)
-        for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];
-    trk[t].p[ENG_VOICE][1] = q[1 + ENG_VOICE * 4u + 1u] & 31u, trk[t].vty = q[1 + ENG_VOICE * 4u + 1u] >> 5 & 3u;   /* (V2) */
-    for (k = 0; k < 4u; k++) trk[t].env[k] = q[33 + k];
+    for (e = 0; e < NENG; e++)                  /* (rc9: every value loaded within its knob's range: a broken save
+                                                 * can't put one past it) */
+        for (k = 0; k < 4u; k++) trk[t].p[e][k] = clamp(q[1 + e * 4u + k], 0, ENGINES[e]->max[k]);
+    trk[t].p[ENG_VOICE][1] = clamp(q[1 + ENG_VOICE * 4u + 1u] & 31u, 0, ENGINES[ENG_VOICE]->max[1]);
+    trk[t].vty = q[1 + ENG_VOICE * 4u + 1u] >> 5 & 3u;   /* (V2) */
+    for (k = 0; k < 4u; k++) trk[t].env[k] = clamp(q[33 + k], 0, 127);
     if (trk[t].latch && !(q[37] & 1u)) {               /* (LATCH ON -> OFF: its latched notes released; at the bar, now) */
         if (!isr) nq_put(NQ_RELEASE, t, 0);
         else {
@@ -507,11 +511,16 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
             if (trk[t].arp) arp_clear(t);
         }
     }
-    trk[t].latch = q[37] & 1u, trk[t].drv = q[37] >> 1;
-    trk[t].level = q[38], trk[t].dly = q[39], trk[t].rev = q[40], trk[t].grn = q[41], trk[t].pan = q[42];
+    int32_t was[CF_N];
+    for (k = 0; k < CF_N; k++) was[k] = *cf_ptr(t, k);   /* (rc9: what the load changed, logged) */
+    trk[t].latch = q[37] & 1u, trk[t].drv = clamp(q[37] >> 1, 0, 127);
+    trk[t].level = clamp(q[38], 0, 127), trk[t].dly = clamp(q[39], 0, 127), trk[t].rev = clamp(q[40], 0, 127);
+    trk[t].grn = clamp(q[41], 0, 127), trk[t].pan = clamp(q[42], 0, 127);
     trk[t].cut = 127 - clamp(q[29], 0, 127), trk[t].res = clamp(q[30], 0, 127), trk[t].fx = clamp((int8_t)q[31] + 100, 0, 200);
     trk[t].ftype = clamp(q[32] & 3u, 0, NFTYPE - 1), trk[t].fpos = q[32] >> 2 & 1u;   /* (saved before V2: LP PRE) */
-    trk[t].tap = (int32_t)(q[32] >> 3 | (q[46] >> 5 & 3u) << 5);   /* (V2: the TAPE send; before: 0) */
+    trk[t].tap = clamp((int32_t)(q[32] >> 3 | (q[46] >> 5 & 3u) << 5), 0, 127);   /* (V2: the TAPE send; before: 0) */
+    for (k = 0; k < CF_N; k++)
+        if (*cf_ptr(t, k) != was[k]) clog_add(CL_LOAD, 255u, k, t, was[k], *cf_ptr(t, k));
     ch_unpack(t, q[43]);
     trk[t].arp_mode = clamp(q[44] & 0x7Fu, 0, NARPMODE - 1), trk[t].arp_rate = clamp(q[45], 0, NARPRATE - 1);
     trk[t].arp_oct = clamp(q[46] & 7u, 1, 4), trk[t].arp_gate = clamp(q[47], 10, 100);
@@ -608,7 +617,7 @@ static void uk_work(const uint8_t *q, uint32_t f, const uint16_t *vs)   /* (f: U
     int globals = (f & UW_GLOBALS) != 0;
     for (t = 0; t < NT; t++) q = uk_track(q, t, 0, tn);
     if (globals) {
-        for (k = 0; k < 16u; k++) *PK_FX[k] = q[k];
+        for (k = 0; k < 16u; k++) *PK_FX[k] = clamp(q[k], 0, 127);   /* (rc9: within the knobs' range) */
         seq_bpm = clamp(q[16] | q[17] << 8, 20, 300);
         slot_cur = q[18] & 3u;
         sel = q[19] & 3u;
@@ -874,12 +883,20 @@ static void project_new(void)                   /* NEW: the four tracks' power-o
         trk[t].arp_oct = T0.arp_oct, trk[t].arp_gate = T0.arp_gate;
         trk[t].lfo_rate = T0.lfo_rate, trk[t].lfo_depth = T0.lfo_depth, trk[t].lfo_dest = T0.lfo_dest;
         trk[t].lfo_shape = T0.lfo_shape;
+        trk[t].level = T0.level, trk[t].dly = T0.dly, trk[t].rev = T0.rev, trk[t].grn = T0.grn, trk[t].pan = T0.pan;   /* (rc9:
+                                                 * the mix too, as at power-on: a track left at VOLUME 0, its filter
+                                                 * closed, its FX 0 came out of NEW silent) */
+        trk[t].cut = T0.cut, trk[t].res = T0.res, trk[t].fx = T0.fx, trk[t].drv = T0.drv, trk[t].tap = T0.tap;
+        trk[t].ftype = T0.ftype, trk[t].fpos = T0.fpos, trk[t].glide = T0.glide, trk[t].vty = T0.vty;
+        trk[t].pd_ring = T0.pd_ring, trk[t].pd_noise = T0.pd_noise, trk[t].pd_wav = T0.pd_wav, trk[t].pd_dcw = T0.pd_dcw;
+        trk[t].pd_de = T0.pd_de, trk[t].pd_dd = T0.pd_dd, trk[t].pd_pe = T0.pd_pe, trk[t].pd_pd = T0.pd_pd;
         fm_builtin(t, T0.p[ENG_FM][0]);
         if (trk[t].eng != T0.eng) {
             trk[t].eng = T0.eng;
             nq_put(NQ_RESTART, t, 0);
         }
     }
+    trk_mute = trk_solo = 0;                    /* (rc9: no track left muted or soloed) */
     seq_clear();
 }
 

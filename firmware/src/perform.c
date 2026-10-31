@@ -108,7 +108,7 @@ static int32_t pf_hp(const tsvf_t *c, int32_t k, int32_t in, int32_t *ic1, int32
     return in - ((k * v1) >> 12) - v2;
 }
 
-static void perform_render(int32_t *out, uint32_t n)   /* audio: the tricks on the output (n stereo frames) */
+static void perform_run(int32_t *out, uint32_t n)   /* the tricks on the output (n stereo frames, Q15) */
 {
     uint32_t h = pf_held, i, c;
     int32_t y;
@@ -165,6 +165,30 @@ static void perform_render(int32_t *out, uint32_t n)   /* audio: the tricks on t
             out[2u * i + c] = x + ((f - x) * (pf_hw >> 3) >> 12);
         }
     }
+}
+static void perform_render(int32_t *out, uint32_t n, uint32_t pb)   /* audio: the tricks on the output (V2: Q15 << pb, pb
+                                                 * 0 or PB): nothing held, nothing on, only its history taken (at Q15);
+                                                 * else all of it at Q15 */
+{
+    uint32_t i;
+    int32_t h = pb ? 1 << (pb - 1u) : 0;
+    if (!pf_held && pf_cur == PR_NONE && !pf_m && pf_lc >= (127 << 8) && pf_hc <= 0 && !pf_lw && !pf_hw) {
+        for (i = 0; i < n; i++) {
+            int32_t s = (((out[2u * i] + h) >> pb) + ((out[2u * i + 1u] + h) >> pb)) >> 1;
+            if (i & 1u) {
+                pf_buf[pf_wc % PF_LEN] = (int16_t)clamp((pf_half + s) >> 1, -32767, 32767);
+                pf_wc++;
+            } else
+                pf_half = s;
+        }
+        pf_st[0][0] = pf_st[0][1] = pf_st[0][2] = pf_st[0][3] = pf_st[1][0] = pf_st[1][1] = pf_st[1][2] = pf_st[1][3] = 0;
+        return;
+    }
+    if (pb)
+        for (i = 0; i < 2u * n; i++) out[i] = (out[i] + h) >> pb;
+    perform_run(out, n);
+    if (pb)
+        for (i = 0; i < 2u * n; i++) out[i] <<= pb;
 }
 static int perform_idle(void)                   /* nothing held, nothing on (the stress test's checks) */
 {
