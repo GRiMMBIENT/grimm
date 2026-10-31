@@ -13,9 +13,10 @@ Version 2.0 · for the M-VAVE FM-1
 - **MIDI:** the **TRS jack is a MIDI input** now; **MIDI clock** in (USB or TRS) and out (USB): SYSTEM 2's **CLOCK**; MIDI CHANNEL **CH n > SEL** plays the selected track from one channel. See [System](#11-system-hold-home).
 - **Faster playing:** **hold SEL + OCT+** switches the track's LATCH; **hold REC** (~1 s) clears the track's pattern; SYSTEM 3's **LATCH** decides whether a sound you load brings its own LATCH or always starts unlatched; SYSTEM 3's **VELOCITY** lets MIDI notes play as loud as they were played; SOURCE's **GLIDE** slides each note from the one before.
 - **PHASE's LINE 2:** a new page after SOURCE on PHASE tracks gives the second line its own **WAVE** and **DCW**, **RING** (line 1 × line 2) and **NOISE**, as on a Casio CZ; the **PHASE ENV** page after it adds a DCW envelope and a pitch envelope to every note. See [Sounds](#3-sounds-edit).
-- **VOICE choirs from real singers:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of six singers on every note, made from recordings of real singers: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
+- **VOICE choirs from real singers:** the VOICE source has a **TYPE** (SOURCE page, KNOB 3): SOLO (one voice, as in 1.0), or a choir of six singers on every note, made from recordings of real singers: GREGORIAN, NUNS or CATHEDRAL. Four choir sounds use them: GREGORIAN (set to FIFTH chords: switch chord mode on to hear parallel fifths), PLAINCHANT, CATHEDRAL CHOIR and NUNS. See [Sounds](#3-sounds-edit).
 - **GENERATE:** hold FX and tap a black key to let a track play random notes of the scale by itself, in three moods (DRIFT, PULSE, STORM), each track with its own mode, octave and range, shown on the PERFORM screen. See [Performance](#10-performance-hold-fx).
-- **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. See [HOME](#2-home).
+- **MIXER 1 as six tiles:** LEVEL with a live meter, the DELAY, REVERB and GRAIN sends, and two new per-track sends, **TAPE** and **DRIVE**. TAPE now works per track: only the tracks whose TAPE tile is up go through the tape (0 = untouched), and its **WOW** is random tape slips instead of a steady wobble. See [HOME](#2-home).
+- **Warnings:** HOME shows a red **CUT** under a track whose filter is closed and **DRY** under a track whose FX is at 0; SYSTEM 2 counts **USB REC DROPS**; the header says **CPU FULL: NOTE DROPPED** when the FM-1 has too much to play. See [HOME](#2-home) and [System](#11-system-hold-home).
 - **Darker screens:** spider webs on HOME, fangs in the VOICE mouth, bats at start-up, and a live level meter on MIXER 1.
 - **The editor:** new FX and SETTINGS sections, backups now hold the four samples too, and a NORMALISE switch for samples. See [The editor](#15-the-editor).
 - **Cleaner and lighter:** samples uploaded with the editor no longer crackle, PHYS uses much less of the processor (at most four PHYS notes at once), and long backups, DAW loops, latched PHYS notes and the `SAVES WHEN SILENT` message all behave as they should.
@@ -46,7 +47,7 @@ GR!MM has **four tracks (T1–T4)**. Each track plays one sound, has its own seq
 
 **Knobs speed up:** turn slowly for fine steps, quickly to sweep the whole range.
 
-**Saving is automatic:** when the sequencer is stopped and you haven't touched anything for 2.5 seconds, GR!MM saves your work. Switch off any time; it comes back exactly as you left it. (It never saves while something is still sounding, to avoid audio dropouts; the header says `SAVES WHEN SILENT` for 2 seconds when it starts waiting, then gets out of the way; the save still waits.)
+**Saving is automatic:** when the sequencer is stopped and you haven't touched anything for 2.5 seconds, GR!MM saves your work. Switch off any time; it comes back exactly as you left it. (It never saves while something is still sounding, to avoid audio dropouts; the header says `SAVES WHEN SILENT` for 2 seconds when it starts waiting, then gets out of the way; the save still waits. With an effect tail that never ends (DELAY feeding back, SPACE on INF, GRAIN frozen) it would wait for ever, so saves, sample uploads and editor writes go ahead 10 seconds after the last note. While a computer records the FM-1 over USB, autosave waits until you have left the FM-1 alone for 60 seconds, and saves straight away when the recording stops.)
 
 **Undo:** hold **EDIT** and press **OCT−** to undo the last edit, **OCT+** to redo it.
 
@@ -68,6 +69,7 @@ The main screen: the eye, two spider webs in the top corners (dew glints on them
 
 - **CUTOFF / RESONANCE:** a filter at the end of the track, for every source: a low-pass unless MIXER 2 says otherwise. Fully open = no filtering.
 - **FX:** turns all five of the track's effect sends (MIXER 1's DELAY, REVERB, TAPE, GRAIN, DRIVE) up or down together. 0 = dry, 100 % = as set on MIXER 1, 200 % = twice as wet.
+- **CUT and DRY:** a small red **CUT** under a track's name on HOME means its filter is closed (nothing gets through); a red **DRY** means its FX is at 0, so it gets no effects although a send is up. On MIXER 1 such a track's send tiles are dimmed and show **FX0**.
 
 Press **HOME** again for the mixer pages:
 
@@ -81,8 +83,8 @@ Press **HOME** again for the mixer pages:
 - **MIXER 1** is six tiles for the selected track: **LEVEL**, **DELAY**, **REVERB** on top, **TAPE**, **GRAIN**, **DRIVE** below. Turn **SELECT** to move the red outline from tile to tile; **KNOB 1** sets the outlined tile (its bar and number turn red). **ALGORITHM** picks the track, as everywhere. The other knobs do nothing here.
 - **LEVEL:** the bar is a live meter: it moves with the track's sound, and its top two segments turn red at the peak. The meter's colour shows the LEVEL (dim grey when low, white when full). The small notch under it marks where LEVEL is set; the number is the LEVEL setting.
 - **DELAY, REVERB, GRAIN:** how much of the track goes to DELAY, SPACE and GRAIN.
-- **DRIVE send:** sends the track to a drive of its own, which joins the dry mix in the middle (not panned); the driven sound isn't sent on to GRAIN, DELAY or SPACE, but MASTER, the DRIVE page and TAPE still act on it. It uses the DRIVE page's **TYPE** and **TONE**; the send is how hard the track hits it. It works even when the DRIVE page's AMOUNT is 0, so you can drive one track and leave the others clean. All DRIVE sends at 0 = off completely.
-- **TAPE send:** sends the track through a tape of its own, which joins the dry mix in the middle (not panned), like the DRIVE send. It uses the TAPE page's **WOW**, **SATURATION** and **TONE** (not its HISS, which stays on the whole mix): the send is how much of the taped track you hear beside the clean one, and how hard it hits the SATURATION. With the TAPE page all at 0 the send is a clean copy of the track; with WOW up it wobbles against the clean track, a chorus-like shimmer. It works whether or not TAPE is on for the whole mix. All TAPE sends at 0 = off completely.
+- **DRIVE send:** sends the track to a drive of its own, which joins the dry mix in the middle (not panned); the driven sound isn't sent on to GRAIN, DELAY or SPACE, but MASTER and the DRIVE page still act on it. It uses the DRIVE page's **TYPE** and **TONE**; the send is how hard the track hits it. It works even when the DRIVE page's AMOUNT is 0, so you can drive one track and leave the others clean. All DRIVE sends at 0 = off completely.
+- **TAPE:** how much of this track goes through the tape. **0 = untouched**: the track doesn't go through the tape at all. The tape sits first on the track, so the track's other sends (DELAY, REVERB, GRAIN, DRIVE) hear the taped sound. It uses the TAPE page's **WOW**, **SATURATION** and **TONE**; **HISS** plays while at least one track uses the tape. **WOW** is random tape slips on the track's notes: the pitch stays steady, then every few seconds the tape briefly jerks or sags off and back. The TAPE page's knob only sets how big the slips are. All TAPE tiles at 0 = the tape is off completely.
 - **TYPE** (MIXER 2): the track filter is a low-pass (`LP`), high-pass (`HP`) or band-pass (`BP`). `LP` open (CUTOFF at the top) or `HP` open (CUTOFF at the bottom) means no filtering. A band-pass is gentle at RESONANCE 0 and narrows as you turn it up.
 - **POS** (MIXER 2): `PRE`: the effect sends hear the filtered sound (as GR!MM 1.0). `POST`: only the track's dry sound is filtered; GRAIN, DELAY and SPACE hear it unfiltered (a dark track with a bright reverb, say).
 
@@ -305,7 +307,7 @@ A slot holds the four tracks' sounds, sequences and mix. Tempo and effects are s
 
 - **Hold SAVE + C4, D4, E4 or F4:** save into A, B, C or D. If the slot is already used, press the key again within 3 seconds to overwrite.
 - **Hold SAVE + F3, G3, A3 or B3:** recall A, B, C or D. While playing, it switches on the next bar. Keys light up for slots that are in use.
-- **SAVE → PROJECTS page:** SLOT (A–D) and ACTION (LOAD, SAVE, ERASE, NEW), confirmed with **OCT+**. NEW gives you empty tracks and patterns.
+- **SAVE → PROJECTS page:** SLOT (A–D) and ACTION (LOAD, SAVE, ERASE, NEW), confirmed with **OCT+**. NEW gives you empty tracks and patterns, and also puts the mixer back to its defaults.
 
 ### Your own sounds
 
@@ -345,21 +347,21 @@ A saved sound is called by its category and number (`PAD 03`), or by the name yo
 
 ![FX > TAPE](docs/screens/tape.png)
 
-**FX** steps through **TAPE → GRAIN → DELAY → SPACE → MASTER → DRIVE**. Tracks feed GRAIN, DELAY and SPACE through their sends (MIXER 1, or FX on HOME), and MIXER 1's TAPE and DRIVE sends feed a tape and a drive of their own (see [HOME](#2-home)). TAPE colours everything near the end.
+**FX** steps through **TAPE → GRAIN → DELAY → SPACE → MASTER → DRIVE**. Tracks feed GRAIN, DELAY and SPACE through their sends (MIXER 1, or FX on HOME), and MIXER 1's TAPE and DRIVE tiles send a track through a tape and a drive of its own (see [HOME](#2-home)). The tape works per track, first on the track; DRIVE and MASTER act on the whole mix.
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
-| TAPE | WOW | SATURATION | TONE | HISS |
+| TAPE | WOW (random slips) | SATURATION | TONE | HISS |
 | GRAIN | SIZE | DENSITY | SCATTER | MIX |
 | DELAY | TIME | FEEDBACK | WEAR | MIX |
 | SPACE | SIZE (to ~32 s, then INF) | DAMP | MIX | PRE-DELAY |
 | MASTER | CUTOFF | RESONANCE | TYPE (LP / HP / BP) | POSITION (PRE FX / POST REVERB / END) |
 | DRIVE | AMOUNT | TYPE (SOFT / FUZZ / CLIP / FOLD) | TONE | MIX |
 
-GRAIN and DELAY both pour into SPACE. All four TAPE knobs at 0 switches TAPE off completely.
+GRAIN and DELAY both pour into SPACE. The TAPE page sets the tape; each track's TAPE tile on MIXER 1 sets how much of that track goes through it (0 = untouched), so with every TAPE tile at 0 the tape is off completely.
 
-- **MASTER** filters everything, in stereo. **POSITION** says where: `PRE FX` filters the tracks' dry mix before the effects return (the reverb and echoes stay bright), `POST REVERB` filters the tracks and the effects together (before DRIVE and TAPE), `END` filters the very end, after TAPE and the PERFORM tricks. `LP` with CUTOFF at the top or `HP` at the bottom switches it off completely.
-- **DRIVE** distorts everything after SPACE, before TAPE. **AMOUNT** is how hard (0 = off completely), **TYPE** the character: `SOFT` (warm saturation), `FUZZ` (lopsided, buzzy), `CLIP` (hard), `FOLD` (a wavefolder: the harder you drive it, the more it folds back into new overtones). All four are about equally loud at the same AMOUNT, so switching TYPE doesn't jump in volume, and turning AMOUNT all the way up makes it at most ~6 dB louder. **TONE** darkens it (`OPEN` at the top), **MIX** blends it with the clean sound. A limiter after it keeps even the loudest settings from blowing up the output.
+- **MASTER** filters everything, in stereo. **POSITION** says where: `PRE FX` filters the tracks' dry mix before the effects return (the reverb and echoes stay bright), `POST REVERB` filters the tracks and the effects together (before DRIVE), `END` filters the very end, after DRIVE and the PERFORM tricks. `LP` with CUTOFF at the top or `HP` at the bottom switches it off completely.
+- **DRIVE** distorts everything after SPACE. **AMOUNT** is how hard (0 = off completely), **TYPE** the character: `SOFT` (warm saturation), `FUZZ` (lopsided, buzzy), `CLIP` (hard), `FOLD` (a wavefolder: the harder you drive it, the more it folds back into new overtones). All four are about equally loud at the same AMOUNT, so switching TYPE doesn't jump in volume, and turning AMOUNT all the way up makes it at most ~6 dB louder. **TONE** darkens it (`OPEN` at the top), **MIX** blends it with the clean sound. A limiter after it keeps even the loudest settings from blowing up the output.
 - MASTER and DRIVE belong to the project (saved with it, like the other effects); TYPE and POS belong to each track.
 
 ---
@@ -426,7 +428,7 @@ A track can play by itself: random notes of the **SCALE** (with chord mode on: r
   - `INT`: the FM-1's own tempo (SELECT on HOME, PRESETS on the sequencer pages).
   - `INT+OUT` (`I+OUT` on the knob): the same, and the FM-1 sends MIDI clock over USB: 24 pulses a beat (also while stopped), START when you press PLAY (it starts on the next pulse), STOP when it stops. Set your DAW to follow it. The pulses are timed to the microsecond, and when you change the tempo they glide to the new one over about two beats, so the DAW follows smoothly. While the FM-1 saves your work (a couple of seconds after you stop touching it, only while stopped) the clock pauses for a moment (about 50 ms), so a following DAW may show a brief wobble then.
   - `USB` or `TRS`: the FM-1 follows the MIDI clock coming in over USB or the TRS jack. START plays from step 1, CONTINUE carries on where STOP left it, STOP stops; PLAY and STOP on the FM-1 still work (PLAY starts on the next pulse). HOME shows `EXT` and the tempo it measures; SELECT and PRESETS don't change the tempo meanwhile. The arp, song mode and slots changed "at the next bar" all follow the clock. If the clock stops for half a second, the FM-1 carries on at its own tempo.
-- SYSTEM 2 also shows the processor load (CPU NOW / PEAK). OCT− + OCT+ together resets PEAK.
+- SYSTEM 2 also shows the processor load (CPU NOW / PEAK) and **USB REC DROPS**: how many gaps there have been in the audio sent over USB while a computer records the FM-1. Stopping or pausing the DAW also adds to it. OCT− + OCT+ together resets both.
 - **LATCH** (SYSTEM 3): what loading a sound does to a track's LATCH.
   - `FROM SOUND` (`SOUND` on the knob; the default, as GR!MM 1.0): the sound brings the LATCH it was saved with.
   - `ALWAYS OFF` (`OFF` on the knob): loading a sound sets the track's LATCH off (latched notes stop), so every sound starts unlatched, whatever was saved in it. You can still latch it by hand any time, with EDIT's LATCH or **SEL + OCT+**.
@@ -474,7 +476,7 @@ Turn **PRESETS** to step through them by category, then your own.
 | ARP | (alone) | Arpeggiator on/off |
 | REC | (alone, ~1 s) | Clear the selected track's pattern |
 | HOME | (alone) | System settings |
-| — | OCT− + OCT+ together | Reset CPU PEAK |
+| — | OCT− + OCT+ together | Reset CPU PEAK and USB REC DROPS |
 
 ---
 
@@ -484,6 +486,9 @@ Turn **PRESETS** to step through them by category, then your own.
 - **PHYS plays at most four notes at once** (it's the heaviest source). A fifth PHYS note takes the voice of a PHYS note that is fading out (released) if there is one; only when four PHYS notes are all on (held or latched) does it take the oldest of them.
 - **Looping MIDI from a DAW:** if a note arrives again before its note-off (a loop point), the note simply goes on: the arp isn't restarted, and the late note-off of the earlier one doesn't stop the new one. ALL NOTES OFF (CC 123, which DAWs send on stop) lets go of every note MIDI is holding; latched notes stay.
 - **Your sounds, slots A–D, settings and samples survive firmware updates.**
+- **CPU FULL: NOTE DROPPED:** the FM-1 has too much to play at once. It lets go of fading and generated notes first and keeps the notes you hold and the latched ones.
+- **After an unexpected restart** the header says why for a moment at power-on: `WATCHDOG RESET` (the FM-1 froze and restarted itself) or `LOW VOLTAGE RESET` (the power supply dipped).
+- **Factory sounds never switch chord mode on** when you load them. GREGORIAN, CATHEDRAL CHOIR and NUNS have their chord type set (GREGORIAN: FIFTH), so hold SEL to hear them as chords.
 - **Loudness:** GR!MM 2.0 keeps 6 dB of headroom: up to three quarters of MASTER everything plays 6 dB quieter than in 1.0 (sounds and projects are unchanged, only the output), and the last quarter of MASTER brings it back up to 1.0's level. A limiter at the very end means the output never clips, whatever LEVEL, chords or DRIVE do; at the top of MASTER the loudest chords are limited a little.
 - **MIDI IN:** over USB, and on the **TRS jack** (3.5 mm, MIDI IN only) with a TRS-to-DIN MIDI adapter. (TRS adapters come in different wirings; which one the FM-1's jack needs is still being tested, and this manual will say once it's confirmed.) Notes and CCs from the jack go exactly where USB's do (MIDI CHANNEL, MIDI LEARN); SysEx from the jack is ignored.
 - **Samples:** load your own WAV files into the four slots with the [editor](#15-the-editor) (or, optionally, `tools/fm1_sample_upload.py`, see the README). SYSTEM 2's SAMPLES brings the factory samples back.
