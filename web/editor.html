@@ -13,14 +13,15 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 fill=%22%230b0b0a%22/%3E%3Crect x=%223%22 y=%223%22 width=%2210%22 height=%2210%22 fill=%22%23c8321e%22/%3E%3C/svg%3E">
 <style>
 @font-face { font-family: "Press Start 2P"; src: url("PressStart2P-Regular.ttf") format("truetype"); font-display: block; }
-:root { --k: #0b0b0a; --d: #26251f; --m: #5e5b54; --l: #b8b4a9; --w: #e8e4d8; --a: #c8321e; color-scheme: dark; }
+:root { --k: #0b0b0a; --d: #26251f; --m: #5e5b54; --n: #8f887b; --l: #b8b4a9; --w: #e8e4d8; --a: #c8321e; --f: #ff6a3d; color-scheme: dark; }
+/* --m: off, empty, disabled things; --n: help text (as the hub's --ash); --f: keyboard focus (the hub's ember) */
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--k); color: var(--l); }
 body { font: 13px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
 .px, h1, h2, h3, button, label, select, input, nav a, .slot, table { font-family: "Press Start 2P", monospace; font-size: 8px; line-height: 1.6; }
 header { display: flex; gap: 6px; padding: 6px; }
-header .tag { background: var(--a); color: var(--k); padding: 8px 10px; font-size: 16px; }
-header .bar { flex: 1; background: var(--d); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+header .tag { background: var(--a); color: var(--k); padding: 8px 10px; font-size: 16px; text-decoration: none; }
+header .bar { flex: 1; min-width: 0; background: var(--d); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 0 12px; }
 header .bar span { font-size: 8px; }
 header .bar b { font-size: 16px; font-weight: normal; color: var(--l); }
 #conn { color: var(--m); }
@@ -35,7 +36,8 @@ section { display: none; }
 section.on { display: block; }
 h2 { font-size: 16px; font-weight: normal; margin: 6px 0 12px; color: var(--w); }
 h3 { font-weight: normal; color: var(--m); margin: 16px 0 6px; }
-p.note { color: var(--m); max-width: 60em; margin: 6px 0; }
+p.note, footer.note { color: var(--n); }
+p.note { max-width: 60em; margin: 6px 0; }
 button { background: var(--d); color: var(--w); border: 2px solid var(--m); padding: 8px 10px; cursor: pointer; }
 button:hover { border-color: var(--l); }
 button.go { background: var(--a); color: var(--k); border-color: var(--a); }
@@ -51,9 +53,11 @@ select, input[type=text], input[type=number] { background: var(--k); color: var(
 table.kv td { padding: 3px 14px 3px 0; }
 table.kv td:first-child { color: var(--m); }
 .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 3px; }
-.slot { background: var(--d); padding: 7px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 2px solid transparent; }
+.slot { background: var(--d); padding: 7px 8px; cursor: pointer; overflow-wrap: anywhere; border: 2px solid transparent; }   /* (the name whole, never cut) */
+.slot .src { display: block; color: var(--n); font-size: 8px; margin-top: 3px; }
 .slot .n { color: var(--m); }
 .slot.empty { color: var(--m); }
+.slot.sel .src { color: var(--l); }
 .slot.sel { border-color: var(--a); }
 .slot.dirty::after { content: " *"; color: var(--a); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
@@ -69,6 +73,7 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 18px; background: var
 .ops td { padding: 2px 4px 2px 0; vertical-align: middle; }
 .ops td.o { color: var(--w); width: 34px; }
 .ops input[type=range] { margin: 0; }
+.ops input[type=range] { min-width: 56px; }
 .ops .v { color: var(--w); width: 56px; padding-right: 16px; text-align: right; }
 canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pixelated; background: var(--k); margin-top: 6px; }
 .toggle { border-color: var(--m); }
@@ -96,22 +101,47 @@ canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pix
 .play .keys { flex: 1 1 360px; min-width: 0; }
 .pickbar { position: sticky; top: 46px; z-index: 2; background: var(--k); padding: 4px 0; }
 a.lnk { color: var(--l); }
+/* the drip under the header: the hub's, in this page's colours */
+.drip { height: 22px; margin: 0 6px 10px; background:
+  linear-gradient(var(--d), var(--d)) 0 0 / 100% 6px no-repeat,
+  linear-gradient(var(--a), var(--a)) 8% 6px / 6px 9px no-repeat,
+  linear-gradient(var(--a), var(--a)) 21% 6px / 6px 16px no-repeat,
+  linear-gradient(var(--a), var(--a)) 37% 6px / 6px 6px no-repeat,
+  linear-gradient(var(--a), var(--a)) 52% 6px / 6px 14px no-repeat,
+  linear-gradient(var(--a), var(--a)) 68% 6px / 6px 8px no-repeat,
+  linear-gradient(var(--a), var(--a)) 83% 6px / 6px 16px no-repeat,
+  linear-gradient(var(--a), var(--a)) 95% 6px / 6px 7px no-repeat; }
+/* keyboard focus: seen on everything that takes it */
+a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, nav a:focus-visible, .slot:focus-visible,
+input[type=range]:focus-visible { outline: 3px solid var(--f); outline-offset: 2px; }
+.ops-box { overflow-x: auto; }
+@media (max-width: 599px) {
+  .wrap { flex-direction: column; min-height: 0; }
+  nav { width: auto; flex-direction: row; overflow-x: auto; padding-bottom: 6px; gap: 4px; }
+  nav a { flex: none; white-space: nowrap; }
+  html, body { overflow-x: hidden; }
+  header .tag { font-size: 12px; }
+  .play { gap: 6px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .slots { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
 </style>
 </head>
 <body>
 <header>
-  <div class="tag px">GR!MM</div>
-  <div class="bar"><b class="px">EDITOR</b><span><a class="lnk px" href="index.html">DEMO</a> · <span id="conn" class="px">NOT CONNECTED</span></span></div>
+  <a class="tag px" href="hub.html" aria-label="GR!MM: the hub">GR!MM</a>
+  <div class="bar"><b class="px">EDITOR 2.0</b><span><a class="lnk px" href="index.html">WEB EMULATOR</a> · <span id="conn" class="px">NOT CONNECTED</span></span></div>
 </header>
+<div class="drip" role="presentation"></div>
 <div class="wrap">
   <nav>
-    <a data-s="connect">CONNECT</a>
-    <a data-s="sounds">SOUNDS</a>
-    <a data-s="editor">SOUND EDITOR</a>
-    <a data-s="samples">SAMPLES</a>
-    <a data-s="fx">FX</a>
-    <a data-s="settings">SETTINGS</a>
-    <a data-s="backup">BACKUP</a>
+    <a href="#connect" data-s="connect">CONNECT</a>
+    <a href="#sounds" data-s="sounds">SOUNDS</a>
+    <a href="#editor" data-s="editor">SOUND EDITOR</a>
+    <a href="#samples" data-s="samples">SAMPLES</a>
+    <a href="#fx" data-s="fx">FX</a>
+    <a href="#settings" data-s="settings">SETTINGS</a>
+    <a href="#backup" data-s="backup">BACKUP</a>
   </nav>
   <main>
     <div id="msgs"><div id="msg" class="px">LOADING GR!MM…</div><div id="prog"><i></i></div></div>
@@ -202,12 +232,13 @@ a.lnk { color: var(--l); }
         <label class="px"><input type="checkbox" id="smp-norm" checked> NORMALISE</label></div>
       <div id="smp"></div>
       <p class="note">Any WAV (8 to 32 bit, float, mono or stereo, any rate) becomes mono, 22050 Hz, IMA ADPCM, as
-        tools/fm1_sample_upload.py makes it; a slot holds 6.64 s (longer: cut, with a short fade). The root note is C4
-        unless the file name has one ("drone_A2.wav"). A name is 8 characters (the slot's, what the FM-1 shows): a longer
-        one keeps its number ("Sample-002": SAMP-002). NORMALISE (on as it comes) brings every WAV to the same loudness;
-        off, a sample keeps its own level (quiet ones stay quiet, as recorded). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
-        NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot that holds
-        nothing.</p>
+        tools/fm1_sample_upload.py makes it; GR!MM 2.0's encoder no longer clicks on bright samples. A slot holds 6.64 s
+        (longer: cut, with a short fade). The root note is C4 unless the file name has one ("drone_A2.wav"). A name is
+        8 characters (the slot's, what the FM-1 shows): a longer one keeps its number ("Sample-002": SAMP-002).</p>
+      <p class="note">NORMALISE (switched on as the page opens) brings every WAV to the same loudness; switched off, a
+        sample keeps its own level (quiet ones stay quiet, as recorded). RESTORE FACTORY SAMPLES writes GR!MM's four
+        (URCHIN, LEAVE, NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot
+        that holds nothing. A BACKUP holds the four slots too.</p>
     </section>
 
     <section id="s-fx">
@@ -249,11 +280,11 @@ a.lnk { color: var(--l); }
         file as tools/fm1_editor_test.py makes). Restoring first makes a backup of what the FM-1 has now (downloaded),
         then writes everything, then reads it back to check; a sample slot that already holds the same sample is not
         written again, one empty in the backup is emptied. An older backup (GR!MM 1.0's, without samples) restores the
-        rest and leaves the sample slots as they are. GR!MM 1.0 cannot send its samples back: keep their WAV files.</p>
+        rest and leaves the sample slots as they are.</p>
     </section>
     <footer class="note">
-      <p><b><a class="lnk" href="index.html">Try the GR!MM demo</a></b>: the FM-1's panel in your browser, the same firmware.</p>
-      <p>GR!MM · <a class="lnk" href="LICENSE">GPL-3.0-only</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm">source</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a class="lnk" href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a class="lnk" href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a class="lnk" href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a class="lnk" href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · choir wavetables: made from <a class="lnk" href="https://doi.org/10.5281/zenodo.1442513">VocalSet</a> (Julia Wilkins, Prem Seetharaman, Alison Wahl, Bryan Pardo, Northwestern University), <a class="lnk" href="LICENSES/CC-BY-4.0.txt">CC BY 4.0</a>, single cycles made from its recordings · built with Emscripten (<a class="lnk" href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a class="lnk" href="LICENSES/MIT-musl.txt">MIT</a>)</p>
+      <p><b><a class="lnk" href="index.html">Try the GR!MM web emulator</a></b>: the FM-1's panel in your browser, the same firmware.</p>
+      <p>GR!MM · <a class="lnk" href="LICENSE">GPL-3.0-only</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm">source</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a class="lnk" href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a class="lnk" href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a class="lnk" href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a class="lnk" href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · choir recordings: <a class="lnk" href="https://doi.org/10.5281/zenodo.1442513">VocalSet</a> (Wilkins et al., 2018), <a class="lnk" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> · choir wavetables: made from <a class="lnk" href="https://doi.org/10.5281/zenodo.1442513">VocalSet</a> (Julia Wilkins, Prem Seetharaman, Alison Wahl, Bryan Pardo, Northwestern University), <a class="lnk" href="LICENSES/CC-BY-4.0.txt">CC BY 4.0</a>, single cycles made from its recordings · built with Emscripten (<a class="lnk" href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a class="lnk" href="LICENSES/MIT-musl.txt">MIT</a>)</p>
       <p>Built on Dinghy (zvenson), Felucca (Leo Kuroshita, Hügelton Instruments) and SLOOP (isod89); the editor's
         sections and live editing follow SLOOP's editor. M-VAVE and FM-1 are trademarks of their owners; GR!MM is not
         affiliated with or endorsed by them.</p>

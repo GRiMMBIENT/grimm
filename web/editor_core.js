@@ -374,6 +374,26 @@ function pdOf(r) {                                          // a PHASE sound's L
            denv: r ? r[21] & 127 : 0, ddec: r ? r[22] & 127 : 0,   // ENV, its DECAY, PITCH ENV a signed byte, its
            penv: r ? Math.max(-64, Math.min(63, r[23] << 24 >> 24)) : 0, pdec: r ? r[24] & 127 : 0 };   // DECAY); none (another source,
 }                                                            // saved before): all off
+// GR!MM 2.0's sound settings, as the FM-1's screens name them (SOURCE: TYPE, GLIDE; LINE 2; PHASE ENV): the SOUND EDITOR
+// draws its controls from these, the tests check them against the sheets (controls-2.0.csv)
+export const VOICE_TYPES = ["SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"];
+export const LINE2_WAVES = ["SAME", "SAW", "SQR", "PLS", "DSIN", "SPLS", "RSAW", "RTRI", "RTRP"];
+export const timeText = (ms) => {                          // ui.c's ui_time: "5 MS", "120 MS", "1.5 S", "12 S"
+  ms = Math.round(ms);
+  return ms < 995 ? `${ms} MS` : ms < 9950 ? `${(Math.round(ms / 100) / 10).toFixed(1)} S` : `${Math.round(ms / 1000)} S`;
+};
+export const glideText = (v) => (v ? timeText(10 * Math.pow(2, v * 12 / 192)) : "OFF");   // OFF, 10 MS .. 2.5 S
+export const decayText = (v) => timeText(10 * Math.pow(2, v * 15 / 192));                  // 10 MS .. 9.7 S
+export const pctText = (v, off) => (v ? `${Math.round((v * 100 + 63) / 127)}%` : off);     // DCW: 1 .. 127 = 1 .. 100 %
+export const PITCH_TEXT = (v) => (v ? `${v > 0 ? "+" : ""}${v} ST` : "OFF");
+export const PHASE_PD0 = { ring: 0, noise: 0, wave: 0, dcw: 0, denv: 0, ddec: 0, penv: 0, pdec: 0 };   // (all off)
+// the controls (label, min, max, default), in the SOUND EDITOR's order
+export const V2_SOUND_CONTROLS = {
+  glide: ["GLIDE", 0, 127, 0],                               // every source
+  vtype: ["VOICE TYPE", 0, 3, 0],                            // VOICE
+  line2: [["WAVE", 0, 8, 0], ["DCW", 0, 127, 0], ["RING", 0, 1, 0], ["NOISE", 0, 1, 0]],   // PHASE, under "PHASE LINE 2"
+  env: [["DCW", 0, 127, 0], ["D DEC", 0, 127, 0], ["PITCH", -64, 63, 0], ["P DEC", 0, 127, 0]],   // PHASE, under "PHASE ENV"
+};
 export function buildRecord(s) {
   const r = new Uint8Array(SND);
   r[0] = 0x54, r[1] = s.cat, r[2] = Math.max(1, Math.min(99, s.num || 1)), r[3] = s.eng;

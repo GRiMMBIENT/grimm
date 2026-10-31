@@ -10,7 +10,8 @@
 import { Client, MidiTransport, VirtualFM1, LiveSender, findFM1, HEAD, CMD, OBJ, PROTOS, EditorError, emptyRecord, isEmpty,
          recordOk, parseSound, buildRecord, soundTitle, makeBackup, checkBackup, restoreBackup, makeSlot, noteFromName,
          sampleName, noteName, pack7, hex, SET_V1, SET_V2, MCH_NAMES, CLOCK_NAMES, settingsOf, withSettings,
-         sameSettings, FX_PAGES, FT_NAMES, checkSamples, restoreSamples } from "./editor_core.js";
+         sameSettings, FX_PAGES, FT_NAMES, checkSamples, restoreSamples, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
+         glideText, decayText, pctText, PITCH_TEXT } from "./editor_core.js";
 
 const $ = (id) => document.getElementById(id);
 function el(tag, attrs, parent, text) {
@@ -84,7 +85,7 @@ function show(s) {
   document.querySelectorAll("section").forEach((x) => x.classList.toggle("on", x.id === "s-" + s));
   if (s === "samples" && conn) sampleInfo();
 }
-document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", () => { show(a.dataset.s); history.replaceState(null, "", "#" + a.dataset.s); }));
+document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); show(a.dataset.s); history.replaceState(null, "", "#" + a.dataset.s); }));
 
 // ------------------------------------------------------------------ the engine: GR!MM in an AudioWorklet (sound, screen)
 let ac = null, node = null, engReady = null;
@@ -141,7 +142,10 @@ function setConn(c) {
   s.classList.toggle("on", !!c);
   const t = $("info");
   t.textContent = "";
-  if (c) {
+  if (!c) {                                                  // (not connected: this page's own GR!MM, which it plays and edits with)
+    [["THIS PAGE'S GR!MM", `GR!MM ${meta.version}`], ["FACTORY SOUNDS", meta.factory.length]]
+      .forEach(([k, v]) => { const r = el("tr", {}, t); el("td", {}, r, k); el("td", {}, r, String(v)); });
+  } else {
     const i = c.info;
     [["CONNECTED TO", c.kind === "virtual" ? "THE VIRTUAL FM-1 (THIS PAGE)" : `THE FM-1 OVER USB (${c.transport.output.name})`],
      ["FIRMWARE", "GR!MM " + i.firmware], ["EDITOR PROTOCOL", i.proto + (c.live ? " (LIVE EDITING)" : " (NO LIVE EDITING: INSTALL 26B2)")],
@@ -158,7 +162,7 @@ async function connectFM1() {
     const access = await navigator.requestMIDIAccess({ sysex: true });
     say("LOOKING FOR GR!MM ON THE MIDI PORTS…");
     const p = await findFM1(access, midiLog);
-    if (!p) throw new EditorError("NO FM-1 WITH GR!MM 26A OR LATER FOUND (USB DATA CABLE? ANOTHER APP ON ITS MIDI PORT?) SEE THE MIDI LOG", 0);
+    if (!p) throw new EditorError("NO FM-1 WITH GR!MM FOUND (USB DATA CABLE? ANOTHER APP ON ITS MIDI PORT?) SEE THE MIDI LOG", 0);
     const transport = new MidiTransport(p.input, p.output, midiLog), client = new Client(transport), info = await client.info();
     if (!PROTOS.includes(info.proto)) throw new EditorError(`THE FM-1 SPEAKS EDITOR PROTOCOL ${info.proto}; THIS PAGE KNOWS ${PROTOS.join(" AND ")}`, 0);
     setConn({ client, info, kind: "fm1", transport, live: info.proto >= 2 });
@@ -270,11 +274,19 @@ function drawTitle() {
 }
 
 // ------------------------------------------------------------------ sounds
-function slotLabel(r, i, fact) {
+function slotLabel(r, i, fact) {                             // -> [number, the full name, its source ("" empty)]
   const n = String(i + 1).padStart(2, "0");
-  if (!fact && isEmpty(r)) return [n, "— EMPTY —"];
+  if (!fact && isEmpty(r)) return [n, "— EMPTY —", ""];
   const s = parseSound(r, meta), name = fact ? meta.factory[i].name : soundTitle(r, meta);
-  return [n, `${name} (${meta.engines[s.eng].name})`];
+  return [n, name, meta.engines[s.eng].name];
+}
+function slotBox(parent, [n, name, src], cls, pickIt, loadIt) {   // a slot: its name whole, its source a tag under it
+  const d = el("div", { cls: "slot" + cls, tabindex: 0, role: "button" }, parent);
+  el("span", { cls: "n" }, d, n + " "), d.append(name);
+  if (src) el("small", { cls: "src" }, d, src);
+  d.onclick = pickIt, d.ondblclick = loadIt;
+  d.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickIt(); } });
+  return d;
 }
 const pickRec = () => (pick.fact ? Uint8Array.from(meta.factory[pick.i].rec) : user[pick.i]);
 const pickName = () => (pick.fact ? `FACTORY ${pick.i + 1}: ${meta.factory[pick.i].name}` :
@@ -282,18 +294,18 @@ const pickName = () => (pick.fact ? `FACTORY ${pick.i + 1}: ${meta.factory[pick.
 function drawSlots() {
   const u = $("user"), f = $("factory");
   u.textContent = f.textContent = "";
+  const kept = document.activeElement && document.activeElement.classList.contains("slot") ?
+    [document.activeElement.parentNode.id, [...document.activeElement.parentNode.children].indexOf(document.activeElement)] : null;
   user.forEach((r, i) => {
-    const [n, t] = slotLabel(r, i, false), on = !pick.fact && pick.i === i;
-    const d = el("div", { cls: "slot" + (isEmpty(r) ? " empty" : "") + (on ? " sel" : "") + (dirty[i] ? " dirty" : ""),
-                          onclick: () => { pick = { fact: false, i }; drawSlots(); }, ondblclick: () => loadTo(selT) }, u);
-    el("span", { cls: "n" }, d, n + " "), d.append(t);
+    const on = !pick.fact && pick.i === i;
+    slotBox(u, slotLabel(r, i, false), (isEmpty(r) ? " empty" : "") + (on ? " sel" : "") + (dirty[i] ? " dirty" : ""),
+            () => { pick = { fact: false, i }; drawSlots(); }, () => loadTo(selT));
   });
   meta.factory.forEach((x, i) => {
-    const [n, t] = slotLabel(Uint8Array.from(x.rec), i, true);
-    const d = el("div", { cls: "slot" + (pick.fact && pick.i === i ? " sel" : ""), onclick: () => { pick = { fact: true, i }; drawSlots(); },
-                          ondblclick: () => loadTo(selT) }, f);
-    el("span", { cls: "n" }, d, n + " "), d.append(t);
+    slotBox(f, slotLabel(Uint8Array.from(x.rec), i, true), pick.fact && pick.i === i ? " sel" : "",
+            () => { pick = { fact: true, i }; drawSlots(); }, () => loadTo(selT));
   });
+  if (kept) { const k = $(kept[0]).children[kept[1]]; if (k) k.focus(); }   // (a redraw keeps the keyboard where it was)
   $("pickname").textContent = pickName();
   $("readat").textContent = readAt;
   const es = $("ed-slot"), keep = es.value;
@@ -458,29 +470,24 @@ function drawEditor() {
     drawEditor(), drawTracks();
   });
   toggle(g, ["LATCH OFF", "LATCH ON"], () => s.latch, (v) => { s.latch = v; });
-  control(g, "GLIDE", 0, 127, () => s.glide || 0, (v) => { s.glide = v; },   // (GR!MM 2.0: SOURCE's KNOB 4)
-          (v) => (v ? `${Math.round(10 * Math.pow(2, v * 12 / 192))} MS` : "OFF"));
-  if (s.eng === 3)                                           // (GR!MM 2.0: VOICE's TYPE, as SOURCE's KNOB 3)
-    choice(g, "TYPE", ["SOLO", "GREGORIAN", "NUNS", "CATHEDRAL"], () => s.vtype || 0, (v) => { s.vtype = v; });
-  if (s.eng === 6) {                                         // (GR!MM 2.0: PHASE's LINE 2 page)
-    s.pd = s.pd || { ring: 0, noise: 0, wave: 0, dcw: 0, denv: 0, ddec: 0, penv: 0, pdec: 0 };
-    const p2 = el("div", { cls: "grp" }, ed);
-    el("h3", {}, p2, "PHASE: LINE 2");
-    choice(p2, "WAVE", ["SAME", "SAW", "SQR", "PLS", "DSIN", "SPLS", "RSAW", "RTRI", "RTRP"], () => s.pd.wave || 0,
-           (v) => { s.pd.wave = v; });
-    control(p2, "DCW", 0, 127, () => s.pd.dcw || 0, (v) => { s.pd.dcw = v; },
-            (v) => (v ? `${Math.round((v * 100 + 63) / 127)}%` : "SAME"));
-    toggle(p2, ["RING OFF", "RING ON"], () => s.pd.ring, (v) => { s.pd.ring = v; });
-    toggle(p2, ["NOISE OFF", "NOISE ON"], () => s.pd.noise, (v) => { s.pd.noise = v; });
-    const pe = el("div", { cls: "grp" }, ed);                // (GR!MM 2.0: PHASE ENV page)
-    el("h3", {}, pe, "PHASE: ENV");
-    const dec = (v) => { const ms = 10 * Math.pow(2, v * 15 / 192); return ms < 995 ? `${Math.round(ms)} MS` : `${(ms / 1000).toFixed(1)} S`; };
-    control(pe, "DCW ENV", 0, 127, () => s.pd.denv || 0, (v) => { s.pd.denv = v; },
-            (v) => (v ? `${Math.round((v * 100 + 63) / 127)}%` : "OFF"));
-    control(pe, "DCW DECAY", 0, 127, () => s.pd.ddec || 0, (v) => { s.pd.ddec = v; }, dec);
-    control(pe, "PITCH ENV", -64, 63, () => s.pd.penv || 0, (v) => { s.pd.penv = v; },
-            (v) => (v ? `${v > 0 ? "+" : ""}${v} ST` : "OFF"));
-    control(pe, "PITCH DECAY", 0, 127, () => s.pd.pdec || 0, (v) => { s.pd.pdec = v; }, dec);
+  const V2 = V2_SOUND_CONTROLS;                               // (GR!MM 2.0's settings: names, ranges as on the FM-1)
+  control(g, V2.glide[0], V2.glide[1], V2.glide[2], () => s.glide || 0, (v) => { s.glide = v; }, glideText);   // (SOURCE's KNOB 4: every source)
+  if (s.eng === 3)                                           // (VOICE's TYPE, as SOURCE's KNOB 3)
+    choice(g, V2.vtype[0], VOICE_TYPES, () => s.vtype || 0, (v) => { s.vtype = v; });
+  if (s.eng === 6) {                                         // (PHASE's LINE 2 page, then PHASE ENV)
+    s.pd = s.pd || { ...PHASE_PD0 };
+    const p2 = el("div", { cls: "grp" }, ed), [lw, ld, lr, ln] = V2.line2;
+    el("h3", {}, p2, "PHASE LINE 2");
+    choice(p2, lw[0], LINE2_WAVES, () => s.pd.wave || 0, (v) => { s.pd.wave = v; });
+    control(p2, ld[0], ld[1], ld[2], () => s.pd.dcw || 0, (v) => { s.pd.dcw = v; }, (v) => pctText(v, "SAME"));
+    toggle(p2, [`${lr[0]} OFF`, `${lr[0]} ON`], () => s.pd.ring, (v) => { s.pd.ring = v; });
+    toggle(p2, [`${ln[0]} OFF`, `${ln[0]} ON`], () => s.pd.noise, (v) => { s.pd.noise = v; });
+    const pe = el("div", { cls: "grp" }, ed), [de, dd, pi, pp] = V2.env;
+    el("h3", {}, pe, "PHASE ENV");
+    control(pe, de[0], de[1], de[2], () => s.pd.denv || 0, (v) => { s.pd.denv = v; }, (v) => pctText(v, "OFF"));
+    control(pe, dd[0], dd[1], dd[2], () => s.pd.ddec || 0, (v) => { s.pd.ddec = v; }, decayText);
+    control(pe, pi[0], pi[1], pi[2], () => s.pd.penv || 0, (v) => { s.pd.penv = v; }, PITCH_TEXT);
+    control(pe, pp[0], pp[1], pp[2], () => s.pd.pdec || 0, (v) => { s.pd.pdec = v; }, decayText);
   }
 
   g = el("div", { cls: "grp" }, ed);
@@ -527,7 +534,7 @@ function drawFM() {
   const cv = el("canvas", { id: "alg", width: 216, height: 104 }, b);
   control(a, "ALGO", 0, 31, () => s.fm.alg, (v) => { s.fm.alg = v; drawAlg(cv); }, (v) => String(v + 1).padStart(2, "0"));
   control(a, "FEEDBACK", 0, 7, () => s.fm.fb, (v) => { s.fm.fb = v; drawAlg(cv); });
-  const t = el("table", { cls: "ops" }, f), h = el("tr", {}, t);
+  const t = el("table", { cls: "ops" }, el("div", { cls: "ops-box" }, f)), h = el("tr", {}, t);
   ["", "RATIO", "", "FINE", "", "LEVEL", "", "ATTACK", "", "DECAY", ""].forEach((x) => el("td", {}, h, x));
   s.fm.ops.forEach((o, i) => {
     const r = el("tr", {}, t);

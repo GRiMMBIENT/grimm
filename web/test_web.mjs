@@ -20,7 +20,8 @@ import { inflateSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { Client, VirtualFM1, LiveSender, MidiTransport, findFM1, OBJ, parseSound, buildRecord, makeBackup, checkBackup,
          restoreBackup, makeSlot, recordOk, unpack7, hex, sampleName, SET_V1, SET_V2, settingsOf, withSettings,
-         sameSettings, crc32, checkSamples, restoreSamples, EditorError } from "./editor_core.js";
+         sameSettings, crc32, checkSamples, restoreSamples, EditorError, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
+         glideText, decayText, pctText, PITCH_TEXT } from "./editor_core.js";
 
 let ex, data, size, started = false, rewinding = false;
 const { instance } = await WebAssembly.instantiate(readFileSync("web/dist/grimm.wasm"), {
@@ -342,6 +343,47 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
           pb.glide === 77 && pb.latch === ps.latch,
           `editor: PHASE's LINE 2 and GLIDE set live on track 3, read back (${JSON.stringify(pb.pd)}, GLIDE ${pb.glide}); a factory sound's all off`);
   }
+  {                                                          // (the SOUND EDITOR's GR!MM 2.0 controls, live, then STORE IN SLOT)
+    const C = V2_SOUND_CONTROLS, live = async (t, sound) => { await cl.trackSet(t, buildRecord(sound)); return parseSound((await cl.track(t)).rec, meta); };
+    check(C.vtype.join() === "VOICE TYPE,0,3,0" && VOICE_TYPES.join() === "SOLO,GREGORIAN,NUNS,CATHEDRAL" &&
+          C.glide.join() === "GLIDE,0,127,0" && C.line2.map((c) => c.join(":")).join() === "WAVE:0:8:0,DCW:0:127:0,RING:0:1:0,NOISE:0:1:0" &&
+          C.env.map((c) => c.join(":")).join() === "DCW:0:127:0,D DEC:0:127:0,PITCH:-64:63:0,P DEC:0:127:0" &&
+          LINE2_WAVES.join() === "SAME,SAW,SQR,PLS,DSIN,SPLS,RSAW,RTRI,RTRP",
+          "editor: SOUND EDITOR: VOICE TYPE, GLIDE, PHASE LINE 2 (WAVE, DCW, RING, NOISE) and PHASE ENV (DCW, D DEC, PITCH, P DEC): names, ranges, defaults as the FM-1's sheet");
+    check(glideText(0) === "OFF" && glideText(1) === "10 MS" && glideText(127) === "2.5 S" && decayText(0) === "10 MS" && decayText(127) === "9.7 S" &&
+          pctText(0, "SAME") === "SAME" && pctText(127, "OFF") === "100%" && PITCH_TEXT(0) === "OFF" && PITCH_TEXT(-64) === "-64 ST" && PITCH_TEXT(63) === "+63 ST",
+          "editor: SOUND EDITOR: the texts (GLIDE OFF, 10 MS .. 2.5 S; DECAY 10 MS .. 9.7 S; PITCH -64 .. +63 ST) as the FM-1 shows them");
+    let ok = true, bad = "";
+    for (let eng = 0; eng < 7; eng++) {                       // GLIDE: every source, both ends, live on the track
+      const g = parseSound(Uint8Array.from(meta.factory[0].rec), meta);
+      g.eng = eng, g.k = g.k.map((x, k) => Math.min(x, meta.engines[eng].max[k]));
+      for (const gv of [0, 1, 64, 127]) { g.glide = gv; const b = await live(2, g); if (b.glide !== gv || b.eng !== eng || b.latch !== g.latch) ok = false, bad += ` ${eng}:${gv}`; }
+    }
+    check(ok, `editor: SOUND EDITOR: GLIDE live on every one of the 7 sources, read back${bad}`);
+    const vo = parseSound(Uint8Array.from(meta.factory[40].rec), meta);
+    ok = true;
+    for (let ty = 0; ty < 4; ty++) { vo.vtype = ty; const b = await live(2, vo); if (b.vtype !== ty || b.eng !== 3) ok = false; }
+    check(ok, "editor: SOUND EDITOR: VOICE TYPE SOLO, GREGORIAN, NUNS, CATHEDRAL live, read back");
+    const ph = parseSound(Uint8Array.from(meta.factory[3].rec), meta);
+    ok = true;
+    for (const pd of [{ ring: 1, noise: 0, wave: 8, dcw: 127, denv: 127, ddec: 127, penv: 63, pdec: 127 },
+                      { ring: 0, noise: 1, wave: 1, dcw: 1, denv: 1, ddec: 1, penv: -64, pdec: 1 }, { ...PHASE_PD0 }]) {
+      ph.pd = { ...pd }, ph.glide = 33;
+      const b = await live(2, ph);
+      if (JSON.stringify(b.pd) !== JSON.stringify(pd) || b.glide !== 33) ok = false;
+    }
+    check(ok, "editor: SOUND EDITOR: PHASE LINE 2 and PHASE ENV, both ends of every control, live, read back");
+    const st = parseSound(Uint8Array.from(meta.factory[3].rec), meta);   // STORE IN SLOT: all of them, into slot 12, read back
+    Object.assign(st, { name: "ALL V2", glide: 90 });
+    Object.assign(st.pd, { ring: 1, noise: 1, wave: 4, dcw: 70, denv: 50, ddec: 80, penv: -12, pdec: 40 });
+    const sr = buildRecord(st);
+    await cl.put(OBJ.SND + 11, sr, info.fmt);
+    const sb = parseSound(await cl.get(OBJ.SND + 11, 64), meta);
+    check(JSON.stringify(sb) === JSON.stringify(parseSound(sr, meta)) && sb.glide === 90 && sb.pd.penv === -12 && sb.pd.ddec === 80 && sb.name === "ALL V2",
+          "editor: SOUND EDITOR: STORE IN SLOT keeps GLIDE and every PHASE setting, read back");
+    await cl.put(OBJ.SND + 11, new Uint8Array(64).fill(0xff), info.fmt);
+    await cl.trackSet(2, t0[2].rec);
+  }
   let sent = 0, last = -1, v = 0;
   const snd = new LiveSender(async () => { sent++, last = v; await new Promise((r) => setTimeout(r, 4)); }, 2);
   for (let i = 1; i <= 200; i++) { v = i; snd.set(0); if (i % 20 === 0) await new Promise((r) => setTimeout(r, 1)); }
@@ -378,6 +420,46 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const smp = await cl.smpInfo();
   check(smp.length === 4 && smp[0].state >= 0, `editor: the samples' INFO as the FM-1 sent it (${smp.map((s) => s.state < 0 ? "?" : s.name || "-").join(", ")})`);
   function eq(a, b) { return a.length === b.length && a.every((x, i) => x === b[i]); }
+}
+
+// the editor page's texts and looks (web/editor.html, editor.js, LICENSING.md): naming, credits, BACKUP, names whole, the hub's look
+{
+  const html = readFileSync("web/editor.html", "utf8"), js = readFileSync("web/editor.js", "utf8"), lic = readFileSync("LICENSING.md", "utf8");
+  const vf = await VirtualFM1.create(readFileSync("web/dist/grimm.wasm")), meta = vf.meta(), info = await new Client(vf).info();
+  mkdirSync("build/web", { recursive: true });                // (the page's script parses: it is a module, so a copy as .mjs)
+  writeFileSync("build/web/editor_check.mjs", js);
+  let syntax = "";
+  try { execFileSync(process.execPath, ["--check", "build/web/editor_check.mjs"], { stdio: "pipe" }); } catch (e) { syntax = String(e.stderr).split("\n").slice(0, 4).join(" "); }
+  check(!syntax, "editor page: web/editor.js parses" + (syntax ? ` (${syntax})` : ""));
+  check(!/demo/i.test(html) && !/demo/i.test(js), 'editor page: the word "demo" is nowhere (page, script)');
+  check(/<a class="lnk px" href="index\.html">WEB EMULATOR<\/a>/.test(html) && />Try the GR!MM web emulator<\/a><\/b>/.test(html),
+        'editor page: the header link says WEB EMULATOR (to index.html), the footer "Try the GR!MM web emulator"');
+  const bk = html.slice(html.indexOf('id="s-backup"'), html.indexOf("</section>", html.indexOf('id="s-backup"')));
+  check(/four sample slots/.test(bk) && !/Samples are not in it/i.test(html) && !/keep their WAV files/.test(bk) && !/cannot send its samples/.test(html),
+        'editor page: BACKUP says it holds the four samples; the old "keep their WAV files" is gone');
+  check(/choir recordings: <a [^>]*>VocalSet<\/a> \(Wilkins et al\., 2018\), <a class="lnk" href="https:\/\/creativecommons\.org\/licenses\/by\/4\.0\/">CC BY 4\.0<\/a>/.test(html) &&
+        /choir recordings: VocalSet \(Wilkins et al\., 2018\), CC BY 4\.0/.test(lic) && lic.includes("https://creativecommons.org/licenses/by/4.0/") &&
+        ["Press Start 2P", "Terminus", "CC0 1.0", "Emscripten", "Dinghy", "Felucca", "SLOOP"].every((c) => html.includes(c)),
+        "editor page and LICENSING.md: the VocalSet credit (CC BY 4.0, its link) added, the old credits still there");
+  check(info.firmware === "2.0" && meta.version === "2.0" && info.factory === 44 && meta.factory.length === 44 && /EDITOR 2\.0/.test(html) &&
+        /"FIRMWARE", "GR!MM " \+ i\.firmware/.test(js) && /\["FACTORY SOUNDS", i\.factory\]/.test(js),
+        `editor page: CONNECT shows GR!MM ${info.firmware} and ${info.factory} factory sounds; the header EDITOR 2.0`);
+  const names = meta.factory.map((x) => x.name), choirs = ["GREGORIAN", "PLAINCHANT", "CATHEDRAL CHOIR", "NUNS"];
+  const srcs = meta.factory.map((x) => meta.engines[parseSound(Uint8Array.from(x.rec), meta).eng].name);
+  check(names.length === 44 && new Set(names).size === 44 && choirs.every((c) => names.some((n) => n.toUpperCase() === c)) &&
+        names.some((n) => n.length > 12) && srcs.every(Boolean) && /slotBox\(f, slotLabel/.test(js) && /el\("small", \{ cls: "src" \}/.test(js) &&
+        !/\.slot\s*\{[^}]*(text-overflow|white-space:\s*nowrap)/.test(html) && /\.slot \.src \{ display: block/.test(html),
+        `editor page: all 44 factory sounds by their full names (longest: ${names.reduce((a, n) => (n.length > a.length ? n : a), "")}), the source a tag on a second line, nothing cut`);
+  check(/id="smp-norm" checked> NORMALISE/.test(html) && /\$\("smp-norm"\)\.checked/.test(js) && /GR!MM 2\.0's encoder no longer clicks/.test(html),
+        "editor page: SAMPLES has the NORMALISE switch (on by default), its help text for V2.0");
+  check(/p\.note, footer\.note \{ color: var\(--n\)/.test(html) && /--n: #8f887b/.test(html) && /--m: #5e5b54/.test(html) &&
+        /class="tag px" href="hub\.html"/.test(html) && /<div class="drip" role="presentation">/.test(html) &&
+        /outline: 3px solid var\(--f\)/.test(html) && /--f: #ff6a3d/.test(html) && /<a href="#editor" data-s="editor">/.test(html) &&
+        /@media \(max-width: 599px\)[^]*nav \{[^}]*flex-direction: row; overflow-x: auto/.test(html),
+        "editor page: help text #8f887b, the GR!MM tag to hub.html, the drip, 3px #ff6a3d focus, the menu one scrolling row under 600 px");
+  check(/PHASE LINE 2/.test(js) && /PHASE ENV/.test(js) && /V2_SOUND_CONTROLS/.test(js) && /VOICE_TYPES/.test(js) && /glideText/.test(js) && /decayText/.test(js) &&
+        /b-store/.test(js),
+        "editor page: the SOUND EDITOR draws VOICE TYPE, GLIDE, PHASE LINE 2 and PHASE ENV from the sheet's names");
 }
 
 console.log(fail ? `test_web: ${fail} failed` : "test_web: all ok");
