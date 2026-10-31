@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="GR!MM: free dark-ambient firmware for the M-VAVE FM-1. Install, manual, web emulator, editor.">
+<title>GR!MM Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one narrow crypt-night column, like the FM-1's own screen grown tall: a lit header, then plain sections divided by drip rules. Single dark look on purpose (GR!MM's world). */
+:root {
+  --night: #0d0b0a;      /* the screen's black */
+  --stone: #17140f;      /* raised panels, like the screen's tiles */
+  --edge: #2e2a24;       /* tile borders */
+  --bone: #d8d2c4;       /* text, the logo's bone grey */
+  --ash: #8f887b;        /* secondary text */
+  --blood: #c8321e;      /* the eye's red */
+  --ember: #ff6a3d;      /* hover/focus */
+  --f-display: "Press Start 2P", "Courier New", monospace;
+  --f-body: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--night); color: var(--bone); }
+body { margin: 0; font: 22px/1.3 var(--f-body); }
+#sky { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.wrap { position: relative; z-index: 1; max-width: 860px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px; }
+a { color: var(--bone); }
+a:focus-visible, .btn:focus-visible { outline: 3px solid var(--ember); outline-offset: 3px; }
+h1, h2, h3, .label, .btn, .tag { font-family: var(--f-display); font-weight: normal; letter-spacing: .04em; }
+h2 { font-size: 15px; color: var(--blood); margin: 0 0 18px; text-wrap: balance; }
+h3 { font-size: 11px; margin: 0 0 8px; color: var(--bone); line-height: 1.6; }
+p { margin: 0; max-width: 62ch; }
+.muted { color: var(--ash); }
+
+/* header */
+header { display: grid; justify-items: center; text-align: center; gap: 18px; padding-block: 24px 12px; }
+.logo { display: grid; justify-items: center; gap: 0; width: min(364px, 86%); }
+#eye { width: 61.5%; aspect-ratio: 2 / 1; image-rendering: pixelated; }
+.word { width: 100%; image-rendering: pixelated; margin-top: -4%; }
+.line { font-family: var(--f-display); font-size: 11px; color: var(--ash); letter-spacing: .12em; line-height: 1.8; }
+.line b { color: var(--blood); font-weight: normal; }
+.pitch { font-size: 26px; max-width: 34ch; }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 6px; }
+.btn { display: inline-block; text-decoration: none; font-size: 12px; padding: 16px 18px; border: 3px solid var(--bone); color: var(--bone); background: var(--night); }
+.btn.main { background: var(--blood); border-color: var(--blood); color: #fff; }
+.btn:hover { border-color: var(--ember); color: var(--ember); }
+.btn.main:hover { background: var(--ember); border-color: var(--ember); color: #fff; }
+
+/* drip divider, the logo's bar */
+.drip { height: 22px; margin-block: 44px 28px; background:
+  linear-gradient(var(--edge), var(--edge)) 0 0 / 100% 6px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 8% 6px / 6px 9px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 21% 6px / 6px 16px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 37% 6px / 6px 6px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 52% 6px / 6px 14px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 68% 6px / 6px 8px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 83% 6px / 6px 16px no-repeat,
+  linear-gradient(var(--blood), var(--blood)) 95% 6px / 6px 7px no-repeat; }
+
+/* install steps: a real order, so numbered */
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; gap: 14px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 46px 1fr; gap: 14px; align-items: start; }
+ol.steps li::before { content: counter(s); font-family: var(--f-display); font-size: 14px; color: var(--night); background: var(--bone); width: 40px; height: 40px; display: grid; place-items: center; }
+.note { margin-top: 16px; padding: 12px 14px; border-left: 6px solid var(--blood); background: var(--stone); }
+
+/* tiles, like the screen's knob tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.tiles.two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.tile { display: grid; gap: 6px; align-content: start; padding: 16px; background: var(--stone); border: 3px solid var(--edge); text-decoration: none; color: var(--bone); min-width: 0; }
+a.tile:hover { border-color: var(--ember); }
+a.tile:hover h3 { color: var(--ember); }
+.tile .muted { font-size: 20px; }
+.tag { justify-self: start; font-size: 8px; padding: 5px 6px; background: var(--blood); color: #fff; }
+.tag.soon { background: var(--edge); color: var(--ash); }
+.tile.soon { border-style: dashed; }
+
+/* combos: the FM-1's own key language */
+.combos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); border: 3px solid var(--edge); }
+.combos > div { padding: 10px 14px; border-bottom: 2px solid var(--edge); min-width: 0; }
+.combos > div:nth-last-child(-n+2) { border-bottom: 0; }
+.combos .k { font-family: var(--f-display); font-size: 10px; line-height: 1.8; color: var(--bone); background: var(--stone); }
+.combos .k i { font-style: normal; color: var(--blood); }
+
+ul.new { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+ul.new li { padding-left: 26px; position: relative; max-width: 62ch; }
+ul.new li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 10px; height: 10px; background: var(--blood); }
+
+footer { margin-top: 56px; display: grid; gap: 14px; font-size: 19px; color: var(--ash); }
+footer .line { font-size: 9px; }
+
+@media (max-width: 520px) {
+  body { font-size: 20px; }
+  .combos { grid-template-columns: 1fr; }
+  .combos > div:nth-last-child(2) { border-bottom: 2px solid var(--edge); }
+  .btn { font-size: 10px; padding: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { #sky { display: none; } }
+</style>
+</head>
+<body>
+
+<canvas id="sky" aria-hidden="true"></canvas>
+<div class="wrap">
+
+<header>
+  <div class="logo" role="img" aria-label="GR!MM: a pixel eye looking around, over the word GR!MM with blood dripping from its bar">
+    <canvas id="eye" width="16" height="8"></canvas>
+    <img class="word" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAB4CAYAAAAUn4wEAAAB0UlEQVR42u3dsU0DQRBAUR+6IigDiRLIHCISKBASREjmEpAogy5MBaAd3a52ZvVeSHCMD/haebB9OgEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKxpG3Xhy+f7dcYDejg/bZnmic6Z7f73mjM6T7bvW33+VjeaCAgCIAiAIACCAETsRy8w69nX0UY/S/zX16vcn9Gi9yfbFqnq/E4IgCAAggAIAiAIQEjzlmHVbQK1ZNsmrDa/EwIgCIAgAIIACAIQsmcZJNs7/Myaf5ZsW6Ho//xne41A1fmdEABBAAQBEARAEICQNFuGbM8SV996gBMCIAiAIACCAAgCMFzzliG6Baj+uQO9th6z7sOq243qjyv7/E4IgCAAggAIAiAIQMjh1zL02j5UUWX74HM0cEIABAEQBEAQAEEAAAAAAAAAAAAAAAAAAAAW1/w+ei/Pj1e3C2p6ffto+lv3fgiAIACCAAgCIAiAIACCABzU7fP8vu5u//0/hfvvny3z9Uczv/tXYX4nBEAQAEEABAEQBEAQAEEADtp7XSj7Hhg/X5wQAEEABAEQBEAQAEEABAEYbq8yqD04lVX5/XVCAAQBEARAEABBAAQBEAQAAAAAAAAAACCJXxjlqo5E8xAVAAAAAElFTkSuQmCC">
+  </div>
+  <div class="line">FM-1 / DEATHDREAM / <b>V2.0</b></div>
+  <p class="pitch">Free firmware that turns the M-VAVE FM-1 into a machine for dark ambient, dungeon synth and deathdream.</p>
+  <div class="ctas">
+    <a class="btn main" href="https://thefirmwarehub.com/">INSTALL</a>
+    <a class="btn" href="https://grimmbient.github.io/grimm/">WEB EMULATOR</a>
+    <a class="btn" href="https://grimmbient.github.io/grimm/editor.html">EDITOR</a>
+  </div>
+</header>
+
+<div class="drip" role="presentation"></div>
+
+<section aria-labelledby="h-install">
+  <h2 id="h-install">INSTALL IN A MINUTE</h2>
+  <ol class="steps">
+    <li><p><strong>Back up first.</strong> Open the <a href="https://grimmbient.github.io/grimm/editor.html">editor</a>, connect the FM-1 and press BACKUP.</p></li>
+    <li><p>Open the <a href="https://thefirmwarehub.com/">FM-1 Firmware Hub</a> in Chrome or Edge and connect your FM-1 over USB.</p></li>
+    <li><p>Pick GR!MM and press install. Your sounds and samples stay when you update.</p></li>
+  </ol>
+  <p class="note">Unofficial firmware, not made or supported by M-VAVE. Install at your own risk. You can always go back to the stock firmware through the Firmware Hub.</p>
+</section>
+
+<div class="drip" role="presentation"></div>
+
+<section aria-labelledby="h-learn">
+  <h2 id="h-learn">LEARN IT</h2>
+  <div class="tiles two">
+    <a class="tile" href="https://grimmbient.github.io/grimm/GRIMM-V2.0-manual.pdf">
+      <span class="tag">PDF</span><h3>VISUAL MANUAL</h3>
+      <span class="muted">Every page of the FM-1's screen, with what each knob does.</span></a>
+    <a class="tile" href="https://docs.google.com/spreadsheets/d/1shsE95bc8VMxacDuC8f5yoOiNbuyukpmzdRRfFI0PvQ">
+      <span class="tag">SHEET</span><h3>CONTROLS CHEAT SHEET</h3>
+      <span class="muted">All buttons, pages, combos and factory sounds in one sheet.</span></a>
+    <a class="tile" href="https://github.com/GRiMMBIENT/grimm/blob/main/MANUAL.md">
+      <span class="tag">TEXT</span><h3>MANUAL ON GITHUB</h3>
+      <span class="muted">The full manual as text, easy to search.</span></a>
+    <div class="tile soon">
+      <span class="tag soon">SOON</span><h3>FULL TUTORIAL</h3>
+      <span class="muted">One song built from an empty project, every feature on the way.</span></div>
+  </div>
+</section>
+
+<div class="drip" role="presentation"></div>
+
+<section aria-labelledby="h-keys">
+  <h2 id="h-keys">THE COMBOS TO KNOW</h2>
+  <div class="combos">
+    <div class="k">HOLD <i>FX</i> + BLACK KEY</div><div>A track plays by itself (GENERATE), always in key.</div>
+    <div class="k">HOLD <i>FX</i> + WHITE KEYS</div><div>Freeze, reverb and echo throws, tape stop, reverse, filter sweeps, stutter.</div>
+    <div class="k">HOLD <i>SEL</i></div><div>One key plays a whole chord.</div>
+    <div class="k"><i>SEL</i> + OCT+</div><div>LATCH on or off, from any page.</div>
+    <div class="k">HOLD <i>SAVE</i> + WHITE KEYS</div><div>Recall or save project slots A-D (while playing, a recall waits for the next bar).</div>
+    <div class="k">HOLD <i>GLO</i> + WHITE KEYS</div><div>Mute or solo T1-T4.</div>
+  </div>
+</section>
+
+<div class="drip" role="presentation"></div>
+
+<section aria-labelledby="h-watch">
+  <h2 id="h-watch">WATCH</h2>
+  <div class="tiles">
+    <a class="tile" href="https://www.youtube.com/watch?v=YwiDf0SZk9A">
+      <span class="tag">VIDEO</span><h3>GR!MM V1.0</h3>
+      <span class="muted">The first release: the Reaper wakes the FM-1.</span></a>
+    <div class="tile soon">
+      <span class="tag soon">SOON</span><h3>GR!MM 2.0 IS OUT</h3>
+      <span class="muted">What's new in version two.</span></div>
+    <div class="tile soon">
+      <span class="tag soon">SOON</span><h3>THE FULL TUTORIAL</h3>
+      <span class="muted">From the first drone to a finished song.</span></div>
+  </div>
+</section>
+
+<div class="drip" role="presentation"></div>
+
+<section aria-labelledby="h-new">
+  <h2 id="h-new">NEW IN V2.0</h2>
+  <ul class="new">
+    <li>GENERATE: tracks that play by themselves, drifting, pulsing or in a storm.</li>
+    <li>Real choirs: Gregorian monks, nuns and a cathedral, sung by real singers.</li>
+    <li>GLIDE on every sound, and a second line, ring and noise for PHASE.</li>
+    <li>A master filter, four kinds of distortion and a new mixer with tape and drive per track.</li>
+    <li>MIDI clock in and out, MIDI over the TRS jack, velocity.</li>
+    <li>Tape that slips like an old VHS, cleaner fades, and candles that burn with the sound.</li>
+  </ul>
+  <p style="margin-top:16px"><a href="https://github.com/GRiMMBIENT/grimm/releases">Full release notes and every version to download</a></p>
+</section>
+
+<footer>
+  <div class="drip" role="presentation" style="margin-block:0 8px"></div>
+  <p>GR!MM is free and open source under GPL-3.0. <a href="https://github.com/GRiMMBIENT/grimm">Source on GitHub</a>.</p>
+  <p>Built on <a href="https://github.com/zvenson/dinghy">Dinghy</a> and <a href="https://github.com/hugelton/Felucca">Felucca</a>. Choir recordings from VocalSet, CC BY 4.0. Full credits in the repository.</p>
+  <p>Not affiliated with M-VAVE.</p>
+  <div class="line">TURN THE LIGHTS DOWN</div>
+</footer>
+</div>
+
+<script>
+(() => {
+  const c = document.getElementById('sky');
+  const x = c.getContext('2d');
+  const P = 3;
+  let stars = [];
+  function size() {
+    c.width = Math.ceil(innerWidth / P); c.height = Math.ceil(innerHeight / P);
+    c.style.imageRendering = 'pixelated';
+    stars = Array.from({ length: Math.round(c.width * c.height / 900) }, () => ({
+      x: Math.random() * c.width | 0, y: Math.random() * c.height | 0,
+      p: Math.random() * 6.28, s: 0.4 + Math.random() * 1.2 }));
+  }
+  function draw(t) {
+    x.clearRect(0, 0, c.width, c.height);
+    for (const s of stars) {
+      const v = 0.5 + 0.5 * Math.sin(t / 1000 * s.s + s.p);
+      x.fillStyle = v > 0.97 ? '#d8d2c4' : v > 0.6 ? '#4a453d' : '#24201b';
+      x.fillRect(s.x, s.y, 1, 1);
+      if (v > 0.985) { x.fillStyle = '#8f887b'; x.fillRect(s.x - 1, s.y, 3, 1); x.fillRect(s.x, s.y - 1, 1, 3); }
+    }
+    requestAnimationFrame(draw);
+  }
+  size(); addEventListener('resize', size);
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(draw);
+})();
+</script>
+
+<script>
+(() => {
+  const BASE = ["....bbbbbbbb....","..bbggggggggbb..",".bggggggggggggb.","bggggggggggggggb","bggggggggggggggb",".bggggggggggggb.","..bbggggggggbb..","....bbbbbbbb...."];
+  const IRIS = [" rrrr ","rrw.rr","rr..rr"," rrrr "];
+  const COL = { b: "#bdb6ac", g: "#5a5952", r: "#cd3018", w: "#eee6de", ".": "#080808", k: "#080808" };
+  const cv = document.getElementById("eye"), x = cv.getContext("2d");
+  let dx = 0, dy = 0, tx = 0, ty = 0, lid = 0, nextLook = 0, nextBlink = 2500, blinkT = -1, px = null;
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function cell(c, r, ch) { x.fillStyle = COL[ch]; x.fillRect(c, r, 1, 1); }
+  function draw() {
+    x.clearRect(0, 0, 16, 8);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 16; c++) {
+      const b = BASE[r][c];
+      if (b !== ".") cell(c, r, b);
+    }
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+      const ch = IRIS[r][c]; if (ch === " ") continue;
+      const R = r + 2 + dy, C = c + 5 + dx;
+      if (R >= 0 && R < 8 && C >= 0 && C < 16 && BASE[R][C] === "g") cell(C, R, ch === "." ? "k" : ch);
+    }
+    if (lid > 0) {                          // the lids close from top and bottom toward the middle rows
+      for (let r = 0; r < 8; r++) {
+        const top = r < 4, d = top ? r : 7 - r;
+        if (d < lid) for (let c = 0; c < 16; c++) if (BASE[r][c] !== ".") cell(c, r, d === lid - 1 ? "b" : ".");
+      }
+    }
+  }
+  function step(t) {
+    if (px) { tx = px[0]; ty = px[1]; }
+    else if (t > nextLook) {
+      tx = Math.round(Math.random() * 6 - 3); ty = Math.round(Math.random() * 2 - 1);
+      if (Math.random() < 0.35) { tx = 0; ty = 0; }
+      nextLook = t + 700 + Math.random() * 2200;
+    }
+    if (dx !== tx) dx += Math.sign(tx - dx);
+    if (dy !== ty) dy += Math.sign(ty - dy);
+    if (blinkT < 0 && t > nextBlink) blinkT = t;
+    if (blinkT >= 0) {
+      const p = (t - blinkT) / 60 | 0;          // 0 1 2 3 4 3 2 1 0, a frame each 60 ms
+      lid = p <= 4 ? p : 8 - p;
+      if (p >= 8) { lid = 0; blinkT = -1; nextBlink = t + 2500 + Math.random() * 4500; }
+    }
+    draw();
+  }
+  addEventListener("pointermove", e => {
+    const b = cv.getBoundingClientRect();
+    const ex = (e.clientX - (b.left + b.width / 2)) / (innerWidth / 2), ey = (e.clientY - (b.top + b.height / 2)) / (innerHeight / 2);
+    px = [Math.max(-3, Math.min(3, Math.round(ex * 4))), Math.max(-1, Math.min(1, Math.round(ey * 2)))];
+    clearTimeout(step.idle); step.idle = setTimeout(() => { px = null; }, 2500);
+  });
+  draw();
+  if (!still) { let last = 0; (function loop(t) { if (t - last > 60) { last = t; step(t); } requestAnimationFrame(loop); })(0); }
+})();
+</script>
+</body>
+</html>
