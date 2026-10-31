@@ -5,6 +5,8 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/host
+cc -Wall -Wno-unused-function -Ifirmware/src/ble -o build/host/ble_keep_test tests/ble_keep_test.c   # (BLE's trims, ble_keep.c)
+build/host/ble_keep_test
 cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-1.0}\"" -Ifirmware/src -Ifirmware/gen -o build/host/grimm firmware/src/grimm.c
 build/host/grimm build/host/grimm
 python3 - <<'PY'

@@ -23,7 +23,7 @@
 #define ED_PROTO 2u                             /* this protocol's version (INFO; 2: TRACK) */
 #define ED_FMT 1u                               /* the objects' format: sounds of 64 B, slots of SLOT_ALL, settings
                                                  * as set (SET_VER 1) */
-enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23 };
+enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_BLE = 24 };   /* (24: GRIMM_BLE builds only) */
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
 enum { EO_SET = 0, EO_SLOT = 1, EO_SND = 16, EO_FACT = 80 };
 enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: arguments, the object (CRC, size, format,
@@ -132,8 +132,16 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
 {
     uint8_t r[16];
     uint32_t cmd, o, rc = ER_OK;
-    if (n < 4u || f[1] != 0x47 || f[2] != 0x52 || f[3] < ED_INFO || f[3] > ED_TRACK) return 0;
+    if (n < 4u || f[1] != 0x47 || f[2] != 0x52 || f[3] < ED_INFO || f[3] > (GRIMM_BLE ? ED_BLE : ED_TRACK)) return 0;
     cmd = f[3], f += 4, n -= 4;
+#if GRIMM_BLE
+    if (cmd == ED_BLE) {                        /* -> pack7 the BLE report (src/ble/hx.c hx_dump, tools/fm1_ble_diag.py) */
+        extern uint32_t hx_dump(uint8_t *out);
+        static uint8_t d[512];                  /* (hx_dump: 510 bytes) */
+        ed_send(cmd, 0, 0, d, hx_dump(d), 0);
+        return 1;
+    }
+#endif
     if (cmd == ED_INFO) {                       /* proto, fmt, the version (0-ended), sounds, a sound's size, the
                                                  * factory's, a slot's size, the settings' size, sample slots, used */
         uint8_t a[48], k, used = 0;

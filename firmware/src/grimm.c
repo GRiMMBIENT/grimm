@@ -580,6 +580,8 @@ static struct {
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
 static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac;   /* SYSTEM's, SYSTEM 2's knobs
                                                  * (sy_fac: SAMPLES, 1 RESTORE: OCT+ writes the factory ones) */
+static volatile int32_t sy_ble;                 /* SYSTEM 2, KNOB 4: BT MIDI (GRIMM_BLE builds); OFF at every power-on, not
+                                                 * in the settings (the editor's 168 bytes) */
 static uint32_t fac_at;                         /* RESTORE confirmed: when it writes (the header said first), 0 none */
 static uint32_t learn_st;                       /* MIDI LEARN: 0 none; 1 TURN A KNOB; 2 MOVE A CC (learn_to: the knob) */
 static uint8_t learn_to[4];                     /* (the page, the knob, the track, x) */
@@ -654,7 +656,8 @@ static const page_t PAGES[NPAGE] = {
     {"MIXER 1", BTN_HOME, 1, 1, 1, {"LEVEL", "DLY SEND", "REV SEND", "GRAIN SEND"}},
     {"MIXER 2", BTN_HOME, 1, 1, 1, {"PAN", "", "", ""}},
     {"SYSTEM", BTN_HOME, 1, 0, 0, {"COLOUR", "MIDI CHANNEL", "TUNE", "SCREEN OFF"}},   /* (HOME held; HOME again: */
-    {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", ""}},       /* SYSTEM 2, and back) */
+    {"SYSTEM 2", BTN_HOME, 1, 0, 0, {"MIDI LEARN", "SEQ MIDI OUT", "SAMPLES", GRIMM_BLE ? "BT MIDI" : ""}},   /* SYSTEM 2,
+                                                 * and back) */
     {"SOUNDS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
     {"PROJECTS", BTN_SAVE, 1, 0, 1, {"SLOT", "CATEGORY", "TYPE", "ACTION"}},
     {"ARP", BTN_ARP, 1, 1, 1, {"MODE", "RATE", "OCTAVES", "GATE"}},
@@ -735,7 +738,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_SOUNDS: return k == 0u ? &sv_slot : k == 1u ? &sv_cat : k == 2u ? &sv_type : &sv_act;
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
-    case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : 0;
+    case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : GRIMM_BLE ? &sy_ble : 0;
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -1681,6 +1684,9 @@ static void app_main(void)
             hd_say(rc ? "RESTORE FAILED" : "SAMPLES RESTORED");
         }
         sys_sync();
+#if GRIMM_BLE
+        if ((sy_ble != 0) != (ble_state() != HX_S_OFF)) ble_set(sy_ble != 0);   /* BT MIDI: its first ON starts the radio */
+#endif
         if ((page == PG_FMALGO || page == PG_FMOP) && sel_eng() != ENG_FM) page = PG_SOUND;   /* (not FM now: SOUND) */
 
         while (midi_get(&st, &d1, &d2)) {       /* USB-MIDI in: a note on MIDI CHANNEL's T1 .. T4 channels plays that
