@@ -9,7 +9,9 @@
 // "virtual FM-1" (grimm.wasm here, editor_core.js's VirtualFM1) in its place.
 import { Client, MidiTransport, VirtualFM1, LiveSender, findFM1, HEAD, CMD, OBJ, PROTOS, EditorError, emptyRecord, isEmpty,
          recordOk, parseSound, buildRecord, soundTitle, makeBackup, checkBackup, restoreBackup, makeSlot, noteFromName,
-         sampleName, noteName, pack7, hex } from "./editor_core.js";
+         sampleName, noteName, pack7, hex, SET_V1, SET_V2, MCH_NAMES, CLOCK_NAMES, settingsOf, withSettings,
+         sameSettings, FX_PAGES, FT_NAMES, checkSamples, restoreSamples, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
+         glideText, decayText, pctText, PITCH_TEXT } from "./editor_core.js";
 
 const $ = (id) => document.getElementById(id);
 function el(tag, attrs, parent, text) {
@@ -27,6 +29,8 @@ function el(tag, attrs, parent, text) {
 let wasm = null, vf = null, vfc = null, meta = null;        // grimm.wasm; its instance here (texts, the virtual FM-1)
 let conn = null;                                             // { client, info, kind: "fm1" | "virtual", transport, live }
 let busy = false;
+let setBytes = null;                                         // the settings as last read from the FM-1 (SETTINGS)
+let fxVals = null;                                           // the project's effects as last read (FX: 48 values)
 const user = Array.from({ length: 64 }, () => emptyRecord()), dirty = new Array(64).fill(false);
 let pick = { fact: true, i: 0 }, readAt = "";                // the sound chosen under SOUNDS
 const tracks = [null, null, null, null], loaded = ["", "", "", ""], from = ["", "", "", ""];   // T1..T4: the sound,
@@ -81,7 +85,7 @@ function show(s) {
   document.querySelectorAll("section").forEach((x) => x.classList.toggle("on", x.id === "s-" + s));
   if (s === "samples" && conn) sampleInfo();
 }
-document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", () => { show(a.dataset.s); history.replaceState(null, "", "#" + a.dataset.s); }));
+document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); show(a.dataset.s); history.replaceState(null, "", "#" + a.dataset.s); }));
 
 // ------------------------------------------------------------------ the engine: GR!MM in an AudioWorklet (sound, screen)
 let ac = null, node = null, engReady = null;
@@ -130,12 +134,18 @@ addEventListener("keydown", startEngine, true);
 function setConn(c) {
   if (conn && conn.transport.close) conn.transport.close();
   conn = c;
+  setBytes = null, fxVals = null;                            // (another FM-1, or none: read its settings, FX again)
+  if ($("fx").childElementCount) drawFx();
+  if ($("set-mch").options.length) drawSettings();
   const s = $("conn");
   s.textContent = !c ? "NOT CONNECTED" : c.kind === "virtual" ? `VIRTUAL FM-1 · GR!MM ${c.info.firmware}` : `FM-1 · GR!MM ${c.info.firmware}`;
   s.classList.toggle("on", !!c);
   const t = $("info");
   t.textContent = "";
-  if (c) {
+  if (!c) {                                                  // (not connected: this page's own GR!MM, which it plays and edits with)
+    [["THIS PAGE'S GR!MM", `GR!MM ${meta.version}`], ["FACTORY SOUNDS", meta.factory.length]]
+      .forEach(([k, v]) => { const r = el("tr", {}, t); el("td", {}, r, k); el("td", {}, r, String(v)); });
+  } else {
     const i = c.info;
     [["CONNECTED TO", c.kind === "virtual" ? "THE VIRTUAL FM-1 (THIS PAGE)" : `THE FM-1 OVER USB (${c.transport.output.name})`],
      ["FIRMWARE", "GR!MM " + i.firmware], ["EDITOR PROTOCOL", i.proto + (c.live ? " (LIVE EDITING)" : " (NO LIVE EDITING: INSTALL 26B2)")],
@@ -152,7 +162,7 @@ async function connectFM1() {
     const access = await navigator.requestMIDIAccess({ sysex: true });
     say("LOOKING FOR GR!MM ON THE MIDI PORTS…");
     const p = await findFM1(access, midiLog);
-    if (!p) throw new EditorError("NO FM-1 WITH GR!MM 26A OR LATER FOUND (USB DATA CABLE? ANOTHER APP ON ITS MIDI PORT?) SEE THE MIDI LOG", 0);
+    if (!p) throw new EditorError("NO FM-1 WITH GR!MM FOUND (USB DATA CABLE? ANOTHER APP ON ITS MIDI PORT?) SEE THE MIDI LOG", 0);
     const transport = new MidiTransport(p.input, p.output, midiLog), client = new Client(transport), info = await client.info();
     if (!PROTOS.includes(info.proto)) throw new EditorError(`THE FM-1 SPEAKS EDITOR PROTOCOL ${info.proto}; THIS PAGE KNOWS ${PROTOS.join(" AND ")}`, 0);
     setConn({ client, info, kind: "fm1", transport, live: info.proto >= 2 });
@@ -264,11 +274,19 @@ function drawTitle() {
 }
 
 // ------------------------------------------------------------------ sounds
-function slotLabel(r, i, fact) {
+function slotLabel(r, i, fact) {                             // -> [number, the full name, its source ("" empty)]
   const n = String(i + 1).padStart(2, "0");
-  if (!fact && isEmpty(r)) return [n, "— EMPTY —"];
+  if (!fact && isEmpty(r)) return [n, "— EMPTY —", ""];
   const s = parseSound(r, meta), name = fact ? meta.factory[i].name : soundTitle(r, meta);
-  return [n, `${name} (${meta.engines[s.eng].name})`];
+  return [n, name, meta.engines[s.eng].name];
+}
+function slotBox(parent, [n, name, src], cls, pickIt, loadIt) {   // a slot: its name whole, its source a tag under it
+  const d = el("div", { cls: "slot" + cls, tabindex: 0, role: "button" }, parent);
+  el("span", { cls: "n" }, d, n + " "), d.append(name);
+  if (src) el("small", { cls: "src" }, d, src);
+  d.onclick = pickIt, d.ondblclick = loadIt;
+  d.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickIt(); } });
+  return d;
 }
 const pickRec = () => (pick.fact ? Uint8Array.from(meta.factory[pick.i].rec) : user[pick.i]);
 const pickName = () => (pick.fact ? `FACTORY ${pick.i + 1}: ${meta.factory[pick.i].name}` :
@@ -276,18 +294,18 @@ const pickName = () => (pick.fact ? `FACTORY ${pick.i + 1}: ${meta.factory[pick.
 function drawSlots() {
   const u = $("user"), f = $("factory");
   u.textContent = f.textContent = "";
+  const kept = document.activeElement && document.activeElement.classList.contains("slot") ?
+    [document.activeElement.parentNode.id, [...document.activeElement.parentNode.children].indexOf(document.activeElement)] : null;
   user.forEach((r, i) => {
-    const [n, t] = slotLabel(r, i, false), on = !pick.fact && pick.i === i;
-    const d = el("div", { cls: "slot" + (isEmpty(r) ? " empty" : "") + (on ? " sel" : "") + (dirty[i] ? " dirty" : ""),
-                          onclick: () => { pick = { fact: false, i }; drawSlots(); }, ondblclick: () => loadTo(selT) }, u);
-    el("span", { cls: "n" }, d, n + " "), d.append(t);
+    const on = !pick.fact && pick.i === i;
+    slotBox(u, slotLabel(r, i, false), (isEmpty(r) ? " empty" : "") + (on ? " sel" : "") + (dirty[i] ? " dirty" : ""),
+            () => { pick = { fact: false, i }; drawSlots(); }, () => loadTo(selT));
   });
   meta.factory.forEach((x, i) => {
-    const [n, t] = slotLabel(Uint8Array.from(x.rec), i, true);
-    const d = el("div", { cls: "slot" + (pick.fact && pick.i === i ? " sel" : ""), onclick: () => { pick = { fact: true, i }; drawSlots(); },
-                          ondblclick: () => loadTo(selT) }, f);
-    el("span", { cls: "n" }, d, n + " "), d.append(t);
+    slotBox(f, slotLabel(Uint8Array.from(x.rec), i, true), pick.fact && pick.i === i ? " sel" : "",
+            () => { pick = { fact: true, i }; drawSlots(); }, () => loadTo(selT));
   });
+  if (kept) { const k = $(kept[0]).children[kept[1]]; if (k) k.focus(); }   // (a redraw keeps the keyboard where it was)
   $("pickname").textContent = pickName();
   $("readat").textContent = readAt;
   const es = $("ed-slot"), keep = es.value;
@@ -298,7 +316,13 @@ function drawSlots() {
 }
 function refreshButtons() {
   const c = !!conn && !busy, u = !pick.fact, empty = u && isEmpty(user[pick.i]);
-  ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory"].forEach((id) => { $(id).disabled = !c; });
+  ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory", "b-setread", "b-fxread"].forEach((id) => { $(id).disabled = !c; });
+  document.querySelectorAll("#fx input, #fx select").forEach((x) => { x.disabled = !c || !fxVals; });
+  $("b-setwrite").disabled = !c || !setBytes;
+  $("set-mch").disabled = $("set-clk").disabled = $("set-latch").disabled = $("set-vel").disabled = !setBytes;
+  if (setBytes && setBytes.length <= SET_V1) $("set-clk").disabled = true;   // (GR!MM 1.0: no CLOCK)
+  if (setBytes && setBytes.length <= SET_V2) $("set-latch").disabled = $("set-vel").disabled = true;   // (before V2's
+                                                             // SYSTEM 3: no LATCH, no VELOCITY)
   $("b-disconnect").disabled = !conn || busy;
   $("b-connect").disabled = $("b-try").disabled = busy;
   for (let t = 0; t < 4; t++) $("b-load" + t).disabled = empty;
@@ -388,24 +412,24 @@ function exportSound(r, name) {
 
 // ------------------------------------------------------------------ the sound editor
 const knobText = (s, k) => vf.text("web_knob_text", s.eng, s.k[0], s.k[1], s.k[2], s.k[3], k);
-function control(parent, label, min, max, get, set, text) {
+function control(parent, label, min, max, get, set, text, quiet = false) {   // (quiet: not the sound's: FX)
   const c = el("div", { cls: "ctl" }, parent), lab = el("div", { cls: "lab" }, c), v = el("span");
   el("label", {}, lab, label), lab.appendChild(v);
   const r = el("input", { type: "range", min, max, step: 1 }, c);
   r.value = get();
   const upd = () => { v.textContent = text ? text(+r.value) : String(r.value); };
-  r.addEventListener("input", () => { set(+r.value); upd(); changed(); });
+  r.addEventListener("input", () => { set(+r.value); upd(); if (!quiet) changed(); });
   upd();
   return r;
 }
-function choice(parent, label, names, get, set) {
+function choice(parent, label, names, get, set, quiet = false) {
   const c = el("div", { cls: "ctl" }, parent), lab = el("div", { cls: "lab" }, c);
   el("label", {}, lab, label);
   const s = el("select", {}, c);
   s.style.width = "100%";
   names.forEach((n, i) => el("option", { value: i }, s, n));
   s.value = get();
-  s.addEventListener("change", () => { set(+s.value); changed(); });
+  s.addEventListener("change", () => { set(+s.value); if (!quiet) changed(); });
   return s;
 }
 function toggle(parent, names, get, set) {
@@ -446,6 +470,25 @@ function drawEditor() {
     drawEditor(), drawTracks();
   });
   toggle(g, ["LATCH OFF", "LATCH ON"], () => s.latch, (v) => { s.latch = v; });
+  const V2 = V2_SOUND_CONTROLS;                               // (GR!MM 2.0's settings: names, ranges as on the FM-1)
+  control(g, V2.glide[0], V2.glide[1], V2.glide[2], () => s.glide || 0, (v) => { s.glide = v; }, glideText);   // (SOURCE's KNOB 4: every source)
+  if (s.eng === 3)                                           // (VOICE's TYPE, as SOURCE's KNOB 3)
+    choice(g, V2.vtype[0], VOICE_TYPES, () => s.vtype || 0, (v) => { s.vtype = v; });
+  if (s.eng === 6) {                                         // (PHASE's LINE 2 page, then PHASE ENV)
+    s.pd = s.pd || { ...PHASE_PD0 };
+    const p2 = el("div", { cls: "grp" }, ed), [lw, ld, lr, ln] = V2.line2;
+    el("h3", {}, p2, "PHASE LINE 2");
+    choice(p2, lw[0], LINE2_WAVES, () => s.pd.wave || 0, (v) => { s.pd.wave = v; });
+    control(p2, ld[0], ld[1], ld[2], () => s.pd.dcw || 0, (v) => { s.pd.dcw = v; }, (v) => pctText(v, "SAME"));
+    toggle(p2, [`${lr[0]} OFF`, `${lr[0]} ON`], () => s.pd.ring, (v) => { s.pd.ring = v; });
+    toggle(p2, [`${ln[0]} OFF`, `${ln[0]} ON`], () => s.pd.noise, (v) => { s.pd.noise = v; });
+    const pe = el("div", { cls: "grp" }, ed), [de, dd, pi, pp] = V2.env;
+    el("h3", {}, pe, "PHASE ENV");
+    control(pe, de[0], de[1], de[2], () => s.pd.denv || 0, (v) => { s.pd.denv = v; }, (v) => pctText(v, "OFF"));
+    control(pe, dd[0], dd[1], dd[2], () => s.pd.ddec || 0, (v) => { s.pd.ddec = v; }, decayText);
+    control(pe, pi[0], pi[1], pi[2], () => s.pd.penv || 0, (v) => { s.pd.penv = v; }, PITCH_TEXT);
+    control(pe, pp[0], pp[1], pp[2], () => s.pd.pdec || 0, (v) => { s.pd.pdec = v; }, decayText);
+  }
 
   g = el("div", { cls: "grp" }, ed);
   el("h3", {}, g, `${eng.name}: ITS FOUR KNOBS`);
@@ -491,7 +534,7 @@ function drawFM() {
   const cv = el("canvas", { id: "alg", width: 216, height: 104 }, b);
   control(a, "ALGO", 0, 31, () => s.fm.alg, (v) => { s.fm.alg = v; drawAlg(cv); }, (v) => String(v + 1).padStart(2, "0"));
   control(a, "FEEDBACK", 0, 7, () => s.fm.fb, (v) => { s.fm.fb = v; drawAlg(cv); });
-  const t = el("table", { cls: "ops" }, f), h = el("tr", {}, t);
+  const t = el("table", { cls: "ops" }, el("div", { cls: "ops-box" }, f)), h = el("tr", {}, t);
   ["", "RATIO", "", "FINE", "", "LEVEL", "", "ATTACK", "", "DECAY", ""].forEach((x) => el("td", {}, h, x));
   s.fm.ops.forEach((o, i) => {
     const r = el("tr", {}, t);
@@ -688,7 +731,7 @@ function drawSamples() {
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("hot"); take(e.dataTransfer.files[0]); };
     up.onclick = () => job(`UPLOAD SLOT ${k + 1}`, async () => {
       if (!buf) throw new EditorError("CHOOSE A WAV FIRST", 0);
-      const sl = makeSlot(buf, sampleName(nm.value), Math.max(0, Math.min(127, +root.value | 0)));
+      const sl = makeSlot(buf, sampleName(nm.value), Math.max(0, Math.min(127, +root.value | 0)), $("smp-norm").checked);
       say(`UPLOADING ${(sl.data.length / 1024).toFixed(0)} KB…`);
       smpInfo = await conn.client.smpUpload(k, sl.hdr, sl.data, progress);
       drawSamples();
@@ -721,30 +764,130 @@ $("b-sfactory").onclick = () => {                            // RESTORE: the fou
 $("b-backup").onclick = () => job("BACKUP", async () => {
   const b = await makeBackup(conn.client, conn.info, (i, n, what) => { progress(i, n); say(`READING ${what.toUpperCase()}…`); });
   download(`grimm-backup-${stamp()}.json`, JSON.stringify(b, null, 1));
-  return "BACKUP MADE: ALL 64 SOUNDS, SLOTS A–D, THE SETTINGS (DOWNLOADED)";
+  return `BACKUP MADE: ALL 64 SOUNDS, SLOTS A–D, THE SETTINGS${b.samples ? ", THE SAMPLES" : " (NOT THE SAMPLES: THIS GR!MM CANNOT SEND THEM)"} (DOWNLOADED)` +
+         (conn.client.missed ? `; ${conn.client.missed} REPLIES MISSED, ASKED AGAIN` : "");
 });
 $("b-restore").onclick = () => $("f-restore").click();
 $("f-restore").onchange = async (e) => {
   const f = e.target.files[0];
   e.target.value = "";
   if (!f) return;
-  let objs;
-  try { objs = checkBackup(JSON.parse(await f.text()), conn.info); } catch (err) { say(`RESTORE: ${errText(err)} (NOTHING WRITTEN)`, "err"); return; }
-  if (!confirm(`RESTORE ${f.name}?\n\nThis REPLACES all 64 user sounds, slots A–D and the settings on the FM-1. A backup of what it holds now is made (downloaded) first.`)) return;
+  let objs, smp;
+  try {
+    const b = JSON.parse(await f.text());
+    objs = checkBackup(b, conn.info), smp = checkSamples(b, conn.info);
+  } catch (err) { say(`RESTORE: ${errText(err)} (NOTHING WRITTEN)`, "err"); return; }
+  if (!confirm(`RESTORE ${f.name}?\n\nThis REPLACES all 64 user sounds, slots A–D and the settings on the FM-1` +
+               (smp ? ", and the four sample slots (as in the file; one already the same is not written again)" :
+                 " (the file has no samples: the sample slots stay as they are)") +
+               ". A backup of what it holds now is made (downloaded) first.")) return;
   await job("RESTORE", async () => {
     const before = await makeBackup(conn.client, conn.info, (i, n) => { progress(i, n); say("FIRST, A BACKUP OF WHAT THE FM-1 HOLDS NOW…"); });
     download(`grimm-backup-before-restore-${stamp()}.json`, JSON.stringify(before, null, 1));
     await restoreBackup(conn.client, objs, conn.info, (i, n, what) => { progress(i, n); say(`WRITING ${what.toUpperCase()}…`); });
     for (let i = 0; i < objs.length; i++) {                  // read back: as written
-      const d = await conn.client.get(objs[i].id, objs[i].data.length);
-      if (d.some((x, k) => x !== objs[i].data[k])) throw new EditorError(`${objs[i].what.toUpperCase()} DID NOT READ BACK AS WRITTEN`, 0);
+      const set = objs[i].id === OBJ.SET, d = await conn.client.get(objs[i].id, set ? conn.info.setSize : objs[i].data.length);
+      if (set ? !sameSettings(objs[i].data, d) : d.some((x, k) => x !== objs[i].data[k]))
+        throw new EditorError(`${objs[i].what.toUpperCase()} DID NOT READ BACK AS WRITTEN`, 0);
       progress(i + 1, objs.length);
     }
     for (const o of objs) if (o.id >= OBJ.SND && o.id < OBJ.SND + 64) { user[o.id - OBJ.SND] = o.data; dirty[o.id - OBJ.SND] = false; }
     drawSlots();
-    return "RESTORED AND READ BACK: EVERYTHING AS IN THE FILE (THE BACKUP FROM BEFORE IS DOWNLOADED)";
+    let sd = "";
+    if (smp) {                                               // GR!MM V2: the sample slots as in the file, each checked
+      const done = await restoreSamples(conn.client, smp, (k, i, n) => { progress(i, n); say(`WRITING SAMPLE ${k + 1}…`); });
+      smpInfo = await conn.client.smpInfo();
+      drawSamples();
+      sd = `; SAMPLES: ${done.map((w, k) => `${k + 1} ${w}`).join(", ")}`;
+    }
+    return `RESTORED AND READ BACK: EVERYTHING AS IN THE FILE${sd} (THE BACKUP FROM BEFORE IS DOWNLOADED)`;
   });
 };
+
+// ------------------------------------------------------------------ settings (GR!MM V2): MIDI CHANNEL, CLOCK, LATCH
+function drawSettings() {
+  const m = $("set-mch"), c = $("set-clk"), l = $("set-latch"), ve = $("set-vel"), v2 = !setBytes || setBytes.length > SET_V1;
+  m.textContent = c.textContent = l.textContent = ve.textContent = "";
+  MCH_NAMES.forEach((n, i) => { if (v2 || i <= 13) el("option", { value: i }, m, n); });
+  CLOCK_NAMES.forEach((n, i) => el("option", { value: i }, c, n));
+  ["FROM SOUND", "ALWAYS OFF"].forEach((n, i) => el("option", { value: i }, l, n));
+  ["OFF", "ON"].forEach((n, i) => el("option", { value: i }, ve, n));
+  if (setBytes) { const s = settingsOf(setBytes); m.value = s.mch; c.value = s.clk; l.value = s.latch; ve.value = s.velocity; }
+  refreshButtons();
+}
+$("b-setread").onclick = () => job("SETTINGS", async () => {
+  setBytes = await conn.client.get(OBJ.SET, conn.info.setSize);
+  drawSettings();
+  return "SETTINGS READ FROM THE FM-1";
+});
+$("b-setwrite").onclick = () => job("SETTINGS", async () => {
+  const b = withSettings(setBytes, { mch: +$("set-mch").value, clk: +$("set-clk").value, latch: +$("set-latch").value,
+                                     velocity: +$("set-vel").value });
+  await conn.client.put(OBJ.SET, b, conn.info.fmt, progress);
+  const back = await conn.client.get(OBJ.SET, conn.info.setSize);
+  if (!sameSettings(b, back)) throw new EditorError("THE SETTINGS DID NOT READ BACK AS SENT", 0);
+  setBytes = back;
+  drawSettings();
+  return `SETTINGS WRITTEN: MIDI CHANNEL ${MCH_NAMES[b[3]]}${b.length > SET_V1 ? ", CLOCK " + CLOCK_NAMES[b[SET_V1]] : ""}` +
+         (b.length > SET_V2 ? `, LATCH ${b[SET_V2] & 1 ? "ALWAYS OFF" : "FROM SOUND"}, VELOCITY ${b[SET_V2] & 2 ? "ON" : "OFF"}` : "");
+});
+drawSettings();
+
+// ------------------------------------------------------------------ FX (GR!MM V2): the six pages and the tracks' filters,
+// live: a move sends its value (the newest kept while one is on its way)
+const fxPend = new Map();
+let fxBusy = false;
+async function fxSend(i, v) {
+  fxPend.set(i, v);
+  if (fxBusy || !conn) return;
+  fxBusy = true;
+  try {
+    while (fxPend.size) {
+      const [k, x] = fxPend.entries().next().value;
+      fxPend.delete(k);
+      await conn.client.fxSet(k, x);
+    }
+  } catch (e) { say(`FX: ${errText(e)}`, "err"); } finally { fxBusy = false; }
+}
+function drawFx() {
+  const box = $("fx"), v = fxVals || new Array(48).fill(0);
+  box.textContent = "";
+  FX_PAGES.forEach(([page, knobs], p) => {
+    const g = el("div", { cls: "grp" }, box);
+    el("h3", {}, g, page);
+    knobs.forEach((kn, k) => {
+      const i = p * 4 + k, set = (x) => { v[i] = x; fxSend(i, x); };
+      if (Array.isArray(kn)) choice(g, kn[0], kn[1], () => v[i], set, true);
+      else control(g, kn, 0, 127, () => v[i], set, (x) => `${Math.round(x * 100 / 127)}%`, true);
+    });
+  });
+  const g = el("div", { cls: "grp" }, box);
+  el("h3", {}, g, "TRACK FILTER (MIXER 2)");
+  for (let t = 0; t < 4; t++) {
+    const i = 24 + t;
+    choice(g, `T${t + 1} TYPE`, FT_NAMES, () => v[i] & 3, (x) => { v[i] = (v[i] & 4) | x; fxSend(i, v[i]); }, true);
+    choice(g, `T${t + 1} POS`, ["PRE", "POST"], () => v[i] >> 2 & 1, (x) => { v[i] = (v[i] & 3) | x << 2; fxSend(i, v[i]); }, true);
+  }
+  if (v[28] !== null) {                                      // (GR!MM 2.0: the tracks' sends, MIXER 1's squares)
+    const s = el("div", { cls: "grp" }, box);
+    el("h3", {}, s, "TRACK SENDS (MIXER 1)");
+    for (let t = 0; t < 4; t++)                              // (as MIXER 1's tiles: DELAY, REVERB, TAPE, GRAIN, DRIVE)
+      [["DLY", 28 + t * 4], ["REV", 29 + t * 4], ["TAPE", 44 + t], ["GRAIN", 30 + t * 4], ["DRIVE", 31 + t * 4]].forEach(([nm, i]) => {
+        if (v[i] !== null)
+          control(s, `T${t + 1} ${nm}`, 0, 127, () => v[i], (x) => { v[i] = x; fxSend(i, x); }, (x) => `${Math.round(x * 100 / 127)}%`, true);
+      });
+  }
+  refreshButtons();
+}
+$("b-fxread").onclick = () => job("FX", async () => {
+  try { fxVals = await conn.client.fx(); } catch (e) {
+    if (e instanceof EditorError) throw e;
+    throw new EditorError("NO ANSWER: FX NEEDS GR!MM V2 ON THE FM-1", 0);
+  }
+  drawFx();
+  return "FX READ FROM THE FM-1: EVERY MOVE NOW PLAYS ON IT AT ONCE";
+});
+drawFx();
 
 // ------------------------------------------------------------------ start: the four tracks as GR!MM starts
 (async () => {

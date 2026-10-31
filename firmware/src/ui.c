@@ -25,7 +25,8 @@ static const uint16_t UI_ACCENTS[4] = {RGB(0xc8, 0x32, 0x1e), RGB(0xd0, 0x8a, 0x
 static uint16_t ui_acc = RGB(0xc8, 0x32, 0x1e); /* the accent */
 #define UI_PIC_MS 40u                           /* the picture redrawn at most this often */
 #define UI_BAT_W 16                             /* the header's battery (and its tip) */
-#define UI_BOOT_MS 3000u                        /* the boot screen this long */
+#define UI_BOOT_MS 5600u                        /* the boot screen this long (V2: 3 s before; its pictures at half
+                                                 * speed, bt_e) */
 #define UI_ANIM_MS 55u                          /* a frame of the moving pictures (the boot screen, HOME): ~18 a second */
 #define PX0 12                                  /* the picture grid: 54 x 30 cells of 4 px from (PX0, PY0) */
 #define PY0 40
@@ -119,7 +120,8 @@ static void ui_head_text(void)
         for (p = 0; p < 4u; p++) *q++ = ' ', *q++ = slot_used(p) ? (char)('A' + p) : '-';
         *q = 0;
     }
-    if (sv_wait) put_s(ui_hl, "SAVES WHEN SILENT");   /* (a save waits: a voice sounds, a latched note) */
+    if (sv_wait && fm1_ms - sv_said < SV_SAY_MS)   /* (a save waits: a voice sounds, a latched note; said ~2 s) */
+        put_s(ui_hl, "SAVES WHEN SILENT");
     if (fm1_ms < hd_until) put_s(ui_hl, hd_msg);   /* (a moment: SAVED, LOADED, a sound's name) */
     if (learn_st) put_s(ui_hl, learn_st == 1u ? "TURN A KNOB" : "MOVE A CC");   /* (MIDI LEARN, till it ends) */
     if (as_err) put_s(ui_hl, "SAVE ERROR: RETRYING");
@@ -128,10 +130,11 @@ static void ui_head_text(void)
     else if (page == PG_PROJECTS) ui_hr[0] = (char)('A' + (slot_cur & 3)), ui_hr[1] = 0;   /* (the slot in use) */
     else if (ge_freeze && P->btn == BTN_FX) put_s(ui_hr, "FREEZE");
     else if (page == PG_GRID) put_s(put_u(ui_hr, (uint32_t)seq_steps(&seq[sel])), " ST");   /* (Seq: the steps) */
-    else if (page == PG_HOME) put_u(put_s(ui_hr, "> "), (uint32_t)clamp(seq_bpm, 20, 300));   /* (Main: the tempo) */
+    else if (page == PG_HOME) tempo_text(ui_hr, "> ");   /* (Main: the tempo; a MIDI clock's: "EXT 120.4") */
     else if (P->btn == BTN_SEL) put_u(put_s(ui_hr, "T"), sel + 1u);
     else if (page == PG_ARP) put_s(ui_hr, trk[sel].latch ? "LATCH" : "");   /* (Arp: LATCH, if on) */
-    else if (page == PG_SYSTEM || page == PG_SYS2) put_s(ui_hr, "V" APP_VER);   /* (System: the version) */
+    else if (page == PG_SYSTEM || page == PG_SYS2 || page == PG_SYS3) put_s(ui_hr, "V" APP_VER);   /* (System: the
+                                                 * version) */
     else if (page == PG_FMALGO || page == PG_FMOP) put_u(put_s(ui_hr, "OP "), (uint32_t)clamp(fm_op, 0, 5) + 1u);   /* (EditFM:
                                                  * the operator) */
     else if (page == PG_SONG) put_u(put_s(put_u(ui_hr, (uint32_t)song_cur() + 1u), "/"), song_length());   /* (Song: the
@@ -140,6 +143,11 @@ static void ui_head_text(void)
     else put_u(put_s(put_u(ui_hr, i), "/"), n);
     ui_bat = page == PG_HOME && bat_lvl >= 0 ? bat_lvl * 2 + (bat_lvl == 0 && (fm1_ms / 500u & 1u)) : -1;   /* (the
                                                  * battery: where the tempo shows) */
+#ifdef GRIMM_TRS_TEST
+    put_u(put_s(put_u(put_s(ui_hr, "TRS "), um.bytes), "/"), um.msgs);   /* (a test build: the bytes, the messages in on
+                                                 * the TRS jack so far, every page) */
+    ui_bat = -1;
+#endif
     if (song_mode != SM_OFF) {                  /* a song MODE: SONG, SONG LOOP on every page (the left cut short to
                                                  * fit) */
         int32_t room = (232 - 8 * (int32_t)ui_len(SONG_MODE_NAME[song_mode]) - 8 - 21 - 8 * ui_len(ui_hb)) / 8;
@@ -150,7 +158,7 @@ static void ui_head_text(void)
     {                                           /* the left fits beside the right (the battery, the tempo); a message
                                                  * that does not: the right side gives way while it shows; then cut */
         int32_t x0 = 3 + 10 + 8 * ui_len(ui_hb) + 3 + 5, rw = 8 * ui_len(ui_hr) + (ui_bat >= 0 ? UI_BAT_W + 4 : 0), room;
-        int msg = fm1_ms < hd_until || sv_wait || as_err || learn_st || save_held;
+        int msg = fm1_ms < hd_until || (sv_wait && fm1_ms - sv_said < SV_SAY_MS) || as_err || learn_st || save_held;
         room = (232 - (rw ? rw + 8 : 0) - x0) / 8;
         if (msg && ui_len(ui_hl) > room) ui_hr[0] = 0, ui_bat = -1, room = (232 - x0) / 8;
         if (room >= 0 && ui_len(ui_hl) > room) ui_hl[room] = 0;
@@ -183,17 +191,20 @@ static void ui_head_draw(void)
 }
 
 /* ---- the slabs: KNOB 1..4 of the page */
-typedef struct { char lab[12], val[12]; uint8_t fill, acc, dim; } slab_t;
+typedef struct { char lab[12], val[12]; uint8_t fill, acc, dim, warn; } slab_t;   /* (rc9) warn: 1 "CUT", 2 "DRY" under
+                                                 * the label (HOME) */
 static slab_t ui_sl[4], ui_slab_shown[4];
 static const char *const LONG_LAB[][2] = {
-    {"RESONANCE", "RES"}, {"DETUNE", "DTUNE"}, {"DRAWBARS", "BARS"}, {"STRUCTURE", "STRUCT"}, {"SATURATION", "SAT"},
+    {"RESONANCE", "RES"}, {"POSITION", "POS"}, {"AMOUNT", "AMT"}, {"DETUNE", "DTUNE"}, {"DRAWBARS", "BARS"},
+    {"STRUCTURE", "STRUCT"}, {"SATURATION", "SAT"},
     {"DESTINATION", "DEST"}, {"PRE-DELAY", "PREDLY"}, {"FEEDBACK", "FDBK"}, {"CHORD TYPE", "CHORD"},
     {"MIDI CHANNEL", "MIDI"}, {"SCREEN OFF", "SCREEN"}, {"CATEGORY", "CAT"}, {"DIVISION", "DIV"},
     {"PLAY MODE", "PLAY"}, {"DLY SEND", "DLY"}, {"REV SEND", "REV"}, {"GRAIN SEND", "GRAIN"}, {"ATTACK", "ATK"},
     {"DECAY", "DEC"}, {"SUSTAIN", "SUS"}, {"RELEASE", "REL"}, {"DENSITY", "DENS"}, {"SCATTER", "SCAT"},
     {"REVERSE", "REV"}, {"SECTION", "SECT"}, {"PATTERN", "PATT"}, {"REPEATS", "REPEAT"}, {"OCTAVES", "OCTAVE"},
     {"RATCHET", "RATCH"}, {"VOICING", "VOICNG"}, {"CHANCE", "CHNC"}, {"ACTION", "DO"}, {"MIDI LEARN", "LEARN"},
-    {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"},
+    {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"}, {"VELOCITY", "VELO"},
+    {"DCW ENV", "DCW"}, {"DCW DECAY", "D DEC"}, {"PITCH ENV", "PITCH"}, {"PITCH DECAY", "P DEC"},
 };
 static void ui_label(char *d, const char *s)    /* a knob's name on a slab (at most 6 characters: 48 px) */
 {
@@ -279,7 +290,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
     int32_t v = p ? *p : 0, mx = knob_max(page, k), md = (int32_t)phys_model(trk[sel].p[ENG_PHYS]);
     uint32_t eng = sel_eng();
     char t[32];
-    S->acc = S->dim = 0;
+    S->acc = S->dim = S->warn = 0;
     S->val[0] = 0;
     ui_label(S->lab, name[0] ? name : "-");
     if (page == PG_GRID && k == 3u) put_s(S->lab, "LEN");   /* (Seq's; SAMPLE keeps its LENGTH) */
@@ -309,16 +320,44 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         }
         ui_3(S->val, ui_pc(v));
         return;
-    case PG_SOURCE: put_s(S->val, k ? (v ? "ON" : "OFF") : ENGINES[clamp(v, 0, NENG - 1)]->name); return;
-    case PG_SYSTEM:                             /* COLOUR, MIDI ("ALL": ALL > SEL), TUNE, SCREEN OFF ("NVR": full) */
+    case PG_SOURCE:                             /* SOURCE, LATCH, (V2) VOICE's TYPE */
+        if (k == 2u) { static const char *const VS[NVT] = {"SOLO", "GREG", "NUNS", "CATHED"}; put_s(S->val, VS[clamp(v, 0, NVT - 1)]); return; }
+        if (k == 3u) { if (v) ui_time(S->val, 10u * pow2_q16(clamp(v, 0, 127) * 12)); else put_s(S->val, "OFF"); return; }   /* (V2:
+                                                 * GLIDE) */
+        put_s(S->val, k ? (v ? "ON" : "OFF") : ENGINES[clamp(v, 0, NENG - 1)]->name);
+        return;
+    case PG_SYSTEM:                             /* COLOUR, MIDI ("ALL": ALL > SEL; "CH5>S": CH 5 > SEL), TUNE, SCREEN
+                                                 * OFF ("NVR": full) */
         if (k == 0u) S->fill = (uint8_t)(2 * v + 2), put_s(S->val, COL_NAME[clamp(v, 0, 3)]);
-        else if (k == 1u) { if (v >= MCH_ALL) put_s(S->val, "ALL"); else mch_text(S->val, v); }
+        else if (k == 1u) {
+            if (v > MCH_ALL) put_s(put_u(put_s(S->val, "CH"), (uint32_t)(v - MCH_ALL)), ">S");
+            else if (v == MCH_ALL) put_s(S->val, "ALL");
+            else mch_text(S->val, v);
+        }
         else if (k == 2u) S->fill = (uint8_t)((clamp(v, -50, 50) + 50) * 8 / 100), tune_text(S->val, v);
         else if (v) S->fill = (uint8_t)(2 * v), put_s(put_u(S->val, SCR_S[clamp(v, 0, 4)] / 60u), "M");
         else S->fill = 8, put_s(S->val, "NVR");
         return;
-    case PG_SYS2: put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
-                        LEARN_NAME[clamp(v, 0, 2)]); return;
+    case PG_SYS2:                               /* MIDI LEARN, SEQ MIDI OUT, SAMPLES, CLOCK ("I+OUT": INT+OUT) */
+        if (k == 3u) { put_s(S->val, v == CK_OUT ? "I+OUT" : CK_NAME[clamp(v, 0, CK_N - 1)]); return; }
+        put_s(S->val, k == 2u ? (v ? "RESTORE" : "KEEP") : k ? (v ? "ON" : "OFF") : v == LEARN_CLEAR ? "CLEAR" :
+              LEARN_NAME[clamp(v, 0, 2)]);
+        return;
+    case PG_PDLINE:                             /* (V2: PHASE's LINE 2: WAVE, DCW (0: SAME, line 1's), RING, NOISE) */
+        if (k == 0u) put_s(S->val, v ? N_PD_WAVE[clamp(v, 1, 8) - 1] : "SAME");
+        else if (k == 1u) { if (v) put_s(put_u(S->val, ((uint32_t)clamp(v, 0, 127) * 100u + 63u) / 127u), "%"); else put_s(S->val, "SAME"); }
+        else put_s(S->val, v ? "ON" : "OFF");
+        return;
+    case PG_PDENV:                              /* (V2: PHASE ENV: DCW ENV, its DECAY, PITCH ENV, its DECAY) */
+        if (k == 0u) { if (v) put_s(put_u(S->val, ((uint32_t)clamp(v, 0, 127) * 100u + 63u) / 127u), "%"); else put_s(S->val, "OFF"); }
+        else if (k == 2u) {                     /* (the bar from its middle: 4 at OFF) */
+            S->fill = (uint8_t)((clamp(v, -64, 63) + 64) * 8 / 127);
+            if (v) put_s(put_u(put_s(S->val, v > 0 ? "+" : "-"), (uint32_t)(v > 0 ? v : -v)), "ST"); else put_s(S->val, "OFF");
+        }
+        else ui_time(S->val, 10u * pow2_q16(clamp(v, 0, 127) * 15));
+        return;
+    case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
+                                                 * ALWAYS OFF; VELOCITY: OFF, ON */
     case PG_SOUNDS:
         if (k == 0u) { ui_3(S->val, (uint32_t)v + 1u); return; }
         if (k == 1u) { ui_squeeze(S->val, CAT_NAME[clamp(v, 0, NCAT - 1)]); return; }
@@ -379,15 +418,29 @@ static void ui_slab_make(uint32_t k, slab_t *S)
                                                  * RESONANCE, FX; the header says what they change): "T2 FM", its LEVEL;
                                                  * the selected track in the accent; MUTE */
         put_s(put_s(put_u(put_s(S->lab, "T"), k + 1u), " "), SRC_CODE[clamp(trk[k].eng, 0, NENG - 1)]);
+        S->warn = (uint8_t)(trk_closed(k) ? 1u : trk_dry(k) ? 2u : 0u);   /* (rc9: its filter closed, "CUT"; its FX 0
+                                                 * with a send up, "DRY": under its label, while so) */
         S->fill = (uint8_t)((clamp(trk[k].level, 0, 127) * 8 + 63) / 127);
         ui_3(S->val, ui_pc(trk[k].level));
         if (trk_quiet >> k & 1u) { put_s(S->val, "MUTE"); S->dim = 1; }
         S->acc = k == sel;
         return;
-    case PG_MIX2:
-        if (v == 64) put_s(S->val, "C");
+    case PG_MIX2:                               /* PAN; (V2) the track filter's TYPE, POS */
+        if (k == 1u) put_s(S->val, FT_NAME[clamp(v, 0, NFTYPE - 1)]);
+        else if (k == 2u) put_s(S->val, v ? "POST" : "PRE");
+        else if (v == 64) put_s(S->val, "C");
         else put_u(put_s(S->val, v < 64 ? "L" : "R"), (uint32_t)(v < 64 ? 64 - v : v - 64));
         return;
+    case PG_MASTER:                             /* (V2) CUTOFF ("2.4K", "OPEN"), RESONANCE, TYPE, POSITION */
+        if (k == 0u) { hz_text(S->val, v, mf_type); return; }
+        if (k == 2u) { put_s(S->val, FT_NAME[clamp(v, 0, NFTYPE - 1)]); return; }
+        if (k == 3u) { put_s(S->val, MP_SHORT[clamp(v, 0, NMPOS - 1)]); return; }
+        break;
+    case PG_DRIVE:                              /* (V2) AMOUNT ("OFF": 0), TYPE, TONE ("OPEN"), MIX */
+        if (k == 0u && !v) { put_s(S->val, "OFF"); return; }
+        if (k == 1u) { put_s(S->val, DT_NAME[clamp(v, 0, NDTYPE - 1)]); return; }
+        if (k == 2u && v >= 127) { put_s(S->val, "OPEN"); return; }
+        break;
     case PG_GRAIN:
         if (k == 0u) { put_s(put_u(S->val, (pow2_q16(clamp(v, 0, 127) * 8) * 10u + 32768u) >> 16), "MS"); return; }
         if (k == 1u) { uint32_t i = gr_iv(v); put_s(put_u(S->val, (44100u + i / 2u) / (i ? i : 1u)), "/S"); return; }
@@ -415,6 +468,8 @@ static void ui_slab_draw(void)
     uint16_t fc = S->acc ? ui_acc : UI_L;
     ui_rect(x, 165, 56, 72, UI_D);
     ui_text(x + 4, 170, S->lab, 1, UI_L);
+    if (S->warn) ui_text(x + 4, 180, S->warn == 1u ? "CUT" : "DRY", 1, ui_acc);   /* (rc10: small, red, under the label;
+                                                 * the label as ever) */
     for (j = 0; j < 8; j++)                     /* 8 segments: light (the accent) filled, black empty */
         ui_rect(x + 4 + j * 6, 190, 5, 14, j < S->fill ? fc : UI_K);
     if (n <= 3) ui_text(x + 4, 214, S->val, 2, S->dim ? UI_M : S->acc ? ui_acc : UI_L);
@@ -453,9 +508,12 @@ static int ui_in(int32_t x, int32_t y, int32_t w, int32_t h)   /* does (x, y, w,
 }
 /* the eye at (x, y), 5 px a cell: its lids k open (4: wide, 0: shut; the lid's edge a light row), the iris dx, dy cells
  * off the middle (inside the white only) */
+static int32_t ui_eye_tiny;                     /* (V2: the boot's startled eye: its pupil shrunk to a point) */
 static void ui_eye(int32_t x, int32_t y, int32_t k, int32_t dx, int32_t dy)
 {
-    static const char *const IRIS[4] = {".aaaa.", "aawkaa", "aakkaa", ".aaaa."};
+    static const char *const IRIS_N[4] = {".aaaa.", "aawkaa", "aakkaa", ".aaaa."}, *const IRIS_T[4] = {".aaaa.", "aawaaa",
+                                                                                                     "aaakaa", ".aaaa."};
+    const char *const *IRIS = ui_eye_tiny ? IRIS_T : IRIS_N;
     int32_t r, c;
     if (!ui_in(x, y, 80, 40)) return;
     for (r = 0; r < 8; r++) {
@@ -475,15 +533,24 @@ static void ui_eye(int32_t x, int32_t y, int32_t k, int32_t dx, int32_t dy)
 
 /* ---- HOME's moving picture (Main), a frame every UI_ANIM_MS while it is shown and the screen lit, from the main loop:
  * what the audio ISR left in vis_pk, vis_lr (its peaks) and the notes on (their pitch). Only what changed is drawn.
- *   candles: LEVEL the most a flame can be (muted, LEVEL 0: out, a wisp of smoke); a silent track's burns low, a shape
- *   now and then; a sounding one's grows with its peak, dances (a row up or down) and flickers (three shapes, uneven)
- *   stars: the fog's pixels, a few at a time brighten to light and fade back; more of them the louder it is
+ *   candles (V2): a flame only while the track sounds, as tall as its sound now after its LEVEL (as MIXER 1's meter, up
+ *   to 10 rows: at once up, down over ~0.5 .. 0.8 s), out when it has faded (muted, LEVEL 0: out), the wick alone; lit,
+ *   it dances (a row up or down) and flickers (three shapes, uneven)
+ *   stars: the fog's pixels, a few at a time brighten to light and fade back; more of them the louder it is (as 1.0:
+ *   its 46, where they were, but none on a web or the eye)
+ *   webs (V2): two spider webs in the top corners, their threads' cells a few at a time brighten to light and fade
+ *   back (dew catching the light); more of them the louder it is
  *   the eye: its iris goes towards the sound (left, right: the output's balance; up, down: high, low notes), a cell at
  *   a time; it blinks now and then, and at a sudden loud hit; silent ~4 s, it half-closes and drifts (dozing); the
  *   first sound wakes it with a blink */
 #define NSTAR 46u
-static uint8_t sk_x[NSTAR], sk_y[NSTAR], sk_b[NSTAR], sk_ph[NSTAR], sk_ok;   /* a star: where, M (else D), its sparkle's
-                                                 * frame (0: none) */
+#define NWEB (330u + NSTAR)
+static uint8_t sk_x[NWEB], sk_y[NWEB], sk_b[NWEB], sk_ph[NWEB], sk_ok;   /* a web's cell, then a star (3 px, from y 27):
+                                                 * where, M (a ring, a bright star; else D), its sparkle's frame (0:
+                                                 * none) */
+static uint32_t sk_n, sk_nw;                    /* the cells: the webs' and the stars'; the webs' */
+#define CN_ROWS 10                              /* (V2) a flame's rows at the most (3 px each) */
+#define CN_Y 98                                 /* (V2) a candle's top: 6 px lower than it was, room for the flame under the eye */
 static uint8_t cn_h[NT], cn_s[NT], cn_n[NT];    /* a candle: its flame's rows (0: out), shape, frames to its next shape */
 static int32_t ey_k = 4, ey_dx, ey_dy, ey_tx, ey_ty, ey_bl, ey_doze;   /* the eye: lids, iris, its target, the blink's
                                                  * frame (0: none), dozing */
@@ -498,35 +565,91 @@ static uint16_t sk_col(uint32_t i)              /* a star's colour now: D or M; 
     uint32_t p = sk_ph[i];
     return !p ? (sk_b[i] ? UI_M : UI_D) : p >= 4u && p <= 9u ? UI_L : UI_M;
 }
-static void sk_init(void)                       /* the stars where Main has its fog (the concepts' random, seed 7) */
+static void sk_add(int32_t x, int32_t y, uint32_t ring)   /* a web's cell (once; a ring's is M), or a star (ring 2 | b:
+                                                 * none on a web's cell or the eye) */
 {
     uint32_t i;
-    ui_rnd_s = 7;
-    for (i = 0; i < NSTAR; i++) {
-        sk_x[i] = (uint8_t)ui_rnd(79), sk_y[i] = (uint8_t)ui_rnd(44);
-        sk_b[i] = ui_rnd(100) >= 65u;
+    if (x < 0 || x > 78 || y < 0 || y > 43) return;
+    if ((ring & 2u) && x >= 25 && x <= 54 && y >= 3 && y <= 18) return;   /* (the eye: 80 .. 160, 39 .. 79 px) */
+    for (i = 0; i < sk_n; i++)
+        if (sk_x[i] == x && sk_y[i] == y) {
+            if (!(ring & 2u)) sk_b[i] |= (uint8_t)ring;
+            return;
+        }
+    ring &= 1u;
+    if (sk_n >= NWEB) return;
+    sk_x[sk_n] = (uint8_t)x, sk_y[sk_n] = (uint8_t)y, sk_b[sk_n] = (uint8_t)ring, sk_ph[sk_n] = 0, sk_n++;
+}
+static void sk_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t ring)   /* (Bresenham) */
+{
+    int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0, sx = x1 > x0 ? 1 : -1, sy = y1 > y0 ? 1 : -1,
+            e = dx + dy, e2;
+    for (;;) {
+        sk_add(x0, y0, ring);
+        if (x0 == x1 && y0 == y1) return;
+        e2 = 2 * e;
+        if (e2 >= dy) e += dy, x0 += sx;
+        if (e2 <= dx) e += dx, y0 += sy;
+    }
+}
+static void sk_init(void)                       /* (V2) the webs: in each top corner five threads out from it, four
+                                                 * rings across them, sagging towards the corner between threads (each web ~150 cells) */
+{
+    static const int8_t TH[5][2] = {{18, 0}, {17, 7}, {13, 13}, {7, 17}, {0, 18}};   /* (0, 22.5 .. 90 degrees) */
+    static const int8_t WEB_R[3] = {6, 11, 16};
+    int32_t c, k, r;
+    sk_n = 0;
+    for (c = 0; c < 2; c++) {
+        int32_t ox = c ? 78 : 0, sx = c ? -1 : 1;
+        for (k = 0; k < 5; k++) sk_line(ox, 0, ox + sx * TH[k][0], TH[k][1], 0);
+        for (r = 0; r < 3; r++)
+            for (k = 0; k < 4; k++) {
+                int32_t x0 = TH[k][0] * WEB_R[r] / 18, y0 = TH[k][1] * WEB_R[r] / 18;
+                int32_t x1 = TH[k + 1][0] * WEB_R[r] / 18, y1 = TH[k + 1][1] * WEB_R[r] / 18;
+                int32_t mx = (x0 + x1) * 9 / 20, my = (y0 + y1) * 9 / 20;   /* (the sag: the middle a tenth in) */
+                sk_line(ox + sx * x0, y0, ox + sx * mx, my, 1);
+                sk_line(ox + sx * mx, my, ox + sx * x1, y1, 1);
+            }
+    }
+    sk_nw = sk_n;
+    ui_rnd_s = 7;                               /* (the stars as 1.0 had them: the concepts' random, seed 7) */
+    for (k = 0; k < (int32_t)NSTAR; k++) {
+        int32_t x = (int32_t)ui_rnd(79), y = (int32_t)ui_rnd(44);
+        sk_add(x, y, 2u | (ui_rnd(100) >= 65u));
     }
     sk_ok = 1;
 }
-static void pic_home(void)                      /* Main: the stars, the eye, a candle a track */
+static void ui_flame(int32_t x, int32_t y, int32_t n, uint32_t s)   /* (V2) a flame n rows tall (1 .. CN_ROWS) on the
+                                                 * wick (columns 2, 3 of 6 from x, as the flame was), its lowest row at
+                                                 * y: a drop, widest low down, its tip leaning with the shape s (0
+                                                 * straight, 1 right, 2 left); the edge the accent, the inside light */
 {
-    static const char *const FLAME[3][4] = {{"..aa..", ".aaaa.", ".alla.", "..la.."}, {"...a..", "..aaa.", ".alla.", "..la.."},
-                                            {"..a...", ".aaa..", ".alla.", "..la.."}};
+    static const char *const W[CN_ROWS] = {"2", "12", "122", "1242", "12442", "112442", "1124442", "11224442",
+                                           "112244442", "1112244442"};   /* (each row's width, from the tip) */
+    int32_t i, c, w, c0;
+    for (i = 0; i < n; i++) {
+        w = W[n - 1][i] - '0';
+        c0 = (6 - w) / 2;
+        if (w == 1) c0 = s == 1u ? 3 + (i == 0 && n > 5) : s == 2u ? 1 : 2;   /* (the tip) */
+        for (c = 0; c < w; c++)
+            ui_rect(x + (c0 + c) * 3, y - (n - 1 - i) * 3, 3, 3,
+                    ui_col((w > 2 && c && c < w - 1) || (w == 2 && !c && i == n - 1 && n > 2) ? 'l' : 'a'));
+    }
+}
+static void pic_home(void)                      /* Main: the webs, the stars, the eye, a candle a track */
+{
     static const char *const BODY[9] = {"...m..", ".wlll.", ".wlll.", ".llll.", ".llll.", "lllll.", ".llll.", ".llll.",
                                         "dddddd"};
     uint32_t i;
     int32_t t;
     if (!sk_ok) sk_init();
-    for (i = 0; i < NSTAR; i++) ui_rect(sk_x[i] * 3, 27 + sk_y[i] * 3, 3, 3, sk_col(i));
+    for (i = 0; i < sk_n; i++) ui_rect(sk_x[i] * 3, 27 + sk_y[i] * 3, 3, 3, sk_col(i));
     ui_eye(80, 39, ey_k, ey_dx, ey_dy);
     for (t = 0; t < (int32_t)NT; t++) {         /* four candles, 27 px apart, centred */
-        int32_t x = 43 + t * 45, y = 92, h = cn_h[t], r;
-        const char *f[4];
+        int32_t x = 43 + t * 45, y = CN_Y, h = cn_h[t];
         char lab[2] = {(char)('1' + t), 0};
-        if (!ui_in(x, y, 18, 52)) continue;
-        for (r = 0; r < 4; r++) f[r] = r >= 4 - h ? FLAME[cn_s[t] % 3u][r] : "......";
-        if (!h) f[1] = "..m...", f[2] = "...m..";   /* (out: a wisp of smoke) */
-        ui_sprite(x, y, 3, f, 4);
+        if (!ui_in(x, y + 12 - 3 * CN_ROWS, 18, 3 * CN_ROWS + 43)) continue;
+        if (h) ui_flame(x, y + 9, h, cn_s[t] % 3u);   /* (V2: out, the wick alone) */
         ui_sprite(x, y + 12, 3, BODY, 9);
         ui_text(x + 5, y + 43, lab, 1, UI_M);
     }
@@ -547,39 +670,40 @@ static void ui_home_frame(int draw)             /* a frame of HOME's picture (dr
     sound = loud > 2u || n;
     if (!sk_ok) sk_init();
 
-    for (t = 0; t < NT; t++) {                  /* the candles */
-        uint32_t e = pk[t] / 96u, lv = trk[t].level <= 0 || (trk_quiet >> t & 1u) ? 0u : (ui_pc(trk[t].level) + 24u) / 25u;
-        uint32_t h, s = cn_s[t], lo = lv < 2u ? lv : 2u;
+    for (t = 0; t < NT; t++) {                  /* the candles (V2: the track's sound after its LEVEL, as MIXER 1's) */
+        static const uint8_t ROW[CN_ROWS] = {3, 5, 8, 12, 18, 27, 40, 60, 90, 135};   /* (a row lit from: ~-38 ..
+                                                 * -5.6 dB of full) */
+        uint32_t e = pk[t] / 96u, h, s = cn_s[t];
         e = e > 256u ? 256u : e;
-        an_e[t] = e >= an_e[t] ? e : an_e[t] - (an_e[t] + 5u) / 6u;   /* (up at once, down over ~0.3 s) */
-        if (an_e[t] < 6u) h = lo;               /* (silent: low) */
-        else {
-            h = lo + ((lv - lo) * an_e[t] + 128u) / 256u;
-            if (!an_rnd(3) && h < lv) h++;      /* (the dance) */
-            else if (!an_rnd(4) && h > lo) h--;
+        e = trk_quiet >> t & 1u ? 0u : e * (uint32_t)clamp(trk[t].level, 0, 127) / 127u;
+        an_e[t] = e >= an_e[t] ? e : an_e[t] - (an_e[t] * 67u + 255u) / 256u;   /* (up at once, down ~2.6 dB a frame:
+                                                 * from full to out ~0.8 s) */
+        for (h = 0; h < CN_ROWS && an_e[t] >= ROW[h]; h++)
+            ;
+        if (h) {                                /* (lit: the dance; a new shape, at uneven times) */
+            if (!an_rnd(3) && h < CN_ROWS) h++;
+            else if (!an_rnd(4) && h > 1u) h--;
+            if (!cn_n[t] || !--cn_n[t]) s = (s + 1u + an_rnd(2)) % 3u, cn_n[t] = (uint8_t)(1u + an_rnd(3));
         }
-        if (!cn_n[t] || !--cn_n[t]) {           /* (a new shape, at uneven times: sounding often, silent seldom) */
-            s = (s + 1u + an_rnd(2)) % 3u;
-            cn_n[t] = (uint8_t)(an_e[t] >= 6u ? 1u + an_rnd(3) : 6u + an_rnd(14));
-        }
-        if (h != cn_h[t] || (s != cn_s[t] && h > 2u)) {
+        if (h != cn_h[t] || (s != cn_s[t] && h > 1u)) {   /* (shapes differ from 2 rows up) */
             cn_h[t] = (uint8_t)h, cn_s[t] = (uint8_t)s;
-            if (draw) ui_home_part(43 + (int32_t)t * 45, 92, 18, 12);
+            if (draw) ui_home_part(43 + (int32_t)t * 45, CN_Y + 12 - 3 * CN_ROWS, 18, 3 * CN_ROWS);
         }
         cn_s[t] = (uint8_t)s;
     }
 
-    for (i = 0; i < NSTAR; i++)                 /* the stars: the sparkling ones on; new ones (louder: more) */
+    for (i = 0; i < sk_n; i++)                  /* the webs: the sparkling cells on; new ones (louder: more) */
         if (sk_ph[i]) {
             uint16_t c = sk_col(i);
             sk_ph[i] = sk_ph[i] >= 12u ? 0u : (uint8_t)(sk_ph[i] + 1u);
             if (draw && sk_col(i) != c) ui_home_part(sk_x[i] * 3, 27 + sk_y[i] * 3, 3, 3);
         }
-    for (t = 0; t < 1u + loud / 96u; t++)
-        if (an_rnd(64) < 3u + loud / 12u) {
-            i = an_rnd(NSTAR);
-            if (!sk_ph[i]) sk_ph[i] = 1;
-        }
+    for (t = 0; t < 1u + loud / 96u; t++)       /* (the webs, the stars each as often as 1.0's stars) */
+        for (k = 0; k < 2; k++)
+            if (an_rnd(64) < 3u + loud / 12u) {
+                i = k ? sk_nw + an_rnd(sk_n - sk_nw) : an_rnd(sk_nw);
+                if (!sk_ph[i]) sk_ph[i] = 1;
+            }
 
     if (sound) {                                /* the eye: awake (the first sound: a blink), or dozing */
         if (ey_doze) ey_doze = 0, ey_bl = 1;
@@ -863,7 +987,8 @@ static void pic_sample(void)                    /* the slot's sample, the loop (
     }
 }
 
-static void pic_voice(void)                     /* a mouth singing VOWEL: A open, E wide, I narrow, O round, U small */
+static void pic_voice(void)                     /* a mouth singing VOWEL: A open, E wide, I narrow, O round, U small;
+                                                 * (V2) two fangs from its upper lip, the longer the more it is open */
 {
     static const int8_t RX[5] = {14, 17, 18, 9, 6}, RY[5] = {10, 6, 3, 10, 6};
     const volatile int32_t *p = trk[sel].p[ENG_VOICE];
@@ -885,7 +1010,11 @@ static void pic_voice(void)                     /* a mouth singing VOWEL: A open
             int32_t dx = x - 27, dy = y - 15, o = (dx * dx) * (ry + 3) * (ry + 3) + (dy * dy) * (rx + 3) * (rx + 3),
                     oo = (rx + 3) * (rx + 3) * (ry + 3) * (ry + 3), n = (dx * dx) * ry * ry + (dy * dy) * rx * rx,
                     nn = rx * rx * ry * ry;
-            if (o <= oo) ui_cell(x, y, n <= nn ? (dy > ry / 2 && dy * 3 > ry && n * 4 <= nn * 3 ? ui_acc : UI_K) : UI_L);
+            int32_t fd = dx < 0 ? -dx : dx, fx = rx / 2 > 2 ? rx / 2 : 2, fl = ry * 2 / 3;   /* (a fang: at +-fx,
+                                                 * fl cells long, a cell narrower its last third) */
+            int32_t fang = fd >= fx - 1 && fd <= fx + 1 && dy < 0 && dy <= -ry + fl - (fd != fx ? fl / 3 : 0);
+            if (o <= oo) ui_cell(x, y, n <= nn ? (fang ? UI_W : dy > ry / 2 && dy * 3 > ry && n * 4 <= nn * 3 ? ui_acc : UI_K) :
+                                 UI_L);
         }
 }
 
@@ -971,6 +1100,48 @@ static void pic_phase(void)                     /* the bent waveform of WAVE at 
     }
 }
 
+static void pic_pdline(void)                    /* (V2) LINE 2: line 1 (light) beside line 2 (mid: its WAVE, DCW), how
+                                                 * they meet */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_PHASE];
+    int32_t x, c, y0, w2 = clamp(trk[sel].pd_wav, 0, 8), d2 = clamp(trk[sel].pd_dcw, 0, 127);
+    pd_t b;
+    ui_caption("LINE 1", "LINE 2");
+    for (c = 0; c < 2; c++) {
+        pd_setup(&b, c && w2 ? (uint32_t)w2 - 1u : (uint32_t)clamp(p[0], 0, 7), pd_dcw(c && d2 ? d2 : p[2]));
+        for (y0 = -1, x = 0; x < 26; x++) {
+            int32_t yy = 11 - pd_wave(&b, (uint32_t)x * 65535u / 25u) * 9 / 32767, a = y0 < 0 ? yy : y0, z;
+            for (z = a < yy ? a : yy; z <= (a < yy ? yy : a); z++) ui_cell(c * 28 + x, z, c ? UI_M : UI_L);
+            y0 = yy;
+        }
+    }
+    ui_text(PX0 + 4, PY0 + 96, trk[sel].pd_ring ? "RING  1 X 2" : p[3] || trk[sel].pd_noise || w2 || d2 ? "MIX  1 + 2" :
+            "LINE 1 ALONE", 1,
+            trk[sel].pd_ring ? ui_acc : UI_M);
+    ui_text(PX0 + 124, PY0 + 96, trk[sel].pd_noise ? "NOISE ON" : "NOISE OFF", 1, trk[sel].pd_noise ? ui_acc : UI_M);
+}
+
+static void pic_pdenv(void)                     /* (V2) PHASE ENV: the two envelopes, DCW (light: up from the floor),
+                                                 * PITCH (mid: up or down from the middle; 24 ST: all the way), each
+                                                 * over ~1.2 s */
+{
+    int32_t c, x, y0;
+    ui_caption("DCW", "PITCH");
+    for (c = 0; c < 2; c++) {
+        int32_t d = c ? clamp(trk[sel].pd_pe, -64, 63) : clamp(trk[sel].pd_de, 0, 127);
+        uint32_t k = env_k(10u * pow2_q16(clamp(c ? trk[sel].pd_pd : trk[sel].pd_dd, 0, 127) * 15)), l = 65536u, j;
+        int32_t base = c ? 11 : 20, span = c ? clamp(9 * d / 24, -9, 9) : 18 * d / 127;
+        for (y0 = -1, x = 0; x < 26; x++) {
+            int32_t yy = base - (int32_t)(((int64_t)span * l) >> 16), a = y0 < 0 ? yy : y0, z;
+            for (z = a < yy ? a : yy; z <= (a < yy ? yy : a); z++) ui_cell(c * 28 + x, z, c ? UI_M : UI_L);
+            y0 = yy;
+            for (j = 0; j < 64u; j++) l -= (uint32_t)mulq16((int32_t)l, k);   /* (a column: 64 control steps, ~46 ms) */
+        }
+    }
+    ui_text(PX0 + 4, PY0 + 96, trk[sel].pd_de ? "DCW ENV ON" : "DCW ENV OFF", 1, trk[sel].pd_de ? ui_acc : UI_M);
+    ui_text(PX0 + 124, PY0 + 96, trk[sel].pd_pe ? "PITCH ON" : "PITCH OFF", 1, trk[sel].pd_pe ? ui_acc : UI_M);
+}
+
 static void pic_source(void)                    /* the seven sources, the track's in the accent; LATCH */
 {
     int32_t i, e = (int32_t)sel_eng();
@@ -984,6 +1155,16 @@ static void pic_source(void)                    /* the seven sources, the track'
     ui_text(140, 60, "LATCH", 1, UI_M);
     ui_rect(140, 74, 64, 24, trk[sel].latch ? ui_acc : UI_D);
     ui_text(140 + (trk[sel].latch ? 16 : 8), 78, trk[sel].latch ? "ON" : "OFF", 2, trk[sel].latch ? UI_K : UI_L);
+    {                                           /* (V2) GLIDE */
+        char g[12];
+        ui_text(140, 140, "GLIDE", 1, UI_M);
+        if (trk[sel].glide) ui_time(g, 10u * pow2_q16(clamp(trk[sel].glide, 0, 127) * 12)); else put_s(g, "OFF");
+        ui_text(140, 152, g, 1, trk[sel].glide ? UI_L : UI_M);
+    }
+    if (e == ENG_VOICE) {                       /* (V2) VOICE's TYPE: one singer, or a choir a note */
+        ui_text(140, 112, "TYPE", 1, UI_M);
+        ui_text(140, 126, VT_NAME[clamp(trk[sel].vty, 0, NVT - 1)], 1, trk[sel].vty ? ui_acc : UI_L);
+    }
 }
 
 static void pic_env(void)                       /* Env: the shape of the track's ATTACK, DECAY, SUSTAIN, RELEASE */
@@ -1015,25 +1196,78 @@ static void pic_env(void)                       /* Env: the shape of the track's
     ui_cell(wa - 1, 3, ui_acc), ui_cell(wa, 3, ui_acc), ui_cell(wa - 1, 4, ui_acc), ui_cell(wa, 4, ui_acc);
 }
 
-static void pic_mix(void)                       /* FxTrack: the four tracks' columns, LEVEL and the sends (MIXER 2: PAN) */
+/* (V2) MIXER 1's LEVEL meter: each track's sound now (its peak, as HOME's candles, after its LEVEL: up at once, down
+ * over ~0.3 s; muted: none), its colour the LEVEL set (mid .. white); a frame every UI_ANIM_MS, the selected track's
+ * segments drawn when they moved */
+static uint8_t mx_h[NT];                        /* each track's level now: cells lit, 0 .. 8 */
+static uint32_t mx_e[NT];
+#define MXT_X0 3                                /* MIXER 1's tiles: the first's corner, a tile's size, from one to the */
+#define MXT_Y0 26                               /* next (three a row, two rows: MX_'s order) */
+#define MXT_W 76
+#define MXT_H 104
+#define MXT_DX 79
+#define MXT_DY 107
+static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W */
 {
-    int32_t t, m, j;
-    ui_caption(page == PG_MIX1 ? "LEVEL DLY REV GRAIN" : "PAN", 0);
-    for (t = 0; t < (int32_t)NT; t++) {
-        int32_t x0 = PX0 + t * 54 + 4;
-        char lab[3] = {'T', (char)('1' + t), 0};
-        if (page == PG_MIX1) {
-            volatile int32_t *const V[4] = {&trk[t].level, &trk[t].dly, &trk[t].rev, &trk[t].grn};
-            for (m = 0; m < 4; m++) {
-                int32_t n = (clamp(*V[m], 0, 127) * 8 + 63) / 127;
-                for (j = 0; j < 8; j++)
-                    ui_rect(x0 + m * 12, 44 + j * 12, 9, 10, 7 - j < n ? (m ? UI_M : UI_L) : UI_D);
-            }
-        } else {
-            int32_t pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
-            for (j = 0; j < 7; j++)
-                ui_rect(x0 + j * 7, 80, 6, 20, j == pp ? UI_L : j == 3 ? UI_M : UI_D);
+    int32_t a = clamp(lv, 0, 127);
+    return RGB(0x5e + (0xe8 - 0x5e) * a / 127, 0x5b + (0xe4 - 0x5b) * a / 127, 0x54 + (0xd8 - 0x54) * a / 127);
+}
+static void ui_pic_draw(void);
+static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
+{
+    static const uint8_t CELL[8] = {3, 8, 16, 32, 48, 72, 104, 150};   /* (a cell lit from: ~-38 .. -4 dB of full) */
+    uint32_t t, e, h;
+    for (t = 0; t < NT; t++) {
+        e = vis_pk[t] / 96u, vis_pk[t] = 0;
+        e = e > 256u ? 256u : e;
+        e = trk_quiet >> t & 1u ? 0u : e * (uint32_t)clamp(trk[t].level, 0, 127) / 127u;
+        mx_e[t] = e >= mx_e[t] ? e : mx_e[t] - (mx_e[t] + 5u) / 6u;
+        for (h = 0; h < 8u && mx_e[t] >= CELL[h]; h++)
+            ;
+        if (h != mx_h[t]) {
+            mx_h[t] = (uint8_t)h;
+            if (draw && t == sel) ui_region(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_pic_draw);
         }
+    }
+}
+/* (V2) MIXER 1: the whole page six tiles as the knobs' slabs (no slabs under them), LEVEL DELAY REVERB over TAPE
+ * GRAIN DRIVE, the selected track's: the name, 8 segments, the value; the one SELECT picks outlined in the accent, its
+ * segments and value too. LEVEL's segments: the sound now (ui_mix_frame; the top two in the accent, the rest in
+ * LEVEL's colour), a notch under them where LEVEL is set */
+static void pic_mix1(void)
+{
+    static const char *const LAB[MX_N] = {"LEVEL", "DELAY", "REVERB", "TAPE", "GRAIN", "DRIVE"};
+    uint32_t i;
+    int32_t j;
+    for (i = 0; i < MX_N; i++) {
+        int32_t x = MXT_X0 + (int32_t)(i % 3u) * MXT_DX, y = MXT_Y0 + (int32_t)(i / 3u) * MXT_DY;
+        int32_t v = clamp(*mx_tile(sel, i), 0, 127), on = (int32_t)i == mx_sq, f = i == MX_LEVEL ? mx_h[sel] : (v * 8 + 63) / 127;
+        int32_t dry = i != MX_LEVEL && trk[sel].fx <= 0;   /* (rc9: FX 0 on HOME: the sends do nothing; dim, "FX0") */
+        uint16_t fc = dry ? UI_M : on ? ui_acc : UI_L, lc = mx_col(v);
+        char s[4];
+        ui_rect(x, y, MXT_W, MXT_H, on ? ui_acc : UI_D);
+        if (on) ui_rect(x + 2, y + 2, MXT_W - 4, MXT_H - 4, UI_D);
+        ui_text(x + 6, y + 8, LAB[i], 1, UI_L);
+        for (j = 0; j < 8; j++)
+            ui_rect(x + 6 + j * 8, y + 28, 7, 30, j >= f ? UI_K : i != MX_LEVEL ? fc : on || j >= 6 ? ui_acc : lc);
+        if (i == MX_LEVEL) ui_rect(x + 6 + v * 60 / 127, y + 60, 3, 5, fc);
+        ui_3(s, ui_pc(v));
+        if (dry) put_s(s, "FX0");
+        ui_text(x + 6, y + 76, s, 2, dry ? ui_acc : fc);
+    }
+}
+static void pic_mix(void)                       /* FxTrack: the four tracks' columns, PAN, the filter's TYPE and POS */
+{
+    int32_t t, j;
+    if (page == PG_MIX1) { pic_mix1(); return; }
+    ui_caption("PAN  FILTER", 0);
+    for (t = 0; t < (int32_t)NT; t++) {
+        int32_t x0 = PX0 + t * 54 + 4, pp = (clamp(trk[t].pan, 0, 127) * 6 + 63) / 127;
+        char lab[3] = {'T', (char)('1' + t), 0};
+        for (j = 0; j < 7; j++)
+            ui_rect(x0 + j * 7, 64, 6, 20, j == pp ? UI_L : j == 3 ? UI_M : UI_D);
+        ui_text(x0 + 16, 100, FT_NAME[clamp(trk[t].ftype, 0, NFTYPE - 1)], 1, UI_L);   /* (V2: its TYPE, POS) */
+        ui_text(x0 + 8 + (trk[t].fpos ? 0 : 4), 116, trk[t].fpos ? "POST" : "PRE", 1, UI_M);
         ui_text(x0 + 14, 145, lab, 1, t == (int32_t)sel ? ui_acc : UI_M);
     }
 }
@@ -1042,8 +1276,11 @@ static void pic_tape(void)                      /* EditTape: the reels and the t
 {
     static const int16_t SPK[2][3][2] = {{{183, 123}, {107, 141}, {130, 66}}, {{408, 154}, {358, 94}, {435, 81}}};
     static const int8_t RC[2][2] = {{14, 11}, {40, 11}};
-    int32_t x, y, r, k, on = tf_wow | tf_sat | tf_tone | tf_hiss, amp = (clamp(tf_wow, 0, 127) * 3 + 63) / 127;
-    ui_caption("OVER THE WHOLE MIX", on ? "ON" : "BYPASS");
+    int32_t x, y, r, k, amp = (clamp(tf_wow, 0, 127) * 3 + 63) / 127;
+    char on[16] = "ON:", *e = on + 3;
+    for (k = 0; k < (int32_t)NT; k++)           /* (V2: the tracks on it: their TAPE tile up, and FX) */
+        if (trk[k].tap > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
+    ui_caption(e > on + 3 ? on : "OFF: TURN UP A TAPE TILE", 0);
     for (y = 0; y < 30; y++)
         for (x = 0; x < 54; x++) {
             uint16_t c = 0;
@@ -1117,6 +1354,45 @@ static void pic_space(void)                     /* Space: the reverb's tail, as 
         ui_text(184, 31, "FREEZE", 1, UI_K);
     }
 }
+static void pic_master(void)                    /* (V2) Master: the filter's curve, as SPACE's bars: the cutoff where it
+                                                 * bends, RESONANCE its peak there; open: flat, "OPEN" */
+{
+    int32_t c = clamp(mf_cut, 0, 127), r = clamp(mf_res, 0, 127), ty = clamp(mf_type, 0, NFTYPE - 1), i, j;
+    int open = ty == FT_LP ? c >= 127 : ty == FT_HP && c <= 0;
+    ui_caption(FT_NAME[ty], MP_NAME[clamp(mf_pos, 0, NMPOS - 1)]);
+    for (i = 0; i < 37; i++) {
+        int32_t f = i * 127 / 36, d = ty == FT_HP ? c - f : f - c, h;
+        if (ty == FT_BP) d = d < 0 ? -d : d;
+        h = open ? 14 : d <= 0 ? 14 : 14 - d * 3 / 8;   /* (~-12 dB an octave past the cutoff) */
+        if (!open && d > -5 && d < 5) h += r * 5 / 127 * (5 - (d < 0 ? -d : d)) / 5;   /* (the peak) */
+        h = h < 1 ? 1 : h > 18 ? 18 : h;
+        for (j = 0; j < h; j++)
+            ui_rect(9 + i * 6, 156 - (h - j) * 4, 3, 3, j == 0 ? UI_L : j < h / 2 ? UI_M : UI_D);
+    }
+    if (open) {
+        ui_rect(196, 44, 40, 12, ui_acc);
+        ui_text(200, 46, "OPEN", 1, UI_K);
+    }
+}
+static void pic_drive(void)                     /* (V2) Drive: a sine through it (AMOUNT, TYPE, TONE left out), the clean
+                                                 * one dim behind it; AMOUNT 0: "OFF" */
+{
+    static const int16_t SIN37[37] = {0, 5690, 11207, 16384, 21063, 25102, 28378, 30792, 32270, 32767, 32270, 30792,
+                                      28378, 25102, 21063, 16384, 11207, 5690, 0, -5690, -11207, -16384, -21063, -25102,
+                                      -28378, -30792, -32270, -32767, -32270, -30792, -28378, -25102, -21063, -16384,
+                                      -11207, -5690, 0};
+    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1);
+    int32_t a = clamp(dr_amt, 0, 127), g = dr_gain(ty, a), lv = dr_level(ty, a), i;
+    char r[8];
+    ui_3(r, ui_pc(a));
+    ui_caption(DT_NAME[ty], a ? r : "OFF");
+    for (i = 0; i < 37; i++) {
+        int32_t x = SIN37[i] * 3 / 4, y = a ? (dr_shape(ty, (x * g) >> 8) * lv) >> 12 : x;
+        ui_rect(9 + i * 6, 98 - x * 40 / 32768, 3, 3, UI_D);
+        ui_rect(9 + i * 6, 98 - y * 40 / 32768, 3, 3, a ? UI_L : UI_M);
+    }
+    ui_rect(9, 99, 219, 1, UI_D);
+}
 
 static void pic_grid(void)                      /* Seq: the 64 steps of the track's pattern, 8 rows of 8 */
 {
@@ -1160,7 +1436,7 @@ static void pic_grid(void)                      /* Seq: the 64 steps of the trac
     if (pos >= 0 && seq_on) put_u(put_s(put_u(st, (uint32_t)pos + 1u), "/"), (uint32_t)n);
     else put_u(put_s(st, "-/"), (uint32_t)n);
     ui_text(148, 71, st, 1, UI_L);
-    put_u(put_s(st, "BPM "), (uint32_t)clamp(seq_bpm, 20, 300));
+    tempo_text(st, "BPM ");
     ui_text(148, 83, st, 1, UI_L);
     put_u(put_s(st, "STEPS "), (uint32_t)n);
     ui_text(148, 93, st, 1, UI_L);
@@ -1391,8 +1667,20 @@ static void pic_song(void)                      /* Song: five of the chain's ste
     }
 }
 
+static uint32_t gen_fl;                         /* (V2) GENERATE's tiles flashing (bit t: a note played ~0.12 s ago) */
+static uint32_t gen_flash(void)                 /* main loop: the tiles' flashes now (from gen_hit, the audio's) */
+{
+    static uint8_t seen[NT];
+    static uint32_t until[NT];
+    uint32_t t, f = 0;
+    for (t = 0; t < NT; t++) {
+        if (gen_hit[t] != seen[t]) seen[t] = gen_hit[t], until[t] = fm1_ms + 120u;
+        f |= (uint32_t)((int32_t)(until[t] - fm1_ms) > 0) << t;
+    }
+    return gen_fl = f;
+}
 static void pic_perform(void)                   /* FxLayer: the eight tricks (FX held + the white keys), on in the
-                                                 * accent (its mutes: GLO's) */
+                                                 * accent (its mutes: GLO's); (V2) GENERATE's four tracks under them */
 {
     static const char *const KEY[8] = {"F3", "G3", "A3", "B3", "C4", "D4", "E4", "F4"};
     static const char *const NM[8][2] = {{"FREEZE", ""}, {"REV", "THROW"}, {"ECHO", "THROW"}, {"TAPE", "STOP"},
@@ -1405,6 +1693,19 @@ static void pic_perform(void)                   /* FxLayer: the eight tricks (FX
         ui_text(x + 3, y + 3, KEY[i], 1, on ? UI_K : UI_M);
         ui_text(x + 2, y + 18, NM[i][0], 1, on ? UI_K : UI_L);
         ui_text(x + 2, y + 28, NM[i][1], 1, on ? UI_K : UI_L);
+    }
+    for (i = 0; i < (int32_t)NT; i++) {         /* (V2) GENERATE, a tile a track (its black key's): on in the accent,
+                                                 * its MODE, its range, a square flashing as it plays a note */
+        int32_t x = 12 + i * 55, y = 117;
+        int on = (int)(gen_on >> i & 1u);
+        char r[12];
+        ui_rect(x, y, 51, 44, on ? ui_acc : UI_D);
+        put_u(put_s(r, "T"), (uint32_t)i + 1u);
+        ui_text(x + 3, y + 3, r, 1, on ? UI_K : UI_M);
+        ui_rect(x + 41, y + 3, 7, 7, gen_fl >> i & 1u ? UI_W : UI_K);
+        ui_text(x + 3, y + 17, GM_NAME[gen_md[i] % NGM], 1, on ? UI_K : UI_L);
+        ui_note(put_s(ui_note(r, gen_low((uint32_t)i)), "-"), gen_high((uint32_t)i));
+        ui_text(x + 3, y + 31, r, 1, on ? UI_K : UI_M);
     }
 }
 
@@ -1478,9 +1779,29 @@ static void sys2_cpu(void)                      /* SYSTEM 2's last row: CPU NOW,
     char l[16], r[16];
     put_s(put_x10(put_s(l, "CPU NOW "), pct10(cpu_now)), "%");
     put_s(put_x10(put_s(r, "PEAK "), pct10(cpu_peak)), "%");
+#ifdef GRIMM_LEVEL_TEST
+    put_u(put_s(put_u(put_s(l, "M"), (uint32_t)lt_m), " G"), (uint32_t)lt_g);   /* (a test build: MASTER, its gain; the
+                                                 * peaks in and out) */
+    put_u(put_s(put_u(put_s(r, "I"), (uint32_t)lt_in), " O"), (uint32_t)lt_out);
+#endif
     ui_rect(PX0, 144, 216, 15, UI_D);
     ui_text(PX0 + 6, 148, l, 1, UI_L);
     ui_text(PX0 + 210 - 8 * ui_len(r), 148, r, 1, UI_W);
+}
+static uint32_t sys2_drops(void)                /* (rc9) the USB recording's dropouts since PEAK was set to 0 */
+{
+    static uint32_t base, seen;
+    if (seen != cpu_reset) seen = cpu_reset, base = usb_drops();
+    return usb_drops() - base;
+}
+static void sys2_usb(void)                      /* (rc9) the row over CPU's: USB REC DROPS (the computer recording the
+                                                 * FM-1 over USB: frames repeated or dropped; OCT- + OCT+: to 0 too) */
+{
+    char r[12];
+    put_u(r, sys2_drops());
+    ui_rect(PX0, 127, 216, 15, UI_D);
+    ui_text(PX0 + 6, 131, "USB REC DROPS", 1, UI_L);
+    ui_text(PX0 + 210 - 8 * ui_len(r), 131, r, 1, UI_W);
 }
 static void pic_sys2(void)
 {
@@ -1489,6 +1810,7 @@ static void pic_sys2(void)
     put_s(put_u(v, (uint32_t)n), "/32");
     ui_caption("MIDI LEARN: LINKS", v);
     sys2_cpu();
+    sys2_usb();
     if (!n) { ui_text(120 - 4 * 8, 84, "NO LINKS", 1, UI_M); return; }
     for (i = 0; i < 5 && i < n; i++) {
         int32_t y = 42 + i * 17;
@@ -1506,6 +1828,16 @@ static void pic_sys2(void)
     }
 }
 
+static void pic_sys3(void)                      /* (V2) SYSTEM 3: LATCH, VELOCITY, what they do */
+{
+    ui_caption("SOUNDS AND MIDI", 0);
+    sys_row(0, "LATCH", set.latch & 1u ? "ALWAYS OFF" : "FROM SOUND");
+    sys_row(1, "VELOCITY", set.latch & 2u ? "ON" : "OFF");
+    ui_text(PX0 + 6, 116, set.latch & 1u ? "A SOUND LOADED: LATCH OFF" : "A SOUND BRINGS ITS LATCH", 1, UI_M);
+    ui_text(PX0 + 6, 132, set.latch & 2u ? "MIDI NOTES: AS HARD AS" : "MIDI NOTES: ALL AT FULL", 1, UI_M);
+    ui_text(PX0 + 6, 144, set.latch & 2u ? "PLAYED (THE KEYS: FULL)" : "VOLUME (AS GR!MM 1.0)", 1, UI_M);
+}
+
 static void pic_notbuilt(void) { ui_text(120 - 4 * 13, 96, "NOT BUILT YET", 1, UI_M); }
 
 static void ui_pic_draw(void)
@@ -1514,6 +1846,8 @@ static void ui_pic_draw(void)
     case PG_HOME: pic_home(); return;
     case PG_FMALGO: pic_fmalgo(); return;
     case PG_FMOP: pic_fmop(); return;
+    case PG_PDLINE: pic_pdline(); return;
+    case PG_PDENV: pic_pdenv(); return;
     case PG_SOUND:
         switch (sel_eng()) {
         case ENG_VA: pic_va(); return;
@@ -1531,6 +1865,8 @@ static void ui_pic_draw(void)
     case PG_GRAIN: pic_grain(); return;
     case PG_DELAY: pic_delay(); return;
     case PG_SPACE: pic_space(); return;
+    case PG_MASTER: pic_master(); return;
+    case PG_DRIVE: pic_drive(); return;
     case PG_GRID: pic_grid(); return;
     case PG_PATTERN: pic_pattern(); return;
     case PG_SCALE: case PG_CHORD: pic_sel(); return;
@@ -1542,6 +1878,7 @@ static void ui_pic_draw(void)
     case PG_PROJECTS: pic_projects(); return;
     case PG_SYSTEM: pic_system(); return;
     case PG_SYS2: pic_sys2(); return;
+    case PG_SYS3: pic_sys3(); return;
     default: pic_notbuilt(); return;
     }
 }
@@ -1551,18 +1888,25 @@ static uint32_t ui_pic_key(void)
 {
     uint32_t h = 2166136261u, k, t;
 #define UI_H(v) (h = (h ^ (uint32_t)(v)) * 16777619u)
-    UI_H(page), UI_H(sel), UI_H(sel_eng()), UI_H(ge_freeze), UI_H(ui_acc);
+    UI_H(page), UI_H(sel), UI_H(sel_eng()), UI_H(ge_freeze), UI_H(ui_acc), UI_H(mx_sq);
     for (k = 0; k < 4u; k++) {
         volatile int32_t *p = knob_param(page, k);
         UI_H(p ? *p : -1);
     }
     for (t = 0; t < NT; t++)
-        UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng);
+        UI_H(trk[t].level), UI_H(trk[t].dly), UI_H(trk[t].rev), UI_H(trk[t].grn), UI_H(trk[t].pan), UI_H(trk[t].eng),
+            UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise), UI_H(trk[t].pd_wav), UI_H(trk[t].pd_dcw), UI_H(trk[t].pd_de), UI_H(trk[t].pd_dd), UI_H(trk[t].pd_pe),
+            UI_H(trk[t].pd_pd), UI_H(trk[t].glide), UI_H(trk[t].fx), UI_H(trk[t].cut),   /* (rc9: HOME's CUT, DRY;
+                                                 * MIXER 1's FX0) */
+            UI_H(trk[t].ftype), UI_H(trk[t].fpos);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);
     if (PAGES[page].btn == BTN_SEL) UI_H(ch_last), UI_H(ui_oct);
     UI_H(trk_quiet);
-    if (page == PG_PERFORM) UI_H(pf_held), UI_H(ge_freeze);
+    if (page == PG_PERFORM) {                   /* (V2: GENERATE's tiles too) */
+        UI_H(pf_held), UI_H(ge_freeze), UI_H(gen_on), UI_H(gen_flash());
+        for (t = 0; t < NT; t++) UI_H(gen_md[t]), UI_H(gen_oc[t]), UI_H(gen_rg[t]);
+    }
     if (page == PG_SONG) {                      /* the chain, the step playing, the slots' notes */
         UI_H(song_at), UI_H(song_left), UI_H(song_rec), UI_H(song_ri);
         for (k = 0; k < SONG_N; k++) UI_H(song_pat[k]), UI_H(song_rep[k]);
@@ -1580,9 +1924,12 @@ static uint32_t ui_pic_key(void)
         k = sp_slot(trk[sel].p[ENG_SAMPLE]);
         UI_H(smp[k].state), UI_H(smp[k].ready), UI_H(smp[k].n);
     }
-    if (page == PG_TAPE) UI_H(tf_wow), UI_H(tf_sat), UI_H(tf_tone), UI_H(tf_hiss);
-    if (page == PG_SYSTEM || page == PG_SYS2) { /* the settings, the links */
-        UI_H(set.col), UI_H(set.mch), UI_H(set.tune), UI_H(set.scr), UI_H(set.out), UI_H(set.nlk);
+    if (page == PG_TAPE) {                      /* (V2: and the tracks on it) */
+        UI_H(tf_wow), UI_H(tf_sat), UI_H(tf_tone), UI_H(tf_hiss);
+        for (t = 0; t < NT; t++) UI_H(trk[t].fx);
+    }
+    if (page == PG_SYSTEM || page == PG_SYS2 || page == PG_SYS3) {   /* the settings, the links */
+        UI_H(set.col), UI_H(set.mch), UI_H(set.tune), UI_H(set.scr), UI_H(set.out), UI_H(set.nlk), UI_H(set.latch);
         for (k = 0; k < NLINK * 5u; k++) UI_H(set.lk[k / 5u][k % 5u]);
     }
     if (PAGES[page].btn == BTN_SEQ) {           /* the pattern, its settings, the cursor, the step playing */
@@ -1599,17 +1946,117 @@ static uint32_t ui_pic_key(void)
 }
 
 /* ---- the screen: the boot, then the page, only what changed */
-/* Boot, UI_BOOT_MS at power-on (the project loaded before): the eye opens over the first second, the drips run down from
- * the bar over the three; only those two drawn again, a frame every UI_ANIM_MS */
+/* Boot, UI_BOOT_MS at power-on (the project loaded before): (V2) stars twinkle round the eye, shut; a swarm of bats
+ * flies past it (~0.4 .. 2.6 s, near ones big, far ones small), and the first across it startles it: it snaps wide
+ * open (~0.9 s), jolts up, trembles, its pupil shrunk, its iris after the bats; when they are gone it blinks and
+ * settles (~3 s; the times below are half these: bt_e). The drips run down from the bar over the whole boot; only what
+ * moved drawn again, a frame every UI_ANIM_MS */
 static const int8_t DRIP[30] = {0, 3, 0, 0, 6, 0, 2, 0, 0, 0, 8, 0, 0, 1, 0, 0, 4, 0, 0, 0, 7, 0, 0, 2, 0, 0, 5, 0, 0, 0};
-static uint32_t ui_boot_t, bt_k, bt_d;          /* from when; the lids, the drips' time (0 .. UI_BOOT_MS) shown */
+static uint32_t ui_boot_t, bt_d, bt_e;          /* from when; the drips' time (0 .. UI_BOOT_MS), everything else's
+                                                 * (V2: half of it: the bats, the eye and the stars at half speed) */
+#define NBAT 10u
+static const int16_t BAT_T[NBAT] = {180, 260, 330, 380, 440, 500, 560, 620, 700, 780};   /* a bat: from when (ms), */
+static const int16_t BAT_MS[NBAT] = {520, 460, 500, 420, 480, 520, 440, 480, 460, 520};  /* across in this long, */
+static const uint8_t BAT_Y[NBAT] = {40, 60, 28, 70, 50, 22, 78, 44, 32, 64};             /* at what height, */
+static const uint8_t BAT_S[NBAT] = {2, 3, 2, 3, 3, 2, 2, 3, 2, 2};                       /* how big (px a cell), */
+#define BAT_LEFT 0x2E6u                         /* (flying left: bit i; bats 1, 2, 5, 6, 7, 9) */
+static int32_t bat_x(uint32_t i, uint32_t e)    /* bat i's left edge at e (ms), or -999 not flying */
+{
+    int32_t d = (int32_t)e - BAT_T[i], w = 9 * BAT_S[i];
+    if (d < 0 || d >= BAT_MS[i]) return -999;
+    d = d * (240 + w) / BAT_MS[i];
+    return BAT_LEFT >> i & 1u ? 240 - d : d - w;
+}
+static int32_t bat_y(uint32_t i, uint32_t e)    /* its top: bobbing 3 px up and down as it flies */
+{
+    int32_t b = ((int32_t)e - BAT_T[i]) % 220;
+    return BAT_Y[i] + (b < 110 ? b * 6 / 110 : (220 - b) * 6 / 110) - 3;
+}
+static void bat_draw(uint32_t e)                /* the bats flying at e: grey, a light body, red eyes, wings beating */
+{
+    static const char *const BAT_UP[5] = {"m.......m", "mm.....mm", ".mmm.mmm.", "..lalal..", "...lll..."};
+    static const char *const BAT_DN[5] = {"...l.l...", "..lalal..", ".mmlllmm.", "mm.....mm", "m.......m"};
+    uint32_t i;
+    for (i = 0; i < NBAT; i++) {
+        int32_t x = bat_x(i, e);
+        if (x == -999) continue;
+        ui_sprite(x, bat_y(i, e), BAT_S[i], ((int32_t)e - BAT_T[i]) / 90 % 2 ? BAT_DN : BAT_UP, 5);
+    }
+}
+/* the eye at e: its lids (k), where it is (jolted, trembling: jx, jy px), its iris (dx, dy), its pupil (startled:
+ * small) */
+typedef struct { int32_t k, jx, jy, dx, dy, tiny; } bt_eye_t;
+static bt_eye_t bt_eye(uint32_t e)
+{
+    bt_eye_t y = {0, 0, 0, 0, 0, 0};
+    if (e < 450u) y.k = e >= 330u && e < 385u ? 1 : 0;   /* (shut; a flutter as the bats come) */
+    else if (e < 1000u) {                       /* (startled: wide open, jolted up, trembling; its iris after them) */
+        y.k = 4, y.tiny = 1;
+        y.jy = e < 505u ? -4 : e < 560u ? -2 : 0;
+        y.jx = e >= 560u && e < 780u ? (e / UI_ANIM_MS & 1u ? 2 : -2) : 0;
+        y.dx = e < 560u ? 0 : e < 780u ? -2 : 2;
+    } else if (e < 1350u) y.k = 4, y.dx = e < 1200u ? -1 : 0, y.dy = e < 1200u ? -1 : 0;   /* (after the last ones) */
+    else if (e < 1515u) y.k = e < 1405u || e >= 1460u ? 2 : 0;   /* (a blink) */
+    else y.k = 4;
+    return y;
+}
+static int bt_eye_same(bt_eye_t a, bt_eye_t b)
+{
+    return a.k == b.k && a.jx == b.jx && a.jy == b.jy && a.dx == b.dx && a.dy == b.dy && a.tiny == b.tiny;
+}
+/* the stars round the eye (as HOME's: 3 px, dark or mid), each now and then sparkling: mid, light, a white cross,
+ * light, mid; where they are: the concepts' random, seed 13, none on the eye or within 10 px of another */
+#define NBSTAR 26u
+static uint8_t bs_x[NBSTAR], bs_y[NBSTAR], bs_p[NBSTAR], bs_o[NBSTAR];   /* where (px), its period, offset (x 8 ms) */
+static void bs_init(void)
+{
+    uint32_t s = ui_rnd_s, i, j, tries = 0;
+    ui_rnd_s = 13;
+    for (i = 0; i < NBSTAR && tries < 2000u; tries++) {
+        int32_t x = 6 + (int32_t)ui_rnd(229), y = 14 + (int32_t)ui_rnd(80);
+        if (x > 68 && x < 170 && y > 34) continue;   /* (the eye, jolted and trembling: 72 .. 166, 40 .. 92 px) */
+        for (j = 0; j < i; j++) {
+            int32_t ddx = x - bs_x[j], ddy = y - bs_y[j];
+            if (ddx > -10 && ddx < 10 && ddy > -10 && ddy < 10) break;
+        }
+        if (j < i) continue;
+        bs_x[i] = (uint8_t)x, bs_y[i] = (uint8_t)y;
+        bs_p[i] = (uint8_t)(90 + ui_rnd(110)), bs_o[i] = (uint8_t)ui_rnd(200);
+        i++;
+    }
+    ui_rnd_s = s;
+}
+static uint32_t bs_st(uint32_t i, uint32_t e)   /* star i at e: 0 at rest (dark, or mid: every third), 1 mid, 2 light,
+                                                 * 3 the cross */
+{
+    uint32_t p = (e / 8u + bs_o[i]) % bs_p[i];
+    return p < 7u ? 1u : p < 14u ? 2u : p < 28u ? 3u : p < 35u ? 2u : p < 41u ? 1u : 0u;
+}
+static void bs_draw(uint32_t e)
+{
+    uint32_t i;
+    for (i = 0; i < NBSTAR; i++) {
+        int32_t x = bs_x[i], y = bs_y[i];
+        uint32_t s = bs_st(i, e);
+        if (s == 3u) {
+            ui_rect(x - 3, y, 9, 3, UI_L), ui_rect(x, y - 3, 3, 9, UI_L);
+            ui_rect(x, y, 3, 3, UI_W);
+        } else
+            ui_rect(x, y, 3, 3, s == 2u ? UI_L : s == 1u || i % 3u == 0u ? UI_M : UI_D);
+    }
+}
 #define BOOT_LINE "FM-1 / DEATHDREAM / V" APP_VER
 static const char *bt_note;                     /* the boot screen's last line, if not BOOT_LINE ("INSTALLING SAMPLES") */
 static int32_t bt_len(uint32_t x) { return DRIP[x] * (int32_t)bt_d / (int32_t)UI_BOOT_MS; }   /* a drip's cells now */
-static void ui_boot_draw(void)                  /* Boot: the eye, GR!MM, the drips */
+static void ui_boot_draw(void)                  /* Boot: the stars, the eye, the bats, GR!MM, the drips */
 {
     int32_t x, y;
-    ui_eye(80, 48, (int32_t)bt_k, 0, 0);
+    bt_eye_t ey = bt_eye(bt_e);
+    bs_draw(bt_e);
+    ui_eye_tiny = ey.tiny;
+    ui_eye(80 + ey.jx, 48 + ey.jy, ey.k, ey.dx, ey.dy);
+    ui_eye_tiny = 0;
+    bat_draw(bt_e);
     ui_text(120 - 12 * 5, 100, APP_NAME, 3, UI_L);
     for (y = 0; y < 10; y++)
         for (x = 0; x < 30; x++)
@@ -1618,19 +2065,30 @@ static void ui_boot_draw(void)                  /* Boot: the eye, GR!MM, the dri
 }
 static void ui_boot(void)
 {
-    ui_boot_t = fm1_ms, bt_k = bt_d = 0;
+    ui_boot_t = fm1_ms, bt_d = bt_e = 0;
+    bs_init();
     ui_region(0, 0, 240, 240, UI_K, ui_boot_draw);
 }
 static void ui_boot_frame(void)
 {
     static uint32_t t;
-    uint32_t e = fm1_ms - ui_boot_t, k = e >= 1000u ? 4u : e * 4u / 1000u, x, was = 0, now = 0;
+    uint32_t e = fm1_ms - ui_boot_t, e0 = bt_e, x, i, was = 0, now = 0;   /* (e0: the time last drawn) */
     if (fm1_ms - t < UI_ANIM_MS) return;
     t = fm1_ms;
-    if (k != bt_k) {
-        bt_k = k;
-        ui_region(80, 48, 80, 40, UI_K, ui_boot_draw);
+    bt_e = e / 2u;                              /* (what each region shows: as at e; V2: at half speed) */
+    if (!bt_eye_same(bt_eye(e0), bt_eye(e)))
+        ui_region(72, 40, 96, 52, UI_K, ui_boot_draw);   /* (the eye, wherever it jolts and trembles) */
+    for (i = 0; i < NBAT; i++) {                /* the bats: where each was and is now drawn again */
+        int32_t a = bat_x(i, e0), b = bat_x(i, e), w = 9 * BAT_S[i], x0, x1, y0;
+        if (a == -999 && b == -999) continue;
+        if (a == -999) a = b;
+        if (b == -999) b = a;
+        x0 = a < b ? a : b, x1 = (a < b ? b : a) + w;   /* (where it was and is: on the screen only) */
+        x0 = x0 < 0 ? 0 : x0, x1 = x1 > 240 ? 240 : x1, y0 = BAT_Y[i] - 3;
+        if (x1 > x0) ui_region(x0, y0, x1 - x0, 5 * BAT_S[i] + 7, UI_K, ui_boot_draw);
     }
+    for (i = 0; i < NBSTAR; i++)                /* the stars that changed */
+        if (bs_st(i, e0) != bs_st(i, e)) ui_region(bs_x[i] - 3, bs_y[i] - 3, 9, 9, UI_K, ui_boot_draw);
     for (x = 0; x < 30u; x++) was += (uint32_t)bt_len(x);
     bt_d = e;
     for (x = 0; x < 30u; x++) now += (uint32_t)bt_len(x);
@@ -1652,6 +2110,8 @@ static void ui_update(int32_t oct)
     if (all) {
         if (shown_page == 0xFFFFFFFFu)
             lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen: all of it cleared once) */
+        else if (shown_page == PG_MIX1 && page != PG_MIX1)
+            lcd_fill(0, 165, 240, 75, UI_K);    /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
         shown_page = page, shown_acc = ui_acc;
         for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '\x01';
         pic_key = ~ui_pic_key();
@@ -1667,13 +2127,17 @@ static void ui_update(int32_t oct)
         an_t = fm1_ms;
         ui_home_frame(!all);
     }
+    if (page == PG_MIX1 && fm1_ms - an_t >= UI_ANIM_MS) {   /* (V2) MIXER 1: its LEVEL meter, the sound now */
+        an_t = fm1_ms;
+        ui_mix_frame(!all);
+    }
     key = ui_pic_key();
     if (key != pic_key && (all || fm1_ms - pic_t >= UI_PIC_MS)) {
         pic_key = key;
         pic_t = fm1_ms;
         stat_key = 0xFFFFFFFFu;
         dot_shown = page == PG_LFO ? lfo_dot() : 0xFFFFFFFFu;
-        ui_region(0, 24, 240, 141, UI_K, ui_pic_draw);
+        ui_region(0, 24, 240, page == PG_MIX1 ? 216 : 141, UI_K, ui_pic_draw);   /* (V2: MIXER 1, the whole page) */
     }
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
@@ -1682,16 +2146,20 @@ static void ui_update(int32_t oct)
         ui_region(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_pic_draw);
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
-        st = pct10(cpu_now) << 16 ^ pct10(cpu_peak);
+        st = pct10(cpu_now) << 16 ^ pct10(cpu_peak) ^ sys2_drops() * 2654435761u;   /* (rc9: and USB's drops) */
+#ifdef GRIMM_LEVEL_TEST
+        st ^= (uint32_t)lt_m * 2654435761u ^ (uint32_t)lt_g << 3 ^ (uint32_t)lt_in * 40503u ^ (uint32_t)lt_out << 11;
+#endif
         if (st != stat_key) {
             stat_key = st;
-            ui_region(PX0, 144, 216, 15, UI_K, ui_pic_draw);
+            ui_region(PX0, 127, 216, 32, UI_K, ui_pic_draw);   /* (rc9: USB's row too) */
         }
     }
-    for (k = 0; k < 4u; k++) {
+    for (k = 0; k < 4u && page != PG_MIX1; k++) {   /* (V2: MIXER 1 none: its tiles) */
         ui_slab_make(k, &ui_sl[k]);
         if (!same(ui_sl[k].lab, ui_slab_shown[k].lab) || !same(ui_sl[k].val, ui_slab_shown[k].val) ||
-            ui_sl[k].fill != ui_slab_shown[k].fill || ui_sl[k].acc != ui_slab_shown[k].acc) {
+            ui_sl[k].fill != ui_slab_shown[k].fill || ui_sl[k].acc != ui_slab_shown[k].acc ||
+            ui_sl[k].warn != ui_slab_shown[k].warn) {
             ui_slab_shown[k] = ui_sl[k];
             ui_k = k;
             ui_region(3 + (int32_t)k * 59, 165, 56, 72, UI_K, ui_slab_draw);

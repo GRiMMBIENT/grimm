@@ -68,8 +68,9 @@ def slot_name(s):
     return s or "SAMPLE"
 
 
-def build(path, name, root, look=True):
-    """a WAV -> (header, ADPCM data, seconds, cut?) as a GR!MM slot holds it (look: sampleio.ima_encode's)"""
+def build(path, name, root, look=True, norm=True):
+    """a WAV -> (header, ADPCM data, seconds, cut?) as a GR!MM slot holds it (look: sampleio.ima_encode's; norm: its
+    peak normalised, else its level as it is)"""
     sr, x = sio.read_any_wav(path)
     x = sio.resample(x, sr, RATE)
     if not x or sio.peak(x) <= 1e-6:
@@ -80,7 +81,7 @@ def build(path, name, root, look=True):
         f = int(0.02 * RATE)
         for i in range(f):
             x[MAX_N - f + i] *= (f - i) / f
-    s = sio.to_int16(x)
+    s = sio.to_int16(x, norm)
     hdr, data = sio.user_slot(name, [(s, root, 0, 127)], look)   # Felucca's slot header (one zone), then GR!MM's magic
     hdr = struct.pack("<I", MAGIC) + hdr[4:]
     assert len(hdr) == HDR_LEN and len(data) <= MAX_DATA
@@ -107,7 +108,7 @@ class Link:
         dev.link.close()
         if dev.id.loader:
             sys.exit(f"the FM-1 is in update mode ({ident}): finish the install first (tools\\fm1_install.py)")
-        if not re.fullmatch(r"FM-1_966|FM-1_95\d", ident):   # (GR!MM 1.x; 95N: its builds before the release)
+        if not re.fullmatch(r"FM-1_966|FM-1_95\d", ident):   # (GR!MM 1.x, 2.x; 95N: its builds before 1.0)
             sys.exit(f"the FM-1 runs {ident}, not GR!MM (FM-1_966): install GR!MM first (tools\\fm1_install.py)")
         out = fi.pair_output(name, backend.output_names())
         if not out:
@@ -176,6 +177,7 @@ def main():
     ap.add_argument("wav", nargs="?", type=Path)
     ap.add_argument("--name", help="the slot's name (8 characters)")
     ap.add_argument("--root", type=int, help="the root note (MIDI, C4 = 60)")
+    ap.add_argument("--no-normalize", action="store_true", help="keep the WAV's own level (default: normalised)")
     ap.add_argument("--list", action="store_true", help="what each slot holds")
     ap.add_argument("--erase", type=int, metavar="SLOT", help="empty a slot")
     ap.add_argument("--dry-run", type=Path, metavar="OUT", help="no FM-1: write the slot's bytes (header, data) to OUT")
@@ -199,7 +201,7 @@ def main():
     if not 0 <= root <= 127:
         sys.exit("--root is a MIDI note, 0..127")
     try:
-        hdr, data, secs, cut = build(a.wav, name, root)
+        hdr, data, secs, cut = build(a.wav, name, root, norm=not a.no_normalize)
     except (OSError, ValueError, struct.error) as e:
         sys.exit(f"cannot read {a.wav}: {e}")
     print(f"{a.wav.name}: {secs:.2f} s at 22050 Hz mono -> {len(data)} B ADPCM, name {name}, root {root}" +

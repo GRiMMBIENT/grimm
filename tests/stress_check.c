@@ -89,7 +89,7 @@ static void stress_system(uint32_t kind)        /* "settings", "dark", "woken", 
 }
 
 /* the version 5 forms (steps of 3 B, no chord steps, no locks) of the working project, of a slot */
-#define ST_W5 WORK_LEN(52u, 20u, SEQ_PK5, 0u, 0u)
+#define ST_W5 WORK_LEN(52u, 20u, SEQ_PK5, 0u, 0u, 0u)
 #define ST_S5 SLOT_LEN(52u, SEQ_PK5, 0u)
 static uint8_t st_w[ST_W5], st_s[4u * ST_S5], st_x[ST_W5 > 4u * ST_S5 ? ST_W5 : 4u * ST_S5];
 static const uint8_t *st_seq5(uint8_t *o, const uint8_t *n)   /* a sequence (260 B) as 196 B: o; the next of n */
@@ -204,16 +204,18 @@ static void stress_factory(void)                /* "factory" */
         n += cat_len(c);
     }
     for (i = 0; i < SND_N; i++) u += snd_rec(i) != 0;
-    if (SND_NFACT != 40u || !u || n != SND_NFACT + u)
-        stress_fail("factory: PRESETS' lists not the 40 factory sounds and the user's (sounds listed)", n);
+    if (SND_NFACT != 44u || !u || n != SND_NFACT + u)   /* (V2: 44, the four choirs) */
+        stress_fail("factory: PRESETS' lists not the 44 factory sounds and the user's (sounds listed)", n);
     if (!(r = cat_item((uint32_t)brw_cat[sel] % NCAT, (uint32_t)brw_pos[sel])))
         stress_fail("factory: PRESETS browsed to nothing (place)", (uint32_t)brw_pos[sel]);
     e = r[3];
     lfo_pk(lf, sel);
     for (k = 0; k < 4u; k++)
-        if ((uint32_t)trk[sel].p[e][k] != r[4 + k] || (uint32_t)trk[sel].env[k] != r[8 + k] || lf[k] != r[14 + k])
+        if (trk[sel].p[e][k] != clamp(r[4 + k], 0, ENGINES[e]->max[k]) || trk[sel].env[k] != clamp(r[8 + k], 0, 127) ||
+            lf[k] != r[14 + k])                 /* (rc9: a sound's values loaded within their knobs' ranges: the user
+                                                 * sound this test writes has some past them) */
             stress_fail("factory: the track's sound not the one browsed to (knob)", k);
-    if ((uint32_t)trk[sel].eng != e || (uint32_t)trk[sel].latch != r[12] || ch_pack(sel) != r[13])
+    if ((uint32_t)trk[sel].eng != e || (uint32_t)trk[sel].latch != (r[12] & 1u) || (uint32_t)trk[sel].glide != (uint32_t)(r[12] >> 1) || ch_pack(sel) != r[13])
         stress_fail("factory: the track's source, LATCH or CHORD not the browsed sound's (source)", (uint32_t)trk[sel].eng);
 }
 
@@ -272,8 +274,7 @@ static void stress_hlinks(void)                 /* "h_links": settings as steps 
     set.nlk = 2;
     set.lk[0][0] = 21, set.lk[0][1] = PG_HOME, set.lk[0][2] = 2, set.lk[0][3] = 0, set.lk[0][4] = 0;   /* (T3 LEVEL) */
     set.lk[1][0] = 22, set.lk[1][1] = PG_TRACK, set.lk[1][2] = 1, set.lk[1][3] = 3, set.lk[1][4] = 0;  /* (T4 CUTOFF) */
-    settings_save(&set, sizeof set - 1u);
-    host_store[4 + sizeof set - 1u] = 0;        /* (no ver: as they were) */
+    settings_save(&set, (uint32_t)((uint8_t *)&set.ver - (uint8_t *)&set));   /* (no ver: as they were) */
     sys_load();
     if (set.lk[0][1] != PG_MIX1 || set.lk[0][2] != 0 || set.lk[0][3] != 2 || set.lk[1][1] != PG_HOME || set.lk[1][3] != 3)
         stress_fail("h_links: the old links not moved onto MIXER 1's LEVEL, HOME (page)", set.lk[0][1]);
@@ -449,6 +450,25 @@ static void stress_editor(void)                 /* "x_editor" */
     uint32_t i, rc = 0;
     st_fhead(ED_INFO), st_ed(1);
     if (st_sxn < 20u || st_sxr[5] != ED_PROTO || st_sxr[6] != ED_FMT) stress_fail("x_editor: no INFO (length)", st_sxn);
+    st_fhead(ED_CPU), st_ed(1);                 /* (24 CPU: the stages, the budget, NOW, PEAK, the split; rc9: USB's drops;
+                                                 * rc11: HL_N health values) */
+    if (st_sxn != 7u + 5u * (4u + CS_N + HL_N) || st_sxr[5] != CS_N || ed_rd35(st_sxr + 6) != BUDGET_TICKS ||
+        ed_rd35(st_sxr + 11) != cpu_now || st_sxr[st_sxn - 1u] != 0xF7u)
+        stress_fail("x_editor: CPU not as it should be (length)", st_sxn);
+    {                                           /* (25 FX: READ, a SET read back, the value as it was again; V2: the
+                                                 * tracks' four sends after the 28, T2's DRIVE 35; their TAPE sends,
+                                                 * T3's 46) */
+        int32_t was = mf_res, dv = trk[1].drv;
+        st_fhead(ED_EFFECTS), st_fb(0), st_ed(1);
+        if (st_sxn != 6u + 2u + 48u || st_sxr[6] != ER_OK || st_sxr[7 + 17] != (uint8_t)mf_res ||
+            st_sxr[7 + 35] != (uint8_t)clamp(trk[1].drv, 0, 127) || st_sxr[7 + 46] != (uint8_t)clamp(trk[2].tap, 0, 127))
+            stress_fail("x_editor: FX READ not as it should be (length)", st_sxn);
+        st_fhead(ED_EFFECTS), st_fb(1), st_fb(17), st_fb(99), st_ed(1);
+        if (st_sxn != 8u || st_sxr[6] != ER_OK || mf_res != 99) stress_fail("x_editor: FX SET not taken (MASTER RES)", (uint32_t)mf_res);
+        st_fhead(ED_EFFECTS), st_fb(1), st_fb(35), st_fb(77), st_ed(1);
+        if (st_sxn != 8u || st_sxr[6] != ER_OK || trk[1].drv != 77) stress_fail("x_editor: FX SET not taken (T2 DRIVE)", (uint32_t)trk[1].drv);
+        mf_res = was, trk[1].drv = dv;
+    }
     if (st_get(EO_SLOT, a, SLOT_ALL) || memcmp(a, slots[0], SLOT_ALL)) stress_fail("x_editor: slot A not read back", 0);
     if (st_get(EO_SET, a, sizeof set) || memcmp(a, &set, sizeof set)) stress_fail("x_editor: the settings not read back", 0);
     if (st_get(EO_FACT, a, SND_SIZE) || (rc = st_edput(EO_SND + 63u, a, SND_SIZE, st_crc(a, SND_SIZE), ED_FMT, 1, 1)) != 0)
@@ -469,7 +489,7 @@ static void stress_editor(void)                 /* "x_editor" */
     if (st_edput(EO_SLOT, a, SLOT_ALL, st_crc(a, SLOT_ALL), ED_FMT + 1u, 1, 1) != ER_ARGS) stress_fail("x_editor: a wrong format taken", 0);
     if (st_edput(EO_FACT, a, SND_SIZE, st_crc(a, SND_SIZE), ED_FMT, 1, 1) != ER_ARGS) stress_fail("x_editor: a factory sound written", 0);
     if (st_edput(EO_SLOT, a, SLOT_ALL, st_crc(a, SLOT_ALL), ED_FMT, 0, 1) != ER_STOP) stress_fail("x_editor: written while not silent", 0);
-    memcpy(b, &set, sizeof set), b[sizeof set - 1u] = 9u;   /* (ver 9) */
+    memcpy(b, &set, sizeof set), b[(uint8_t *)&set.ver - (uint8_t *)&set] = 9u;   /* (ver 9) */
     if (st_edput(EO_SET, b, sizeof set, st_crc(b, sizeof set), ED_FMT, 1, 1) != ER_BAD) stress_fail("x_editor: bad settings taken", 0);
     memset(b, 0x55, SND_SIZE);                  /* (not a sound) */
     if (st_edput(EO_SND, b, SND_SIZE, st_crc(b, SND_SIZE), ED_FMT, 1, 1) != ER_BAD) stress_fail("x_editor: a broken sound taken", 0);

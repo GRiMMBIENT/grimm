@@ -75,21 +75,25 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #define CV_MAX (240u * 64u)
 #include "gfx.c"
 
-static uint8_t host_store[256 + 4];
+static uint8_t host_store[256 + 4];             /* (valid, its size; then the bytes: as the FM-1's sector, a load of
+                                                 * another size fails) */
 static int settings_load(void *p, uint32_t n)
 {
-    if (host_store[0] != 1 || n > 256u) return -1;
+    if (host_store[0] != 1 || n > 256u || n != (host_store[1] | (uint32_t)host_store[2] << 8)) return -1;
     memcpy(p, host_store + 4, n);
     return 0;
 }
 static int settings_save(const void *p, uint32_t n)
 {
-    host_store[0] = 1;
+    host_store[0] = 1, host_store[1] = (uint8_t)n, host_store[2] = (uint8_t)(n >> 8);
     memcpy(host_store + 4, p, n);
     printf("%6u ms  settings saved (%u B)\n", fm1_ms, n);
     return 0;
 }
 
+#ifdef GRIMM_TRS_TEST
+static struct { uint32_t bytes, msgs; } um;     /* (the TRS test build's counter, as midi_uart.c's on the FM-1) */
+#endif
 static uint8_t mq[64][3];
 static uint32_t mq_w, mq_r;
 static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
@@ -106,6 +110,12 @@ static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { (void)d2; stress_
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  MIDI out %02X %u %u\n", fm1_ms, st, d1, d2); }
 #endif
 static uint32_t midi_room(void) { return 64u; }
+static uint32_t usb_drops(void) { return 0u; }   /* (rc9: no USB audio here) */
+static uint32_t host_rec_from = 1, host_rec_to;   /* (GRIMM_USB_REC=FROM,TO: a computer reads the USB audio from FROM to TO ms) */
+static int usb_recording(void) { return fm1_ms >= host_rec_from && fm1_ms < host_rec_to; }
+#define HL_N 25u                                /* (rc11: the health values: none here) */
+static void hl_read(uint32_t *v) { uint32_t k; for (k = 0; k < HL_N; k++) v[k] = 0; }
+static void hl_clear(void) {}
 #ifdef GRIMM_STRESS                             /* (the stress test: a battery going round its levels, 4 s a step) */
 static int32_t batt_raw(void) { return 500 + (int32_t)((fm1_ms / 4000u * 13u) % 110u); }
 static int usb_powered(void) { return (fm1_ms / 60000u) % 3u == 2u; }
@@ -148,8 +158,10 @@ static int save_flash_erase(uint32_t i)
     if (i >= SAVE_NSECT) return -8;
     (void)save_flash(0);
     memset(fake_save[i], 0xFF, 4096u);
+    printf("%6u ms  flash sector %u erased (a save)\n", fm1_ms, i);   /* (tests/rc11_test.py: when) */
     return 0;
 }
+static void compat_exit(void);                  /* (tests/compat.c) */
 static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)   /* NOR: a write only clears bits */
 {
     const uint8_t *s = p;
@@ -178,13 +190,23 @@ static int sysex_send(const uint8_t *p, uint32_t n) { (void)p; (void)n; return 0
 #endif
 
 static void app_audio(int32_t *out, uint32_t n);
+static int32_t host_master = 4092;              /* (GR!MM V2) the MASTER knob as the app reads it (fm1_master, Q12): all
+                                                 * the way up, as the USB audio always was here; GRIMM_MASTER: the knob
+                                                 * 0 .. 1023 (squared, as platform.c) */
+static int32_t fm1_master(void) { return host_master; }
+static FILE *host_raw;                          /* (GR!MM V2) GRIMM_RAW_OUT: the app's 24-bit words as they are (int32, L R),
+                                                 * beside the WAV (USB's rounded 16-bit copy) */
 static void app_main(void);
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message, an encoder turned. A script
  * file (the second argument) replaces it, a line each: "T keys MASK" (hex or decimal), "T btn ID" (a tap: let go the
- * next millisecond), "T down ID" / "T up ID" (held, let go), "T midi ST D1 D2", "T enc ID STEPS" (ENC_ id, + =
- * clockwise), "T end" */
-typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps; } host_ev_t;
+ * next millisecond), "T down ID" / "T up ID" (held, let go), "T midi ST D1 D2" (USB), "T trs ST D1 D2" (the TRS jack),
+ * "T enc ID STEPS" (ENC_ id, + = clockwise), "T end"; GR!MM V2: "T clock usb|trs BPMx10 MS" (MIDI clock pulses from
+ * T for MS ms, each at its exact time; BPMx10 0: none from T), "T probe" (the clock's and the sequencer's state out:
+ * tests/probe.c) */
+typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps, kind, src; uint32_t a, b; } host_ev_t;
+enum { HK_PLAIN, HK_CLOCK, HK_PROBE };          /* (kind) */
+static void host_probe(void);                   /* (tests/probe.c) */
 #define CHORD1 (1u << 7 | 1u << 11 | 1u << 14)                  /* C E G (C4 .. G4 at OCTAVE +0) */
 #define CHORD2 (1u << 2 | 1u << 5 | 1u << 9)                   /* G Bb D (G3 .. D4) */
 #define DOWN 0x100                                              /* btn: held from now (a btn alone: a tap, 1 ms) */
@@ -193,7 +215,8 @@ static const host_ev_t SCRIPT0[] = {
     /* T1: a VA chord sent to GRAIN; T2: a SAMPLE chord (slot 1: URCHIN, a factory sample) sent to DELAY; TAPE over it all at
      * moderate settings; FREEZE once; then the notes let go (the frozen cloud and the tails go on) */
     {100, 0, BTN_HOME, 0, 0, 0, 0, 0},                          /* HOME: MIXER 1 (T1) */
-    {110, 0, -1, 0, 0, 0, ENC_KNOB4, 100},                      /* GRAIN SEND 0 -> 100 */
+    {105, 0, -1, 0, 0, 0, ENC_SELECT, 4},                       /* (V2: SELECT: GRAIN's tile) */
+    {110, 0, -1, 0, 0, 0, ENC_KNOB1, 100},                      /* GRAIN SEND 0 -> 100 */
     {120, 0, BTN_FX, 0, 0, 0, 0, 0},                            /* FX: TAPE */
     {130, 0, -1, 0, 0, 0, ENC_KNOB1, 40},                       /* WOW 31 % */
     {140, 0, -1, 0, 0, 0, ENC_KNOB2, 50},                       /* SATURATION 39 % */
@@ -210,7 +233,8 @@ static const host_ev_t SCRIPT0[] = {
     {740, 0, BTN_EDIT, 0, 0, 0, 0, 0},                          /* EDIT: SOUND (SAMPLE: SLOT 1, the whole sample) */
     {750, 0, BTN_HOME, 0, 0, 0, 0, 0},                          /* HOME */
     {760, 0, BTN_HOME, 0, 0, 0, 0, 0},                          /* HOME: MIXER 1 (T2) */
-    {770, 0, -1, 0, 0, 0, ENC_KNOB2, 80},                       /* DLY SEND 0 -> 80 */
+    {765, 0, -1, 0, 0, 0, ENC_SELECT, -3},                      /* (V2: SELECT: DELAY's tile) */
+    {770, 0, -1, 0, 0, 0, ENC_KNOB1, 80},                       /* DLY SEND 0 -> 80 */
     {800, CHORD2, -1, 0, 0, 0, 0, 0},                           /* T2: G3 Bb3 D4 (SAMPLE) */
     {900, 0, -1, 0, 0, 0, 0, 0},
     {2000, 0, BTN_HOME, 0, 0, 0, 0, 0},                         /* HOME: MIXER 2 */
@@ -248,7 +272,14 @@ static void read_script(const char *path)
         else if (!strcmp(what, "down")) { sscanf(line, "%*u %*s %d", &e.btn); e.btn |= 0x100; }
         else if (!strcmp(what, "up")) { sscanf(line, "%*u %*s %d", &e.btn); e.btn |= 0x200; }
         else if (!strcmp(what, "enc")) { sscanf(line, "%*u %*s %d %d", &e.enc, &e.steps); }
-        else if (!strcmp(what, "midi")) { sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
+        else if (!strcmp(what, "midi") || !strcmp(what, "trs")) {
+            sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c;
+            e.src = what[0] == 't';
+        } else if (!strcmp(what, "clock")) {
+            char s[8] = "";
+            sscanf(line, "%*u %*s %7s %u %u", s, &e.a, &e.b);
+            e.kind = HK_CLOCK, e.src = s[0] == 't';
+        } else if (!strcmp(what, "probe")) e.kind = HK_PROBE;
         else continue;
         ev[n++] = e;
     }
@@ -349,6 +380,46 @@ static void host_matrix(void)
 }
 #endif
 
+/* GR!MM V2: the MIDI clock. Time is the script's (24 a us, platform.c rt_now): pulses at their exact time (HK_CLOCK);
+ * what the FM-1 sends (CLOCK INT+OUT) taken when due and counted, START and STOP shown */
+static uint64_t host_frames;                    /* frames rendered: an audio block's time is its first frame's, as on the
+                                                 * FM-1 (its ISR comes on the DMA), not the millisecond it is made in */
+static int host_in_audio;
+static uint32_t host_over_from, host_over_to;   /* (rc9) GRIMM_OVERLOAD=FROM,TO (ms): the overload guard's count held
+                                                 * at its limit meanwhile, as an FM-1 running over its time */
+static uint32_t host_jit, host_jit_rng = 1u;   /* GRIMM_ISR_JITTER (us): the audio ISR starts late by 0 .. it, as the
+                                                 * FM-1's can (the timer's ISR outranks it), its time read so */
+static uint32_t host_hz = FS;                   /* GRIMM_AUDIO_HZ: the audio's true rate against the timer's 24 MHz (an
+                                                 * FM-1's may not be 44100 to the hertz) */
+static uint32_t rt_now(void)
+{
+    uint32_t j = 0;
+    if (host_in_audio && host_jit)
+        host_jit_rng = host_jit_rng * 1103515245u + 12345u, j = (host_jit_rng >> 8) % (host_jit * 24u);
+    return (uint32_t)(host_in_audio ? host_frames * 24000000u / host_hz : (uint64_t)fm1_ms * 24000u) + j;
+}
+static int host_clock_log;                      /* GRIMM_CLOCK_LOG: each pulse out, its time (ticks), a line */
+static struct { uint64_t t0, k; uint32_t bpm10, end, src; } hg;   /* the pulses: from t0 (ticks), the next, the tempo */
+static struct { uint32_t n, last, lo, hi; } ho;   /* pulses out: how many; the last's time; their intervals (ticks) */
+static void host_clock(void)                    /* each millisecond: the pulses due in, the FM-1's out */
+{
+    uint64_t now = (uint64_t)fm1_ms * 24000u, t;
+    while (hg.bpm10 && (t = hg.t0 + hg.k * 600000000u / hg.bpm10) <= now && t < (uint64_t)hg.end * 24000u)
+        rt_in_at(0xF8u, hg.src, (uint32_t)t), hg.k++;
+    while (ro_r != ro_w && (int32_t)(ro_t[ro_r % RTQ] - (uint32_t)now) <= 0) {
+        uint32_t st = ro_q[ro_r % RTQ], due = ro_t[ro_r % RTQ];
+        ro_r++;
+        if (st != 0xF8u) { printf("%6u ms  clock out %02X\n", fm1_ms, st); continue; }
+        if (host_clock_log) printf("pulse %u\n", due);
+        if (ho.n) {
+            uint32_t d = due - ho.last;
+            if (!ho.lo || d < ho.lo) ho.lo = d;
+            if (d > ho.hi) ho.hi = d;
+        }
+        ho.n++, ho.last = due;
+    }
+}
+
 static void platform_poll(void)                 /* one call = one millisecond */
 {
     static uint32_t step, shot, owed, frame;
@@ -364,9 +435,19 @@ static void platform_poll(void)                 /* one call = one millisecond */
         host_tap = 0;
     }
     while (step < script_n && script[step].t <= fm1_ms) {
-        if (script[step].st) {
+        if (script[step].kind == HK_CLOCK) {
+            hg.t0 = (uint64_t)script[step].t * 24000u, hg.k = 0, hg.bpm10 = script[step].a;
+            hg.end = script[step].t + script[step].b, hg.src = (uint32_t)script[step].src;
+        } else if (script[step].kind == HK_PROBE)
+            host_probe();
+        else if (script[step].st >= 0xF8u)      /* (realtime: the clock's ring, at its time) */
+            rt_in_at(script[step].st, (uint32_t)script[step].src, rt_now());
+        else if (script[step].st) {
             mq[mq_w % 64u][0] = script[step].st; mq[mq_w % 64u][1] = script[step].d1; mq[mq_w % 64u][2] = script[step].d2;
             mq_w++;
+#ifdef GRIMM_TRS_TEST
+            if (script[step].src) um.bytes += 3u, um.msgs++;   /* (the TRS test build's counter: a "trs" line, 3 B) */
+#endif
         } else if (script[step].btn >= 0) {
             uint32_t m = 1u << (script[step].btn & 0xFF);
             if (script[step].btn & 0x200) {     /* up */
@@ -389,6 +470,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
     fm1_in.notes = acc_n, fm1_in.buttons = acc_b, host_edges = e0, host_rel = r0;
     host_matrix();
 #endif
+    host_clock();
     owed += FS;                                 /* the frames this millisecond is worth, in blocks as the ISR renders */
     while (owed >= 1000u * HALF_FRAMES) {
         uint32_t i;
@@ -396,7 +478,9 @@ static void platform_poll(void)                 /* one call = one millisecond */
         memset(blk, 0, sizeof blk);
         {
             uint32_t t0 = fm1_ticks(), dt;
+            host_in_audio = 1;
             app_audio(blk, HALF_FRAMES);
+            host_in_audio = 0, host_frames += HALF_FRAMES;
             dt = fm1_ticks() - t0;
             static uint32_t sum, cnt;
             if (dt > host_cpu_max) host_cpu_max = dt;
@@ -404,9 +488,13 @@ static void platform_poll(void)                 /* one call = one millisecond */
             if (++cnt == 86u) { host_cpu_now = sum / 86u; sum = cnt = 0; }   /* as grimm.c's NOW: ~0.5 s */
         }
         wav = realloc(wav, (wav_n + HALF_FRAMES) * 4u);
-        for (i = 0; i < 2u * HALF_FRAMES; i++) {
-            int32_t v = blk[i];                 /* (USB audio at the MASTER knob all the way up) */
-            wav[2u * wav_n + i] = (int16_t)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
+        {                                       /* (USB audio: the MASTER knob in it, GRIMM_MASTER; V2: the 24-bit words
+                                                 * as platform.c sends them, 16 bit, rounded) */
+            int32_t u[2u * HALF_FRAMES];
+            for (i = 0; i < 2u * HALF_FRAMES; i++) blk[i] = blk[i] > OUT_FS ? OUT_FS : blk[i] < -OUT_FS ? -OUT_FS : blk[i];
+            if (host_raw) fwrite(blk, 4, 2u * HALF_FRAMES, host_raw);
+            for (i = 0; i < 2u * HALF_FRAMES; i += 64u) out_usb16(blk + i, u + i, 64u);
+            for (i = 0; i < 2u * HALF_FRAMES; i++) wav[2u * wav_n + i] = (int16_t)u[i];
         }
         wav_n += HALF_FRAMES;
     }
@@ -419,6 +507,10 @@ static void platform_poll(void)                 /* one call = one millisecond */
     } else if (shot < sizeof SHOT / sizeof SHOT[0] && fm1_ms == SHOT[shot])
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
+        compat_exit();                          /* (tests/compat.c: saves out, the state as loaded) */
+        if (ho.n)
+            printf("clock  out: %u pulses, %u.%03u .. %u.%03u ms apart\n", ho.n, ho.lo / 24000u, ho.lo / 24u % 1000u,
+                   ho.hi / 24000u, ho.hi / 24u % 1000u);
         write_wav();
         exit(0);
     }
@@ -430,6 +522,30 @@ int main(int argc, char **argv)
     if (argc > 2) read_script(argv[2]);
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);
     memset(fake_flash, 0xFF, sizeof fake_flash);   /* (erased: the factory samples go in at boot) */
+    host_jit = getenv("GRIMM_ISR_JITTER") ? (uint32_t)atoi(getenv("GRIMM_ISR_JITTER")) : 0u;
+    if (getenv("GRIMM_OVERLOAD")) sscanf(getenv("GRIMM_OVERLOAD"), "%u,%u", &host_over_from, &host_over_to);
+    if (getenv("GRIMM_USB_REC")) sscanf(getenv("GRIMM_USB_REC"), "%u,%u", &host_rec_from, &host_rec_to);
+    host_clock_log = getenv("GRIMM_CLOCK_LOG") != 0;
+    if (getenv("GRIMM_RAW_OUT") && !(host_raw = fopen(getenv("GRIMM_RAW_OUT"), "wb"))) { perror("GRIMM_RAW_OUT"); exit(1); }
+    if (getenv("GRIMM_MASTER")) {
+        int32_t k = atoi(getenv("GRIMM_MASTER"));
+        k = k < 0 ? 0 : k > 1023 ? 1023 : k;
+        host_master = (k * k) >> 8;
+    }
+    if (getenv("GRIMM_AUDIO_HZ")) host_hz = (uint32_t)atoi(getenv("GRIMM_AUDIO_HZ"));
+    if (getenv("GRIMM_SETTINGS_IN")) {          /* (tests/clock_test.py: the settings an older GR!MM saved, as stored) */
+        FILE *f = fopen(getenv("GRIMM_SETTINGS_IN"), "rb");
+        size_t n = f ? fread(host_store + 4, 1, 256, f) : 0;
+        if (!f || !n) { perror("GRIMM_SETTINGS_IN"); exit(1); }
+        fclose(f);
+        host_store[0] = 1, host_store[1] = (uint8_t)n, host_store[2] = (uint8_t)(n >> 8);
+    }
+    if (getenv("GRIMM_SAVE_IN")) {              /* (tests/compat.c: the save sectors an older GR!MM wrote) */
+        FILE *f = fopen(getenv("GRIMM_SAVE_IN"), "rb");
+        (void)save_flash(0);
+        if (!f || fread(fake_save, 1, sizeof fake_save, f) != sizeof fake_save) { perror("GRIMM_SAVE_IN"); exit(1); }
+        fclose(f);
+    }
     app_main();
     return 0;
 }

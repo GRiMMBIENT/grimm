@@ -177,7 +177,7 @@ static void fm_block(voice_t *v, const volatile int32_t *e, int32_t *mono, int32
     int32_t bus[FM6_N], lf, lvl, a, da, dc;
     fm_track(t, e);
     p = fm_trk[t].p;
-    lf = fm6_note_logfreq(VP16(v) + (p[FP_TRNSP] - 24) * 16, tune_f);   /* (TUNE: the fine factor) */
+    lf = fm6_note_logfreq(VP16(v) + (p[FP_TRNSP] - 24) * 16, tune_f + wow_f);   /* (TUNE: the fine factor; V2: WOW's bend) */
     lvl = (clamp(e[1], 0, 127) - 64) * 24;                    /* BRIGHT: microsteps (MLVL) */
     if (fm_vgen[v - vc] != fm_trk[t].gen) {                   /* (edited while it sounds) */
         fm_vgen[v - vc] = fm_trk[t].gen;
@@ -187,8 +187,8 @@ static void fm_block(voice_t *v, const volatile int32_t *e, int32_t *mono, int32
     if (!fm6_note_compute(n, p, bus, fm_trk[t].lv, fm_trk[t].ld, lf, fm_valg[v - vc], fm_vfb[v - vc], fm_trk[t].dt,
                           lvl << 16))
         return;                                               /* every carrier below the threshold */
-    a = mulq15(amp0, FM_LV);
-    da = (mulq15(amp1, FM_LV) - a) >> FM6_LG_N;
+    a = amp_lv(amp0, FM_LV);                    /* (V2: Q15 << PB, the sum below PB bits finer) */
+    da = (amp_lv(amp1, FM_LV) - a) >> FM6_LG_N;
     dc = n->dc;
     for (i = 0; i < FM6_N; i++) {
         int32_t x = bus[i] - dc;

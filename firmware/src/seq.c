@@ -18,12 +18,13 @@
 #define SEQ_TICK_Q16 1806336000u                /* a tick at 1 BPM, in samples Q16: 60 x 44100 / 96 x 65536 */
 enum { SEQ_FWD, SEQ_BWD, SEQ_PONG, SEQ_RND, SEQ_NMODE };
 
-typedef struct {
-    volatile int32_t note, chance, ratchet, len;   /* note 0: OFF */
-    volatile int32_t chord;                     /* a chord step: 0x80 | VOICING << 4 | CHORD TYPE (recorded in chord
+typedef struct {                                /* (bytes: each value fits one; V1.0's were 32 bits, the saves the same) */
+    volatile uint8_t note, chance, ratchet, len;   /* note 0: OFF, else 1..127; CHANCE 0..100; RATCHET 1..4; LENGTH 1..64 */
+    volatile uint8_t chord;                     /* a chord step: 0x80 | VOICING << 4 | CHORD TYPE (recorded in chord
                                                  * mode: its chord, chord mode on or not); 0: a note */
     volatile uint8_t lmask, lv[4];              /* its locks: which of the source's four (bits), their values */
 } seq_step_t;
+_Static_assert(sizeof(seq_step_t) == 10u, "a step: 10 bytes");
 typedef struct { seq_step_t st[SEQ_N]; } seq_pat_t;
 typedef struct {
     volatile int32_t steps, div, swing, mode;   /* PATTERN SETTINGS: 1..64, SEQ_DIV_T's, 0..127, SEQ_ */
@@ -52,8 +53,14 @@ static const char *const SEQ_MODE_SHORT[SEQ_NMODE] = {"FWD", "BWD", "PONG", "RND
 static uint32_t seq_ticks;                      /* audio: ticks since PLAY (the bars) */
 static volatile int32_t seq_recall = -1;        /* main loop: a slot to come in at the next bar (-1: none); audio: -1 */
 static void slot_apply_isr(uint32_t s);         /* (store.c) */
+enum { CK_INT, CK_OUT, CK_USB, CK_TRS, CK_N };  /* (clock.c: CLOCK, INT .. TRS) */
+static volatile uint32_t ck_mode;               /* (clock.c) */
+static void ck_out(uint32_t st, uint32_t rem);  /* (clock.c: CLOCK INT+OUT, a message out at its time: STOP's) */
 static int slot_used(uint32_t s);
 static void arp_tick(uint32_t t, int locked);   /* (arp.c: the arps on the sequencer's clock while it plays) */
+static volatile uint32_t gen_on;                /* (V2) main loop: bit t: track t GENERATEs (gen.c): its pattern plays on
+                                                 * unheard */
+static void gen_tick(uint32_t t);               /* (gen.c: a tick of track t, from arp_tick) */
 
 static void seq_clear(void)                     /* main loop: the four sequences empty, 16 steps of 1/16, all OFF */
 {
@@ -147,7 +154,7 @@ static void seq_track_tick(uint32_t t)          /* audio: a tick of track t */
                                                  * next tick) */
         if (S->off_left[i] && !--S->off_left[i])
             note_off(t, S->off_note[i], SRC_SEQ, 0);
-    if (S->r_left && !--S->r_next) {            /* the RATCHET's next hit */
+    if (S->r_left && !--S->r_next && !(gen_on >> t & 1u)) {   /* the RATCHET's next hit */
         S->r_left--;
         seq_note(t, S->r_note, S->r_left ? S->r_gate : S->r_last, S->r_chord);
         S->r_next = S->r_sub;
@@ -156,9 +163,9 @@ static void seq_track_tick(uint32_t t)          /* audio: a tick of track t */
         const seq_step_t *s = &S->pat[clamp(S->cur, 0, SEQ_NPAT - 1)].st[S->pos];
         uint32_t j;
         for (j = 0; j < 4u; j++) lk_v[t][j] = s->lv[j];
-        lk_m[t] = s->note ? s->lmask : 0u;
+        lk_m[t] = s->note && !(gen_on >> t & 1u) ? s->lmask : 0u;   /* (V2: GENERATE: none) */
     }
-    if (S->t == sw)
+    if (S->t == sw && !(gen_on >> t & 1u))      /* (V2: GENERATE on: the step not played, its place kept) */
         seq_fire(t);
     if (++S->t >= stl) {
         S->t = 0;
@@ -201,6 +208,7 @@ static void seq_start(uint32_t slot)            /* audio (NQ_PLAY, the slot in u
 static void seq_stop(void)                      /* audio (NQ_STOP): all four stopped, their notes released */
 {
     uint32_t t, i;
+    if (seq_on && ck_mode == CK_OUT) ck_out(0xFCu, (uint32_t)CTL << 16);   /* (STOP out) */
     seq_on = 0;
     song_stop();                                /* (song record: its last step written, then END) */
     for (t = 0; t < NT; t++) {
@@ -214,25 +222,32 @@ static void seq_stop(void)                      /* audio (NQ_STOP): all four sto
         lk_m[t] = 0;                            /* (the knobs' sound again) */
     }
 }
-static void seq_ctl(void)                       /* audio, a control block: the ticks due */
+static int seq_tick(void)                       /* audio: a tick while playing (the FM-1's tempo: seq_ctl; a MIDI
+                                                 * clock's: clock.c); 1: the song over, stopped */
 {
-    uint32_t tick = SEQ_TICK_Q16 / (uint32_t)clamp(seq_bpm, 20, 300), t;
+    uint32_t t;
+    if (song_tick()) return 1;                  /* (a pass's end: the song's next step; the song over: stopped) */
+    if (seq_recall >= 0 && song_rec != 2u && !(seq_ticks % SEQ_BAR)) {   /* a slot recalled: in at the bar, from
+                                                 * step 1 (song record: at the pass's end, song.c) */
+        uint32_t s = (uint32_t)seq_recall;
+        seq_recall = -1;
+        seq_jump(s);
+    }
+    seq_ticks++;
+    for (t = 0; t < NT; t++) {
+        seq_track_tick(t);
+        arp_tick(t, 1);
+    }
+    return 0;
+}
+static void seq_ctl(void)                       /* audio, a control block: the ticks due at the FM-1's tempo */
+{
+    uint32_t tick = SEQ_TICK_Q16 / (uint32_t)clamp(seq_bpm, 20, 300);
     if (!seq_on) return;
     seq_acc += (uint32_t)CTL << 16;
     while (seq_acc >= tick) {
         seq_acc -= tick;
-        if (song_tick()) return;                /* (a pass's end: the song's next step; the song over: stopped) */
-        if (seq_recall >= 0 && song_rec != 2u && !(seq_ticks % SEQ_BAR)) {   /* a slot recalled: in at the bar, from
-                                                 * step 1 (song record: at the pass's end, song.c) */
-            uint32_t s = (uint32_t)seq_recall;
-            seq_recall = -1;
-            seq_jump(s);
-        }
-        seq_ticks++;
-        for (t = 0; t < NT; t++) {
-            seq_track_tick(t);
-            arp_tick(t, 1);
-        }
+        if (seq_tick()) return;
     }
 }
 
@@ -258,6 +273,6 @@ static void seq_write(uint32_t t, int32_t i, uint32_t note, uint32_t chord)
 {
     seq_step_t *s = &seq[t].pat[clamp(seq[t].cur, 0, SEQ_NPAT - 1)].st[clamp(i, 0, (int32_t)SEQ_N - 1)];
     if (!s->note) s->chance = 100, s->ratchet = 1, s->len = 1;
-    s->note = (int32_t)note;
-    s->chord = (int32_t)chord;
+    s->note = (uint8_t)note;
+    s->chord = (uint8_t)chord;
 }

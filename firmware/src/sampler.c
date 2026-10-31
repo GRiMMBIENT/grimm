@@ -194,7 +194,7 @@ static void sampler_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
     /* the speed: the key against the root (varispeed) */
     d16 = VP16(v) - smp[t->cur.slot].root16;
     step = (pow2_q16(clamp(d16, -2304, 384)) >> 8) * (SMP_RATE_Q16 >> 8);
-    step += (uint32_t)((int32_t)(step >> 12) * tune_f);   /* (TUNE) */
+    step += (uint32_t)((int32_t)(step >> 12) * (tune_f + wow_f));   /* (TUNE; V2: WOW's bend) */
     step = step > SP_STEP_MAX ? SP_STEP_MAX : step < 256u ? 256u : step;
 
     /* the heads: A, and B as they cross; their places move by the step, backward in a REVERSE loop */
@@ -265,10 +265,10 @@ static void sampler_block(voice_t *v, const volatile int32_t *p, int32_t *mono, 
 #undef SP_STORE
 #undef SP_RUN
 
-    a0 = mulq15(amp0, SP_LV);                   /* the level and the envelope as one gain */
-    da = mulq15(amp1, SP_LV) - a0;
+    a0 = amp_lv(amp0, SP_LV);                   /* the level and the envelope as one gain (V2: Q15 << PB) */
+    da = amp_lv(amp1, SP_LV) - a0;
     for (i = 0; i < (uint32_t)CTL; i++)
-        mono[i] += mulq15(buf[i], amp_at(a0, da, (int32_t)i));
+        mono[i] += vca(buf[i], amp_at(a0, da, (int32_t)i));
 }
 
 static void sampler_text(const volatile int32_t *p, uint32_t k, char *s)   /* parameter k as the screen shows it */
