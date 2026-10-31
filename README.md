@@ -51,7 +51,7 @@ Your sounds, slots A–D, settings and samples stay on the FM-1 when you update.
 - **[The manual](MANUAL.md)**: every button, page, knob and combo, in plain English ([what's new in 2.0](MANUAL.md#whats-new-in-20)).
 - **Quick start:** switch on, wait for the eye to open. Turn **ALGORITHM** to pick a track, turn **PRESETS** to pick a sound, play the keys. Hold **SEL** for one-key chords. Press **FX** for the effects.
 
-## The editor and the demo
+## The editor and the web emulator
 
 Both run in Chrome or Edge on a computer, nothing to install.
 
@@ -59,8 +59,8 @@ Both run in Chrome or Edge on a computer, nothing to install.
   tracks' sounds with big sliders: every move plays on the FM-1 at once, like turning its knobs. Store sounds into
   your 64 slots with a name, browse the factory sounds, load WAV files into the sample slots, set the effects and
   the MIDI settings, and back up or restore everything, samples included. Without an FM-1 it runs GR!MM's own code in the page (TRY WITHOUT AN FM-1).
-- **[The demo](https://grimmbient.github.io/grimm/):** the FM-1's panel on screen, running the same firmware. Play it
-  with the mouse or the computer keyboard (the keys are listed under the panel and in the [manual](MANUAL.md#16-the-demo)).
+- **[The web emulator](https://grimmbient.github.io/grimm/):** the FM-1's panel on screen, running the same firmware. Play it
+  with the mouse or the computer keyboard (the keys are listed under the panel and in the [manual](MANUAL.md#16-the-web-emulator)).
 
 ## Your own samples
 
