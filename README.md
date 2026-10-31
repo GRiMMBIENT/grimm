@@ -1,6 +1,8 @@
-# GR!MM
+# GR!MM V2.0
 
 **Dark ambient, dungeon synth and deathdream firmware for the M-VAVE FM-1.**
+
+**V2.0 is out:** real recorded choirs, tracks that play by themselves (GENERATE), GLIDE, a master filter, four kinds of distortion, tape and drive per track, and MIDI clock in and out. [What's new](MANUAL.md#whats-new-in-20) · [Download](https://github.com/GRiMMBIENT/grimm/releases/tag/v2.0)
 
 **[The GR!MM hub](https://grimmbient.github.io/grimm/hub.html)**: install, manual and links.
 
