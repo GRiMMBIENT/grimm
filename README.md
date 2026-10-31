@@ -56,6 +56,7 @@ Your sounds, slots A–D, settings and samples stay on the FM-1 when you update.
 ## Learn it
 
 - **[The manual](MANUAL.md)**: every button, page, knob and combo, in plain English ([what's new in 2.0](MANUAL.md#whats-new-in-20)).
+- **[The manual as a PDF](https://grimmbient.github.io/grimm/GRIMM-V2.0-manual.pdf)**: the same manual with every screen, to print or keep offline.
 - **Quick start:** switch on, wait for the eye to open. Turn **ALGORITHM** to pick a track, turn **PRESETS** to pick a sound, play the keys. Hold **SEL** for one-key chords. Press **FX** for the effects.
 
 ## The editor and the web emulator
