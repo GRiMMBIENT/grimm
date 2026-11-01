@@ -18,10 +18,13 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { Client, VirtualFM1, LiveSender, MidiTransport, findFM1, OBJ, parseSound, buildRecord, makeBackup, checkBackup,
          restoreBackup, makeSlot, recordOk, unpack7, hex, sampleName, SET_V1, SET_V2, settingsOf, withSettings,
          sameSettings, crc32, checkSamples, restoreSamples, EditorError, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
-         glideText, decayText, pctText, PITCH_TEXT } from "./editor_core.js";
+         glideText, decayText, pctText, PITCH_TEXT, SEQ, emptyPattern, slotFromWork, slotWithPatterns, patternsFromSlot,
+         patternsFromWork, slotTrack, patternFile, parsePatternFile, recallScript, stopScript, BTN_PLAY, chordTable, chordNotes, matchChord,
+         recWrite, recRest, recTie, makeGrouper, pcKeyNote, noteName, emptyStep } from "./editor_core.js";
 
 let ex, data, size, started = false, rewinding = false;
 const { instance } = await WebAssembly.instantiate(readFileSync("web/dist/grimm.wasm"), {
@@ -393,6 +396,160 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const tn = await cl.track(3);
   await cl.trackSet(3, t0[3].rec);
   check(tn.name === "FROZEN HALL" && (await cl.track(3)).name === "", `editor: TRACK: a sound's name as HOME shows it ("${tn.name}"), and none`);
+  {                                                          // the SEQUENCER (patterns): into a slot, recalled, read from object 9; the sounds and mix untouched
+    const run = (script) => { for (const m of script) { if ("buttons" in m) vf.ex.web_buttons(m.buttons); if ("keys" in m) vf.ex.web_keys(m.keys); vf.step(m.ms); } };
+    const peak = (ms) => {                                   // the loudest sample of the next ms (the sound the virtual FM-1 makes)
+      let pk = 0;
+      for (let i = 0; i < ms; i++) {
+        vf.run();
+        const n = vf.ex.web_avail();
+        if (n) {
+          vf.ex.web_want_frames(n), vf.ex.web_take();
+          const l = new Float32Array(vf.ex.memory.buffer, vf.ex.web_out_l(), n);
+          for (let k = 0; k < n; k++) pk = Math.max(pk, Math.abs(l[k]));
+          vf.ex.web_want_frames(0);
+        }
+      }
+      return pk;
+    };
+    let seed = 12345;
+    const rnd = (n) => { seed = (seed * 1103515245 + 12345) >>> 0; return (seed >>> 8) % n; };
+    const mk = (steps, div, swing, mode, density) => {       // a pattern: notes, chances, ratchets, lengths, chords, locks
+      const p = emptyPattern(steps);
+      Object.assign(p, { div, swing, mode });
+      p.st.forEach((s, k) => {
+        if (rnd(100) < density) Object.assign(s, { note: 48 + rnd(24), chance: 20 + rnd(81), ratchet: 1 + rnd(4), len: 1 + rnd(8) });
+        if (rnd(100) < 15) s.chord = 0x80 | rnd(7) << 4 | rnd(11);
+        if (rnd(100) < 20) s.lmask = 1 + rnd(15), s.lv = [rnd(128), rnd(128), rnd(128), rnd(128)];
+      });
+      return p;
+    };
+    const pats = [mk(16, 4, 0, 0, 40), mk(8, 2, 30, 2, 60), mk(64, 6, 127, 3, 30), mk(1, 0, 0, 1, 100)];
+    const work0 = await cl.get(9, SEQ.WORK_LEN);
+    const slot0 = slotFromWork(work0, pats);                 // (an empty slot B: made of the working project's tracks)
+    check(slot0.length === 2532 && slot0[0] === 1 && eq([...slot0.subarray(4, 212)], [...work0.subarray(0, 208)]) &&
+          eq([...slot0.subarray(2404)], [...work0.subarray(2440, 2568)]), "sequencer: an empty slot made of the working project's tracks and FM patches");
+    await cl.canWrite(OBJ.SLOT + 1, slot0, info.fmt);
+    await cl.put(OBJ.SLOT + 1, slot0, info.fmt);
+    const back0 = await cl.get(OBJ.SLOT + 1, 2532);
+    check(eq([...back0], [...slot0]) && JSON.stringify(patternsFromSlot(back0)) === JSON.stringify(pats),
+          "sequencer: four patterns (all 64 steps: note, chance, ratchet, length, chord steps, locks; steps, division, swing, play mode) written into slot B, read back, parsed the same");
+    const pats2 = [mk(32, 3, 10, 1, 50), mk(4, 5, 0, 0, 90), mk(16, 7, 64, 2, 20), mk(12, 1, 5, 3, 70)];
+    const slot1 = slotWithPatterns(back0, pats2);
+    await cl.put(OBJ.SLOT + 1, slot1, info.fmt);
+    const back1 = await cl.get(OBJ.SLOT + 1, 2532);
+    const outside = (a, b) => eq([...a.subarray(0, 212)], [...b.subarray(0, 212)]) && eq([...a.subarray(2404)], [...b.subarray(2404)]);
+    check(eq([...back1], [...slot1]) && outside(back1, back0) && !eq([...back1.subarray(212, 2404)], [...back0.subarray(212, 2404)]) &&
+          JSON.stringify(patternsFromSlot(back1)) === JSON.stringify(pats2),
+          "sequencer: new patterns over them: only bytes 212-2403 change, the tracks' sounds and mix (4-211) and the FM patches (2404-) stay as they were");
+    check(eq([...(await cl.get(OBJ.SLOT, 2532)).subarray(0, 1)], [0]) && eq([...(await cl.get(OBJ.SLOT + 2, 2532)).subarray(0, 1)], [0]),
+          "sequencer: the other slots (A, C) untouched");
+    const sound0 = [0, 1, 2, 3].map((t) => slotTrack(back1, t));
+    check(sound0.every((x, t) => x.eng === work0[t * 52] && x.k.length === 4), "sequencer: a slot's tracks' sources and knobs read for the step locks' names");
+    const f = JSON.parse(JSON.stringify(patternFile(pats2, { slot: "B" })));
+    let bad = "";
+    try { parsePatternFile({ ...f, tracks: f.tracks.slice(0, 3) }); } catch (e) { bad = e.message; }
+    check(JSON.stringify(parsePatternFile(f)) === JSON.stringify(pats2) && bad === "not a GR!MM pattern file" &&
+          JSON.stringify(parsePatternFile(JSON.parse(JSON.stringify(patternFile(pats))))) === JSON.stringify(pats),
+          "sequencer: a pattern file saved and loaded gives the same patterns; a damaged one is refused");
+    run(recallScript(1, false));                             // recall slot B (SAVE + G3), not playing yet
+    const work1 = await cl.get(9, SEQ.WORK_LEN), got = patternsFromWork(work1);
+    check(JSON.stringify(got) === JSON.stringify(pats2) && eq([...work1.subarray(0, 208)].slice(0, 29), [...back1.subarray(4, 212)].slice(0, 29)),
+          "sequencer: slot B recalled on the virtual FM-1, the working project (object 9) holds the patterns as written; the first track's sound as in the slot");
+    const slotTracks = back1.subarray(4, 212), workTracks = work1.subarray(0, 208);
+    let diff = 0;
+    for (let k = 0; k < 208; k++) if (slotTracks[k] !== workTracks[k]) diff++;
+    check(diff === 0, `sequencer: the recalled tracks (sound and mix bytes) equal the slot's (${diff} bytes differ)`);
+    vf.step(300);
+    check(peak(600) < 0.0001 && !(vf.ex.web_lit_buttons() >>> BTN_PLAY & 1), "sequencer: recalled, not playing: silent, PLAY not lit");
+    run(recallScript(1, true).slice(-2));                    // PLAY
+    vf.ex.web_master(760);                                   // (the virtual FM-1 is muted: MASTER up to hear it)
+    const lit = vf.ex.web_lit_buttons() >>> BTN_PLAY & 1, loud = peak(5000);
+    vf.ex.web_master(0);
+    let refused = 0;
+    try { await cl.canWrite(OBJ.SLOT + 1, slot1, info.fmt); } catch (e) { refused = e.rc; }
+    check(lit === 1 && loud > 0.001 && refused === 3, `sequencer: PLAY: PLAY lit, the pattern sounds (peak ${loud.toFixed(3)}); a write is refused while it plays (rc ${refused})`);
+    run(stopScript());
+    vf.step(30000);                                          // (the tails end, SPACE's: the FM-1 may write again)
+    let ok = false;
+    try { await cl.canWrite(OBJ.SLOT + 1, slot1, info.fmt); ok = true; } catch (e) { /* still sounding */ }
+    check(!(vf.ex.web_lit_buttons() >>> BTN_PLAY & 1) && ok, "sequencer: stopped: PLAY dark, silent, a write is taken again");
+    await cl.put(OBJ.SLOT + 1, new Uint8Array(2532), info.fmt);   // (slot B empty again, as at power-on)
+  }
+
+// STEP RECORD (the SEQUENCER's REC): the record logic of editor_core.js
+{
+  const table = chordTable(), want = readFileSync("tests/data/chord_table.sha256", "utf8").trim();
+  check(createHash("sha256").update(table).digest("hex") === want && table.split("\n").length === 11 * 5 * 128 + 1,
+        "step record: the chord table (11 CHORD TYPES x 5 VOICINGS x 128 roots) is the firmware's own (scale.c chord_notes_tv: tests/chord_table.c, same hash)");
+  const P = (steps = 4) => emptyPattern(steps);
+  let p = P(4), r = recWrite(p, 0, [60]);
+  check(r.cursor === 1 && r.kind === "note" && p.st[0].note === 60 && p.st[0].chord === 0, "step record: a note goes into the step and the cursor moves on");
+  r = recWrite(p, r.cursor, [62]), r = recWrite(p, r.cursor, [64]);
+  check(p.st[1].note === 62 && p.st[2].note === 64 && r.cursor === 3, "step record: the next notes go into the next steps");
+  r = recWrite(p, 3, [65]);
+  check(p.st[3].note === 65 && r.cursor === 0, "step record: at the last step (STEPS 4) the cursor wraps to the first");
+  r = recWrite(p, 0, [67]);
+  check(p.st[0].note === 67 && r.cursor === 1, "step record: after the wrap the first step is written over");
+  p = P(16), p.st[5] = { ...emptyStep(), note: 70, chance: 50, ratchet: 3, len: 4, lmask: 5, lv: [1, 2, 3, 4] };
+  recWrite(p, 5, [72]);
+  check(p.st[5].note === 72 && p.st[5].chance === 50 && p.st[5].ratchet === 3 && p.st[5].len === 4 && p.st[5].lmask === 5, "step record: a note replaces only the step's NOTE (chance, ratchet, length, locks stay)");
+  r = recWrite(p, 5, [64, 60]);
+  check(p.st[5].note === 60 && r.kind === "pair" && p.st[5].chord === 0, "step record: two keys: the lowest note");
+  p = P(3), p.st[0].note = 60, p.st[1].note = 62, p.st[1].chord = 0x81;
+  r = recRest(p, 1);
+  check(p.st[1].note === 0 && p.st[1].chord === 0 && r.cursor === 2 && recRest(p, 2).cursor === 0, "step record: REST makes the step OFF, clears a chord, moves on, wraps");
+  p = P(4), recWrite(p, 0, [60]);
+  let t = recTie(p, 1);
+  check(t && t.tied === 0 && t.len === 2 && p.st[0].len === 2 && t.cursor === 1, "step record: TIE makes the step before one longer, the cursor stays");
+  t = recTie(p, 1);
+  check(t.len === 3 && p.st[0].len === 3 && recTie(p, 2) === null, "step record: TIE again: longer again; after a step with no note: nothing to tie");
+  p.st[0].len = 64;
+  check(recTie(p, 1).len === 64, "step record: a tie stops at 64 steps");
+  p = P(8);
+  r = recWrite(p, 0, [60, 63, 67]);
+  check(r.kind === "chord" && p.st[0].note === 60 && p.st[0].chord === 0x81, `step record: C, D#, G together: a chord step, MIN CLOSE on C (byte 0x${p.st[0].chord.toString(16)})`);
+  r = recWrite(p, 1, [64, 60, 67]);
+  check(r.kind === "chord" && p.st[1].note === 60 && p.st[1].chord === 0x82, "step record: the same keys in any order: MAJ CLOSE on C");
+  r = recWrite(p, 2, [60, 67, 76]);
+  check(r.kind === "chord" && p.st[2].note === 60 && p.st[2].chord === 0x92, "step record: C, G, E an octave up: MAJ OPEN on C");
+  r = recWrite(p, 3, [48, 64, 67]);
+  check(r.kind === "chord" && p.st[3].note === 60 && p.st[3].chord === 0xc2, "step record: a DROP voicing (the root an octave down): the step's note is the root, not the lowest key");
+  r = recWrite(p, 4, [60, 64, 67, 71]);
+  check(r.kind === "chord" && p.st[4].chord === 0x87, "step record: four keys: MAJ7");
+  r = recWrite(p, 5, [60, 65, 67]);
+  check(r.kind === "chord" && p.st[5].note === 60 && p.st[5].chord === 0x84, "step record: C, F, G: SUS4 on C (the lowest key as the root)");
+  r = recWrite(p, 6, [60, 61, 62]);
+  check(r.kind === "nomatch" && p.st[6].note === 60 && p.st[6].chord === 0 && r.cursor === 7, "step record: a chord not on the FM-1: the lowest note is written, flagged (CHORD NOT ON THE FM-1)");
+  check(matchChord([60, 62, 66, 69, 72, 75]) === null && matchChord([60, 64]) === null, "step record: six odd keys, or two keys: no chord");
+  const all = [];                                            // every chord the FM-1 builds (but SCALE's), played as its notes, is found and plays the same
+  let bad = 0;
+  for (let vo = 0; vo < 5; vo++) for (let ty = 1; ty <= 10; ty++) for (const root of [24, 48, 60, 72, 100]) {
+    const ns = chordNotes(ty, vo, root);
+    if (new Set(ns).size < 3) continue;
+    const m = matchChord(ns);
+    all.push(1);
+    if (!m || [...new Set(chordNotes(m.type, m.voicing, m.note))].sort((a, b) => a - b).join() !== [...new Set(ns)].sort((a, b) => a - b).join()) bad++;
+  }
+  check(all.length > 200 && bad === 0, `step record: ${all.length} chords of the FM-1 (types, voicings, roots) pressed as keys: each found, and the chord found plays the same notes (${bad} differ)`);
+  p = P(8), recWrite(p, 0, [60, 63, 67]);
+  const sl = slotWithPatterns(slotFromWork(await cl.get(9, SEQ.WORK_LEN), [p, P(), P(), P()]), [p, P(), P(), P()]);
+  check(patternsFromSlot(sl)[0].st[0].chord === 0x81 && patternsFromSlot(sl)[0].st[0].note === 60, "step record: a recorded chord step is kept in the slot's bytes");
+  const got = [];                                            // keys within 50 ms are one group
+  const gr = makeGrouper((n) => got.push(n.join()), 50);
+  const coreSrc = readFileSync("web/editor_core.js", "utf8");
+  check(!/timers = \{ set: setTimeout \}/.test(coreSrc) && /timers = \{ set: \(f, t\) => setTimeout\(f, t\) \}/.test(coreSrc),
+        "step record: the default timer is a plain call of setTimeout (as a method a browser's setTimeout is an Illegal invocation: found in a real browser)");
+  gr.add(60), await new Promise((r2) => setTimeout(r2, 15)), gr.add(63), await new Promise((r2) => setTimeout(r2, 15)), gr.add(67);
+  await new Promise((r2) => setTimeout(r2, 120));
+  gr.add(72);
+  await new Promise((r2) => setTimeout(r2, 120));
+  check(got.join(" | ") === "60,63,67 | 72", `step record: keys within 50 ms are one group, a later key another (${got.join(" | ")})`);
+  check(pcKeyNote("a", 4) === 60 && pcKeyNote("w", 4) === 61 && pcKeyNote("j", 4) === 71 && pcKeyNote("k", 4) === 72 && pcKeyNote("a", 3) === 48 &&
+        pcKeyNote("q", 4) === -1 && pcKeyNote("k", 10) === -1 && "awsedftgyhujk".split("").map((c) => pcKeyNote(c, 4)).join() === "60,61,62,63,64,65,66,67,68,69,70,71,72",
+        "step record: the computer's keys A W S E D F T G Y H U J K are one octave (A = C4 at OCT 4), none out of range");
+  check(noteName(60) === "C4" && noteName(63) === "D#4" && noteName(48) === "C3" && noteName(1) === "C#-1", "step record: notes are named C4, D#4, C3");
+}
 }
 // the page against the FM-1's own bytes, behind a fake Web MIDI: a GM synth (silent), a loop port, then the FM-1
 {
@@ -457,6 +614,17 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
         /outline: 3px solid var\(--f\)/.test(html) && /--f: #ff6a3d/.test(html) && /<a href="#editor" data-s="editor">/.test(html) &&
         /@media \(max-width: 599px\)[^]*nav \{[^}]*flex-direction: row; overflow-x: auto/.test(html),
         "editor page: help text #8f887b, the GR!MM tag to hub.html, the drip, 3px #ff6a3d focus, the menu one scrolling row under 600 px");
+  check(/<a href="#sequencer" data-s="sequencer">SEQUENCER<\/a>/.test(html) && ["sq-slot", "sq-import", "sq-now", "sq-send", "sq-preview", "sq-stop", "sq-save", "sq-load", "sq-clear", "sq-grid", "sq-step", "sq-trk"].every((i) => html.includes(`id="${i}"`)) &&
+        /repeat\(8, minmax\(0, 1fr\)\)/.test(html) && /@media \(min-width: 900px\) \{ \.sqgrid/.test(html) && /canWrite\(OBJ\.SLOT \+ k, next/.test(js) &&
+        /grimm-slot-\$\{L\}-backup/.test(js) && /slotWithPatterns\(cur, sq\.pats\)/.test(js) && /type: "reply"/.test(readFileSync("web/worklet.js", "utf8")),
+        "editor page: the SEQUENCER section (grid 8 wide on a phone, 16 on a computer; IMPORT, SEND with a probe and a backup first, PREVIEW, files)");
+  check(["sq-rec", "sq-rest", "sq-tie", "sq-mon", "sq-octd", "sq-octu", "sq-midi", "sq-midi-scan", "sq-recst", "sq-recmsg"].every((i) => html.includes(`id="${i}"`)) &&
+        /min-height: 44px/.test(html) && /\.sqgrid\.rec \.sqs\.sel \{[^}]*outline: 3px solid var\(--f\)/.test(html) &&
+        /FM1_PORT = \/felucca\|fm-\?1\|m-\?vave\|gr!\?mm\/i/.test(js) && /localStorage\.getItem\(SQ_MIDI_KEY\)/.test(js) && /try \{ return localStorage/.test(js) && /try \{ localStorage\.setItem/.test(js) &&
+        /requestMIDIAccess\(\{ sysex: false \}\)/.test(js) && /CHORD NOT ON THE FM-1/.test(js) && /c === 0xb0 && d1 === 64/.test(js) &&
+        /sqTyping\(\)/.test(js) && /\(sq\.rec && sqOn\(\)\)/.test(js) && /k === "Backspace"/.test(js) && /k === " "/.test(js) && /k === "z"/.test(js) && /k === "x"/.test(js) &&
+        /b\.append\(s\.note \? noteName\(s\.note\) : "OFF"\)/.test(js) && /\(v\) => \(v \? noteName\(v\) : "OFF"\)/.test(js),
+        "editor page: STEP RECORD (REC, REST, TIE, MONITOR, MIDI IN without the FM-1's port, kept in localStorage in try/catch, the pedal, the computer's keys, notes as names, the cursor outlined, 44 px buttons)");
   check(/PHASE LINE 2/.test(js) && /PHASE ENV/.test(js) && /V2_SOUND_CONTROLS/.test(js) && /VOICE_TYPES/.test(js) && /glideText/.test(js) && /decayText/.test(js) &&
         /b-store/.test(js),
         "editor page: the SOUND EDITOR draws VOICE TYPE, GLIDE, PHASE LINE 2 and PHASE ENV from the sheet's names");

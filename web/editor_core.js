@@ -10,7 +10,7 @@ export const HEAD = [0x7d, 0x47, 0x52];
 export const CMD = { SMP_BEGIN: 11, SMP_WRITE: 12, SMP_END: 13, SMP_ERASE: 14, SMP_INFO: 15, SMP_FACTORY: 16, INFO: 20, GET: 21, PUT: 22,
                      TRACK: 23, FX: 25 };
 export const PROTOS = [1, 2];                              // the editor protocols this page knows (2: TRACK)
-export const OBJ = { SET: 0, SLOT: 1, SMP: 5, SND: 16, FACT: 80 };   // (SMP: GR!MM V2, the sample slots 5..8, GET only)
+export const OBJ = { SET: 0, SLOT: 1, SMP: 5, WORK: 9, SND: 16, FACT: 80 };   // (SMP: GR!MM V2, the sample slots 5..8, GET only)
 const BEGIN = 0, DATA = 1, COMMIT = 2, ABORT = 3;
 export const RC = {
   1: "the FM-1 did not accept the request (arguments)",
@@ -148,6 +148,11 @@ export class Client {
       if (progress) progress(Math.min(off + 256, data.length), data.length);
     }
     await step([COMMIT, obj], 10000);
+  }
+  async canWrite(obj, data, fmt) {                         // would a PUT of data be taken now? BEGIN, then ABORT: nothing is
+    const r = await this.req(CMD.PUT, [BEGIN, obj, fmt, ...u35(data.length), ...u35(crc32(data))]);   // changed; throws as put
+    await this.req(CMD.PUT, [ABORT, obj]).catch(() => {});   // does (rc 3: the FM-1 plays or still sounds)
+    if (r[2]) throw new EditorError(RC[r[2]] || `rc ${r[2]}`, r[2]);
   }
   async smpInfo() {
     const r = await this.req(CMD.SMP_INFO, [], 2000), out = [];
@@ -427,8 +432,8 @@ export function backupObjects(info) {
   return [[OBJ.SET, info.setSize, "settings"], ...[0, 1, 2, 3].map((k) => [OBJ.SLOT + k, info.slotSize, `slot ${"ABCD"[k]}`]),
           ...Array.from({ length: info.sounds }, (_, k) => [OBJ.SND + k, info.soundSize, `sound ${k + 1}`])];
 }
-const b64 = (b) => { let s = ""; b.forEach((x) => { s += String.fromCharCode(x); }); return btoa(s); };
-const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+export const b64 = (b) => { let s = ""; b.forEach((x) => { s += String.fromCharCode(x); }); return btoa(s); };
+export const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 export async function makeBackup(client, info, progress) {   // (GR!MM V2: the sample slots too, "samples"; a GR!MM
   const list = backupObjects(info), objects = [], smp = [], n = list.length + info.sampleSlots;   // before: none)
   for (let i = 0; i < list.length; i++) {
@@ -704,3 +709,146 @@ export function makeSlot(buf, name, root, norm = true) {      // -> {hdr (480 B)
   hdr[z + 24] = 0, hdr[z + 25] = 0, hdr[z + 26] = 127, hdr[z + 27] = 0;
   return { hdr, data, secs: s.length / SAMPLE.RATE, cut };
 }
+
+// ------------------------------------------------------------------ the SEQUENCER (patterns: docs/EDITOR_PROTOCOL.md, "A slot" and
+// "A sequence"; GR!MM 2.0, no firmware change): a slot holds the four tracks' sounds and mix (bytes 4-211), their sequences
+// (212-1251: 4 x 260), their step locks (1252-2403: 4 x 288) and their FM patches (2404-2531); the working project
+// (object 9, read only) holds the same sequences and locks at 228 and 1268. Only the sequences and locks are ever changed.
+export const SEQ = { N: 64, LEN: 260, LOCK: 288, SLOT_LEN: 2532, WORK_LEN: 2576, SLOT_SEQ: 212, SLOT_LOCK: 1252, SLOT_END: 2404,
+                     WORK_SEQ: 228, WORK_LOCK: 1268, WORK_TRACKS: 208, WORK_FM: 2440, SLOT_FM: 2404, FM_LEN: 128 };
+export const DIV_NAMES = ["1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T"];
+export const MODE_NAMES = ["FORWARD", "BACKWARD", "PINGPONG", "RANDOM"];
+export const emptyStep = () => ({ note: 0, chance: 100, ratchet: 1, len: 1, chord: 0, lmask: 0, lv: [0, 0, 0, 0] });
+export const emptyPattern = (steps = 16) => ({ steps, div: 4, swing: 0, mode: 0, st: Array.from({ length: SEQ.N }, emptyStep) });
+const clampi = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.trunc(Number.isFinite(+v) ? +v : lo)));
+export function parsePattern(seq, lock) {                    // a sequence (260 B) and its locks (288 B) -> a pattern (as store.c uk_seq, uk_lock)
+  const p = { steps: clampi(seq[0], 1, SEQ.N), div: clampi(seq[1], 0, 7), swing: clampi(seq[2], 0, 127), mode: clampi(seq[3], 0, 3), st: [] };
+  for (let k = 0; k < SEQ.N; k++) {
+    const b = 4 + k * 4, v = seq[b] | seq[b + 1] << 8 | seq[b + 2] << 16;
+    p.st.push({ note: v & 127, chance: Math.min(100, v >> 7 & 127), ratchet: (v >> 14 & 3) + 1, len: (v >> 16 & 63) + 1,
+                chord: seq[b + 3] & 0x80 ? seq[b + 3] : 0, lmask: lock[SEQ.N * 4 + (k >> 1)] >> (k & 1 ? 4 : 0) & 15,
+                lv: [0, 1, 2, 3].map((j) => lock[k * 4 + j]) });
+  }
+  return p;
+}
+export function packPattern(p) {                             // a pattern -> { seq (260 B), lock (288 B) } (as store.c pk_seq, pk_lock)
+  const seq = new Uint8Array(SEQ.LEN), lock = new Uint8Array(SEQ.LOCK);
+  seq[0] = clampi(p.steps, 1, SEQ.N), seq[1] = clampi(p.div, 0, 7), seq[2] = clampi(p.swing, 0, 127), seq[3] = clampi(p.mode, 0, 3);
+  for (let k = 0; k < SEQ.N; k++) {
+    const s = p.st[k], v = clampi(s.note, 0, 127) | clampi(s.chance, 0, 100) << 7 | (clampi(s.ratchet, 1, 4) - 1) << 14 |
+                           (clampi(s.len, 1, SEQ.N) - 1) << 16, b = 4 + k * 4;
+    seq[b] = v & 255, seq[b + 1] = v >> 8 & 255, seq[b + 2] = v >> 16 & 255, seq[b + 3] = s.chord & 0x80 ? s.chord & 255 : 0;
+    for (let j = 0; j < 4; j++) lock[k * 4 + j] = clampi(s.lv[j], 0, 127);
+    lock[SEQ.N * 4 + (k >> 1)] |= (s.lmask & 15) << (k & 1 ? 4 : 0);
+  }
+  return { seq, lock };
+}
+export function patternsFromSlot(b) {                        // a slot (2532 B) -> four patterns
+  return [0, 1, 2, 3].map((t) => parsePattern(b.subarray(SEQ.SLOT_SEQ + t * SEQ.LEN, SEQ.SLOT_SEQ + (t + 1) * SEQ.LEN),
+                                              b.subarray(SEQ.SLOT_LOCK + t * SEQ.LOCK, SEQ.SLOT_LOCK + (t + 1) * SEQ.LOCK)));
+}
+export function patternsFromWork(b) {                        // the working project (object 9, 2576 B) -> four patterns
+  return [0, 1, 2, 3].map((t) => parsePattern(b.subarray(SEQ.WORK_SEQ + t * SEQ.LEN, SEQ.WORK_SEQ + (t + 1) * SEQ.LEN),
+                                              b.subarray(SEQ.WORK_LOCK + t * SEQ.LOCK, SEQ.WORK_LOCK + (t + 1) * SEQ.LOCK)));
+}
+export function slotWithPatterns(slot, pats) {               // a copy of a slot with the four patterns: ONLY bytes 212-2403 differ
+  const o = Uint8Array.from(slot);
+  pats.forEach((p, t) => {
+    const { seq, lock } = packPattern(p);
+    o.set(seq, SEQ.SLOT_SEQ + t * SEQ.LEN), o.set(lock, SEQ.SLOT_LOCK + t * SEQ.LOCK);
+  });
+  return o;
+}
+export function slotFromWork(work, pats) {                   // a used slot made of the working project's tracks and FM patches
+  const o = new Uint8Array(SEQ.SLOT_LEN);                    // and these patterns (an empty slot, or the page's own engine)
+  o[0] = 1, o.set(work.subarray(0, SEQ.WORK_TRACKS), 4), o.set(work.subarray(SEQ.WORK_FM, SEQ.WORK_FM + SEQ.FM_LEN), SEQ.SLOT_FM);
+  return slotWithPatterns(o, pats);
+}
+export function slotTrack(slot, t, off = 4) {                // a slot's (off 4) or the working project's (off 0) track t: its source
+  const b = off + t * 52, eng = Math.min(slot[b], 6);
+  return { eng, k: [0, 1, 2, 3].map((j) => slot[b + 1 + eng * 4 + j]) };
+}
+export function patternFile(pats, extra = {}) {              // the file: a step is [note, chance, ratchet, length, chord byte, lock mask, 4 lock values]
+  return { format: "grimm-pattern", version: 1, date: new Date().toISOString().replace("T", " ").slice(0, 19), ...extra,
+           tracks: pats.map((p) => ({ steps: p.steps, division: p.div, swing: p.swing, mode: p.mode,
+                                      st: p.st.map((s) => [s.note, s.chance, s.ratchet, s.len, s.chord, s.lmask, ...s.lv]) })) };
+}
+export function parsePatternFile(j) {                        // a file -> four patterns, or throws (nothing taken)
+  if (!j || j.format !== "grimm-pattern" || j.version !== 1 || !Array.isArray(j.tracks) || j.tracks.length !== 4) throw new Error("not a GR!MM pattern file");
+  return j.tracks.map((t, n) => {
+    if (!Array.isArray(t.st) || t.st.length !== SEQ.N || t.st.some((s) => !Array.isArray(s) || s.length !== 10)) throw new Error(`track ${n + 1} in the file is damaged`);
+    return { steps: clampi(t.steps, 1, SEQ.N), div: clampi(t.division, 0, 7), swing: clampi(t.swing, 0, 127), mode: clampi(t.mode, 0, 3),
+             st: t.st.map((s) => ({ note: clampi(s[0], 0, 127), chance: clampi(s[1], 0, 100), ratchet: clampi(s[2], 1, 4), len: clampi(s[3], 1, SEQ.N),
+                                    chord: clampi(s[4], 0, 255) & 0x80 ? clampi(s[4], 0, 255) : 0, lmask: clampi(s[5], 0, 15),
+                                    lv: [s[6], s[7], s[8], s[9]].map((x) => clampi(x, 0, 127)) })) };
+  });
+}
+// the page's preview: recall slot k (hold SAVE, tap key F3 / G3 / A3 / B3 = bits 0, 2, 4, 6) and PLAY, as messages for
+// the panel (platform.c: BTN_SAVE 9, BTN_PLAY 12); ms to wait after each. The tests run the same on the virtual FM-1.
+export const BTN_SAVE = 9, BTN_PLAY = 12;
+export const recallScript = (k, play = true) => [
+  { buttons: 1 << BTN_SAVE, ms: 80 }, { keys: 1 << (2 * k), ms: 80 }, { keys: 0, ms: 80 }, { buttons: 0, ms: 250 },
+  ...(play ? [{ buttons: 1 << BTN_PLAY, ms: 80 }, { buttons: 0, ms: 80 }] : [])];
+export const stopScript = () => [{ buttons: 1 << BTN_PLAY, ms: 80 }, { buttons: 0, ms: 80 }];
+
+// ------------------------------------------------------------------ STEP RECORD (the SEQUENCER's REC): notes from a MIDI keyboard or the
+// computer's keys written into the selected step, the cursor on to the next. The chord table is a port of firmware/src/scale.c's
+// chord_notes_tv (SCALE off); web/test_web.mjs checks it against the firmware's own table (tests/chord_table.c).
+const CH_IV = [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 2, 7], [0, 5, 7], [0, 7], [0, 3, 7, 10], [0, 4, 7, 11], [0, 3, 6], [0, 4, 7, 14], [0, 2, 3]];
+export function chordNotes(ty, vo, note) {                  // CHORD TYPE ty (0 SCALE: with the scale off, MIN), VOICING vo on note
+  const r = note & 127, n = CH_IV[Math.max(0, Math.min(10, ty))].map((x) => r + x);
+  switch (Math.max(0, Math.min(4, vo))) {
+    case 1: if (n.length >= 3) n[1] += 12; break;            // OPEN: the middle note up an octave
+    case 2: n[0] -= 12; for (let i = 1; i < n.length; i++) n[i] += 12; break;   // SPREAD: the root down, the rest up
+    case 3: n.push(r + 12); break;                           // +OCT: and the root an octave up
+    case 4: n[0] -= 12; break;                               // DROP: the root down an octave
+    default: break;
+  }
+  return n.map((x) => { while (x < 0) x += 12; while (x > 127) x -= 12; return x; });
+}
+export function chordTable() {                               // the text tests/chord_table.c prints
+  const out = [];
+  for (let ty = 0; ty < 11; ty++) for (let vo = 0; vo < 5; vo++) for (let r = 0; r < 128; r++) {
+    const n = chordNotes(ty, vo, r);
+    out.push(`${ty} ${vo} ${r} ${n.length} ${n.join(" ")}`);
+  }
+  return out.join("\n") + "\n";
+}
+export function matchChord(notes) {                          // 3+ notes pressed together -> the chord step that plays just them: the
+  const want = [...new Set(notes)].sort((a, b) => a - b);    // root (the step's note) and its byte (0x80 | VOICING << 4 | TYPE), or
+  if (want.length < 3) return null;                          // null. SCALE is left out: its notes follow the project's scale.
+  const roots = [...want, ...Array.from({ length: 127 }, (_, i) => i + 1).filter((x) => !want.includes(x))].filter((x) => x >= 1);
+  for (let vo = 0; vo < 5; vo++) for (const r of roots) for (let ty = 1; ty <= 10; ty++) {   // (the lowest key first as the root; CLOSE first)
+    const got = [...new Set(chordNotes(ty, vo, r))].sort((a, b) => a - b);
+    if (got.length === want.length && got.every((x, i) => x === want[i])) return { note: r, chord: 0x80 | vo << 4 | ty, type: ty, voicing: vo };
+  }
+  return null;
+}
+export function recWrite(pat, cursor, notes) {               // keys pressed together into step cursor: a note (the lowest), or a chord step
+  const want = [...new Set(notes)].sort((a, b) => a - b);    // when 3+ match one of the FM-1's chords; -> the next cursor (wraps at STEPS)
+  if (!want.length) return null;
+  const s = pat.st[cursor], m = want.length >= 3 ? matchChord(want) : null;
+  s.note = Math.max(1, Math.min(127, m ? m.note : want[0])), s.chord = m ? m.chord : 0;
+  return { cursor: cursor + 1 >= pat.steps ? 0 : cursor + 1, wrote: cursor, note: s.note, chord: s.chord,
+           kind: m ? "chord" : want.length >= 3 ? "nomatch" : want.length === 2 ? "pair" : "note" };
+}
+export function recRest(pat, cursor) {                       // a rest: the step OFF, on to the next
+  pat.st[cursor].note = 0, pat.st[cursor].chord = 0;
+  return { cursor: cursor + 1 >= pat.steps ? 0 : cursor + 1, wrote: cursor };
+}
+export function recTie(pat, cursor) {                        // a tie: the step before is one step longer, the cursor stays; null: it has no note
+  const prev = (cursor + pat.steps - 1) % pat.steps, s = pat.st[prev];
+  if (!s.note) return null;
+  s.len = Math.min(SEQ.N, s.len + 1);
+  return { cursor, tied: prev, len: s.len };
+}
+export function makeGrouper(commit, ms = 50, timers = { set: (f, t) => setTimeout(f, t) }) {   // keys within ms of the first one are one group
+                                                             // (setTimeout called as timers.set would be "Illegal invocation" in a browser)
+  let notes = [], t = null;
+  return { add(n) {
+    notes.push(n);
+    if (t === null) t = timers.set(() => { const g = notes; notes = [], t = null; commit(g); }, ms);
+  } };
+}
+const PC_KEYS = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };   // one octave: A = C, W = C#, ... K = the next C
+export const pcKeyNote = (key, oct) => (key in PC_KEYS && 12 * (oct + 1) + PC_KEYS[key] <= 127 ? 12 * (oct + 1) + PC_KEYS[key] : -1);   // oct 4: A = C4 = 60
