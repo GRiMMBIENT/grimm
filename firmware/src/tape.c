@@ -25,7 +25,8 @@
 #define DL_NC 128u                              /* a block at half the rate: app_audio's 256 frames */
 #define DL_LEN 77456u                           /* 3500 ms (77175 samples) + the wow's reach + the right side's 9 ms */
 #define DL_SPREAD (198 << 8)                    /* the right side reads 9 ms further back (Q8 samples) */
-#define DL_IN 16384                             /* the voices into the line, Q15: half (headroom for the loop) */
+#define DL_IN 8192                              /* the voices into the line, Q15: a quarter (headroom for the loop; V2:
+                                                 * half of 1.0's, its return twice: loud chords never reach its knee) */
 #define DL_DCK 280                              /* the DC block: 30 Hz at 22.05 kHz, Q15 */
 #define DL_W1 12467522u                         /* the wow: 0.5 Hz, a block's step (2^32 * 256 / 44100 * Hz) */
 #define DL_W2 4737658u                          /* .. and 0.19 Hz beside it: not quite periodic */
@@ -86,7 +87,9 @@ static void tape_render(const int32_t *in, int32_t *out, int32_t *rev, uint32_t 
     m1 = wear_wow(dl.p1, dl.p2, dl.p3, a);      /* (wear.c) */
     tc = 28300 - wear * 148;                    /* the loop's low-pass, Q15: ~7 kHz .. ~1.2 kHz */
     g = 4096 + wear * 26;                       /* the saturation's drive, Q12: 1x .. 1.8x */
-    ig = (int32_t)(134217728u / (uint32_t)g);   /* .. and the level made up after it, Q15 */
+    ig = (int32_t)(134217728u / (uint32_t)g) >> 1;   /* .. and the level made up after it, Q15 (V2: the line at half:
+                                                 * driven twice as hard, half back: saturating where it did) */
+    g *= 2;
     fb = fbk * 284;                             /* FEEDBACK, Q15: 0 .. 1.1 */
 
     w = dl.w;
@@ -103,6 +106,7 @@ static void tape_render(const int32_t *in, int32_t *out, int32_t *rev, uint32_t 
             v = sh_tz(lp * fb, 15);                                         /* FEEDBACK */
             v = wear_sat(v, g, ig);                                         /* the tape's saturation (wear.c) */
             e = (v - dc) * DL_DCK + de, de = e & 32767, dc += e >> 15;      /* the DC block */
+            LV_COUNT(lv_dlk, x + v - dc, 16384);
             v = clamp(soft_knee(x + v - dc, 16384), -32767, 32767);         /* in with the input: never clips */
             dl_buf[w] = (int16_t)v;
             dl.quiet = (v | x) ? 0u : dl.quiet + 1u;
@@ -115,8 +119,8 @@ static void tape_render(const int32_t *in, int32_t *out, int32_t *rev, uint32_t 
     {
         int32_t wg = mix * 258;
         for (i = 0; i < DL_NC; i++) {
-            int32_t wl = dl.l[i], wr = dl.r[i], *o = out + 4u * i, a = mulq15((ml + wl) >> 1, wg),
-                    b = mulq15((mr + wr) >> 1, wg), c = mulq15(wl, wg), d = mulq15(wr, wg);
+            int32_t wl = dl.l[i], wr = dl.r[i], *o = out + 4u * i, a = 2 * mulq15((ml + wl) >> 1, wg),
+                    b = 2 * mulq15((mr + wr) >> 1, wg), c = 2 * mulq15(wl, wg), d = 2 * mulq15(wr, wg);   /* (V2: x 2) */
             o[0] += a, o[1] += b, o[2] += c, o[3] += d;
             rev[2u * i] += (a + b) >> 1;        /* (the echoes, both sides, into SPACE) */
             rev[2u * i + 1u] += (c + d) >> 1;

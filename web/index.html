@@ -84,8 +84,8 @@ footer p { margin: 4px 0; }
 
 <div class="under">
   <button class="toggle" id="zoom" type="button" aria-pressed="false" title="Enlarge only the screen, to see its pixels">SCREEN <b data-s="1" class="on">1x</b> / <b data-s="2">2x</b></button>
-  <label class="midiin" hidden>MIDI IN <select id="midi-in" aria-label="The MIDI input the demo listens to"></select></label>
-  <label class="midiin" hidden>CH <select id="midi-ch" aria-label="The MIDI channel the demo listens to"></select></label>
+  <label class="midiin" hidden>MIDI IN <select id="midi-in" aria-label="The MIDI input the web emulator listens to"></select></label>
+  <label class="midiin" hidden>CH <select id="midi-ch" aria-label="The MIDI channel the web emulator listens to"></select></label>
   <span id="status"></span>
 </div>
 
@@ -101,22 +101,22 @@ footer p { margin: 4px 0; }
 </p>
 <p class="keys" aria-label="What the buttons do">
   <span><kbd>Z</kbd>–<kbd>/</kbd> <kbd>S</kbd>–<kbd>'</kbd> keys F3–A♯4, <kbd>Q</kbd>–<kbd>O</kbd> B4–G5 · ALGORITHM (<kbd>←</kbd> <kbd>→</kbd>): the track</span>
-  <span>EDIT (<kbd>5</kbd>): SOUND, (FM: FM ALGO, FM OP,) again SOURCE (VA, FM, SAMPLE: the factory samples URCHIN, LEAVE, NIKOLAI, M-SOFT, VOICE, WHEEL, PHYS, PHASE; LATCH)</span>
-  <span>ENV (<kbd>3</kbd>): ATTACK DECAY SUSTAIN RELEASE · FX (<kbd>1</kbd>): TAPE, GRAIN, DELAY, SPACE; hold FX + <kbd>Z</kbd> (F3): FREEZE, + G3 … F4: REV THROW, ECHO THROW, TAPE STOP, REVERSE, FILTER DOWN, FILTER UP, STUTTER (while held)</span>
+  <span>EDIT (<kbd>5</kbd>): SOUND, (FM: FM ALGO, FM OP,) again SOURCE (VA, FM, SAMPLE: the factory samples URCHIN, LEAVE, NIKOLAI, M-SOFT, VOICE, WHEEL, PHYS, PHASE; LATCH; VOICE's TYPE: SOLO, GREGORIAN, NUNS, CATHEDRAL; GLIDE: OFF, 10 MS .. 2.5 S), a PHASE track's LINE 2 (WAVE, DCW: SAME or its own; RING, NOISE), PHASE ENV (DCW ENV, DCW DECAY, PITCH ENV, PITCH DECAY) · hold SEL + OCT+ (<kbd>2</kbd> + <kbd>]</kbd>): the track's LATCH on / off</span>
+  <span>ENV (<kbd>3</kbd>): ATTACK DECAY SUSTAIN RELEASE · FX (<kbd>1</kbd>): TAPE, GRAIN, DELAY, SPACE, MASTER (a filter over everything: CUTOFF, RESONANCE, TYPE, POSITION), DRIVE (AMOUNT, TYPE, TONE, MIX); hold FX + <kbd>Z</kbd> (F3): FREEZE, + G3 … F4: REV THROW, ECHO THROW, TAPE STOP, REVERSE, FILTER DOWN, FILTER UP, STUTTER (while held); + the black keys F#3 G#3 A#3 C#4 tapped: GENERATE on/off for T1–T4 (random notes of the scale); + D#4: MODE (DRIFT, PULSE, STORM), F#4 / G#4: its OCTAVE down / up, A#4: its RANGE (1–3 OCT), each for the track whose black key is held, or all four</span>
   <span>SEL (<kbd>2</kbd>): SCALE (the keys snap to it), again CHORD (TYPE, VOICING); hold SEL: the track's chord mode on / off</span>
   <span>ARP (<kbd>9</kbd>): MODE, RATE, OCTAVES, GATE; hold ARP: the track's arp on / off (it plays the keys held; LATCH: they stay)</span>
   <span>LFO (<kbd>4</kbd>): RATE, DEPTH, DESTINATION (PITCH, VOLUME, PAN, the source's knobs, REV, GRAIN), SHAPE</span>
   <span>GLO (<kbd>6</kbd>): SONG (SECTION, PATTERN, REPEATS, MODE; REC there: song record); hold GLO + white keys 1–4: mute T1–T4, 5–8: solo</span>
-  <span>HOME (<kbd>7</kbd>): HOME (VOLUME, CUTOFF, RESONANCE, FX), MIXER 1, MIXER 2; hold: SYSTEM (COLOUR, MIDI CHANNEL, TUNE, SCREEN OFF), HOME again: SYSTEM 2 (MIDI LEARN, SEQ MIDI OUT, SAMPLES: RESTORE then OCT+ writes the four factory samples again)</span>
-  <span>SEQ (<kbd>0</kbd>): GRID, PATTERN SETTINGS · PLAY (<kbd>-</kbd>): start / stop · REC (<kbd>=</kbd>): record · SELECT (<kbd>↑</kbd> <kbd>↓</kbd>): SEQ the step (SEQ held: STEPS), HOME the tempo · PRESETS: SEQ the tempo</span>
+  <span>HOME (<kbd>7</kbd>): HOME (VOLUME, CUTOFF, RESONANCE, FX), MIXER 1 (six tiles: LEVEL, DELAY, REVERB, TAPE, GRAIN, DRIVE; SELECT picks one, KNOB 1 sets it), MIXER 2 (PAN, the track filter's TYPE LP / HP / BP and POS PRE / POST); hold: SYSTEM (COLOUR, MIDI CHANNEL, TUNE, SCREEN OFF), HOME again: SYSTEM 2 (MIDI LEARN, SEQ MIDI OUT, SAMPLES: RESTORE then OCT+ writes the four factory samples again, CLOCK), again: SYSTEM 3 (LATCH: FROM SOUND / ALWAYS OFF, VELOCITY: OFF / ON, a MIDI note's volume from how hard)</span>
+  <span>SEQ (<kbd>0</kbd>): GRID, PATTERN SETTINGS · PLAY (<kbd>-</kbd>): start / stop · REC (<kbd>=</kbd>): record; held ~1 s: the track's pattern cleared · SELECT (<kbd>↑</kbd> <kbd>↓</kbd>): SEQ the step (SEQ held: STEPS), HOME the tempo · PRESETS: SEQ the tempo</span>
   <span>hold SEQ + white keys: CLEAR, RANDOM, SHIFT ←, SHIFT →, COPY, PASTE, DOUBLE, MUTATE · on SEQ's pages hold SEL + knobs: lock the step's sound (+ OCT−: clear)</span>
   <span>SAVE (<kbd>8</kbd>): SOUNDS, PROJECTS; OCT+ (<kbd>]</kbd>) does the ACTION, OCT− backs out; hold + white keys 1–4: recall slots A–D, 5–8: save A–D · EDIT held + OCT−/OCT+: undo/redo · PRESETS: the sounds by category (SEQ: the tempo) · the work saves itself when stopped</span>
-  <span>drag or scroll a knob · right-click or <kbd>Shift</kbd>-click holds a button · MIDI in via Web MIDI (pick the input above; the channel is set on the FM-1: hold HOME &gt; SYSTEM &gt; MIDI CHANNEL) · CH filters one channel; to play the selected track from any single channel, set the FM-1's MIDI CHANNEL to ALL &gt; SEL (hold HOME &gt; SYSTEM)</span>
+  <span>drag or scroll a knob · right-click or <kbd>Shift</kbd>-click holds a button · MIDI in via Web MIDI, notes and CCs (pick the input above; the channel is set on the FM-1: hold HOME &gt; SYSTEM &gt; MIDI CHANNEL; no MIDI clock here) · CH filters one channel; to play the selected track from any channel, set MIDI CHANNEL to ALL &gt; SEL, from one channel only to CH n &gt; SEL</span>
 </p>
 
 <footer>
   <p><b><a href="editor.html">Open the GR!MM editor</a></b>: edit sounds live, load samples, back up your FM-1 (Chrome or Edge)</p>
-  <p>GR!MM · the same <code>firmware/src/grimm.c</code> the FM-1 runs, compiled to WebAssembly · <a href="LICENSE">GPL-3.0-only</a> · <a href="https://github.com/GRiMMBIENT/grimm">source</a> · <a href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · built with Emscripten (<a href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a href="LICENSES/MIT-musl.txt">MIT</a>)</p>
+  <p>GR!MM · the same <code>firmware/src/grimm.c</code> the FM-1 runs, compiled to WebAssembly · <a href="LICENSE">GPL-3.0-only</a> · <a href="https://github.com/GRiMMBIENT/grimm">source</a> · <a href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · choir wavetables: made from <a href="https://doi.org/10.5281/zenodo.1442513">VocalSet</a> (Julia Wilkins, Prem Seetharaman, Alison Wahl, Bryan Pardo, Northwestern University), <a href="LICENSES/CC-BY-4.0.txt">CC BY 4.0</a>, single cycles made from its recordings · built with Emscripten (<a href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a href="LICENSES/MIT-musl.txt">MIT</a>)</p>
   <p>Built on <a href="https://github.com/zvenson/dinghy">Dinghy</a> by zvenson, on the platform of <a href="https://github.com/hugelton/Felucca">Felucca</a> by Leo Kuroshita, Hügelton Instruments, and <a href="https://github.com/isod89/sloop-fm1">SLOOP</a> by isod89 · the browser build and the panel's layout follow Felucca's and charlesvestal's <a href="https://github.com/charlesvestal/fm1-x0x">X0X</a> (GPL-3.0) · </p>
   <p>M-VAVE and FM-1 are trademarks of their respective owners. GR!MM is not affiliated with or endorsed by them.</p>
 </footer>

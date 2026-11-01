@@ -10,8 +10,9 @@
  *   the working project, saved by itself (autosave: grimm.c), in two objects, each in a pair of sectors written in
  *   turn (a cut save leaves the other copy):
  *     WORK  (sectors 1, 2): the four tracks (their source, every source's settings, ENV, LATCH, CHORD, ARP, LFO, LEVEL,
- *           the sends, PAN), the effects, the tempo, the SCALE, the four sequences, the slot in use, the song (its
- *           chain, MODE) and the mutes and solos, the tracks' FM patches (version 7; before: the PATCH as built)
+ *           the sends, PAN, the track filter's TYPE and POS), the effects, the tempo, the SCALE, the four sequences,
+ *           the slot in use, the song (its chain, MODE) and the mutes and solos, the tracks' FM patches (version 7;
+ *           before: the PATCH as built), MASTER and DRIVE (version 8, V2; before: MASTER open, DRIVE off)
  *   the slots A..D (each the four tracks, their sequences and step locks, their FM patches; tempo and effects are
  *   global): one copy, a stream over sectors 3, 4 and 5 (each its own header and CRC; the FM patches after the four
  *   slots, where it was zeros before step 24: zeros, the PATCH as built). Saving a slot rewrites the sectors it lives in
@@ -38,29 +39,34 @@
 #define FM_PK 32u                               /* a track's FM patch, packed (FM_PK x NT: FM_ALL) */
 #define FM_ALL (FM_PK * NT)
 #define PK_ENG 7u                               /* a track's sources kept (NENG); bytes 29..31 (an eighth source's
-                                                 * room till step 23): TRACK's filter and FX, 0 their defaults */
+                                                 * room till step 23): TRACK's filter and FX, 0 their defaults; 32
+                                                 * (V2): the filter's TYPE | POS << 2, 0 (as saved before) LP PRE */
 #define TRK_PK 52u                              /* a track, packed (OBJ_VERS: older versions' were shorter) */
 #define SEQ_PK 260u                             /* a sequence, packed: 4 + 64 steps x 4 B (the 4th: its chord) */
 #define SEQ_PK5 196u                            /* (version 5 and before: 3 B a step) */
 #define LOCK_PK 288u                            /* a track's step locks: 64 x the four values, 64 x 4 bits which */
 #define SLOT_LEN(tn, sq, lk) (4u + NT * ((tn) + (sq) + (lk)))   /* a slot: [0] used, its tracks, sequences, locks */
 #define SONG_PK 20u                             /* the song: its chain (16), MODE, the mutes and solos, 2 spare */
-#define WORK_LEN(tn, sg, sq, lk, fm) (NT * ((tn) + (sq) + (lk)) + 16u + 4u + (sg) + (fm))   /* the working project:
-                                                 * tracks, effects, tempo, slot, .., sequences, locks, the song, the FM
-                                                 * patches (an older version's sizes: sg 0 before the song, lk 0 before
-                                                 * locks, fm 0 before the FM patches) */
+#define FX2_PK 8u                               /* (V2, version 8) MASTER's four, DRIVE's four */
+#define WORK_LEN(tn, sg, sq, lk, fm, fx) (NT * ((tn) + (sq) + (lk)) + 16u + 4u + (sg) + (fm) + (fx))   /* the working
+                                                 * project: tracks, effects, tempo, slot, .., sequences, locks, the
+                                                 * song, the FM patches, MASTER and DRIVE (an older version's sizes: sg
+                                                 * 0 before the song, lk 0 before locks, fm 0 before the FM patches, fx
+                                                 * 0 before V2) */
 #define SLOT_PK SLOT_LEN(TRK_PK, SEQ_PK, LOCK_PK)
 #define SLOT_ALL (SLOT_PK + FM_ALL)             /* a slot in RAM: SLOT_PK, its FM patches after (the stream's tail) */
-#define WORK_PK WORK_LEN(TRK_PK, SONG_PK, SEQ_PK, LOCK_PK, FM_ALL)
+#define WORK_PK WORK_LEN(TRK_PK, SONG_PK, SEQ_PK, LOCK_PK, FM_ALL, FX2_PK)
 #define OBJ_HDR 12u                             /* magic, the save count, type, version, length */
 #define OBJ_MAGIC 0x4B4D5247u                   /* "GRMK" */
-#define OBJ_VER 7u
+#define OBJ_VER 8u
 #define SLS_VER 6u                              /* the slots' stream (its layout as version 6's) */
-#define NOBJV 6u
-static const uint16_t OBJ_VERS[NOBJV][6] = {{7, 52, 20, 260, 288, FM_ALL}, {6, 52, 20, 260, 288, 0},
-                                            {5, 52, 20, 196, 0, 0}, {4, 52, 0, 196, 0, 0}, {3, 48, 0, 196, 0, 0},
-                                            {2, 44, 0, 196, 0, 0}};   /* the versions loaded, newest first: a track's,
-                                                 * the song's, a sequence's, the locks', the FM patches' size (6: before
+#define NOBJV 7u
+static const uint16_t OBJ_VERS[NOBJV][7] = {{8, 52, 20, 260, 288, FM_ALL, FX2_PK}, {7, 52, 20, 260, 288, FM_ALL, 0},
+                                            {6, 52, 20, 260, 288, 0, 0}, {5, 52, 20, 196, 0, 0, 0},
+                                            {4, 52, 0, 196, 0, 0, 0}, {3, 48, 0, 196, 0, 0, 0},
+                                            {2, 44, 0, 196, 0, 0, 0}};   /* the versions loaded, newest first: a
+                                                 * track's, the song's, a sequence's, the locks', the FM patches', MASTER
+                                                 * and DRIVE's size (7, GR!MM 1.0's: before MASTER and DRIVE; 6: before
                                                  * the FM patches; 5: before chord steps and locks; 4: before the song;
                                                  * 3: before the LFO; 2: before ARP) */
 #define SLS_MAGIC 0x534C5247u                   /* "GRLS": a sector of the slots' stream */
@@ -81,6 +87,7 @@ _Static_assert(SND_N * SND_SIZE <= 4096u && OBJ_HDR + WORK_PK + 4u <= 4096u && 4
  * SHAPE 0 SINE, 1 TRIANGLE, 5 RANDOM, 6 DRIFT */
 #define FSND(c, n, e, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls)                                              \
     {SND_MAGIC1, c, n, e, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls}
+#define FSNDV(c, n, ty, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls)   /* (V2) VOICE and its TYPE (byte 18) */     {SND_MAGIC1, c, n, ENG_VOICE, k0, k1, k2, k3, a, d, s, r, la, ch, lr, ld, lt, ls, ty}
 static const uint8_t SND_FACTORY[][SND_FSIZE] = {
     /* PADS */
     FSND(CAT_PAD, 1, ENG_VA, 2, 70, 62, 20, 105, 100, 110, 100, 1, 0x11, 30, 15, 5, 0),     /* CRYPT PAD */
@@ -130,6 +137,17 @@ static const uint8_t SND_FACTORY[][SND_FSIZE] = {
     FSND(CAT_KEYS, 9, ENG_PHASE, 3, 0, 40, 4, 80, 90, 70, 80, 0, 0x00, 100, 1, 0, 0),       /* CANDLE */
     /* TEXTURES */
     FSND(CAT_TEXTURE, 1, ENG_VOICE, 96, 12, 0, 127, 100, 90, 120, 105, 1, 0x00, 30, 90, 4, 0), /* WIND THRU STONE */
+    /* (V2) CHOIRS: VOICE's choir TYPEs (real singers' cycles), a clear vowel (O, A), BUZZ (their tone) warm to open, a
+     * little BREATH, SHIFT their spread, ATTACK ~0.3 .. 0.45 s, a long RELEASE (~5 .. 8 s), no LFO; chord mode OFF (rc12: a
+     * factory sound never switches it on), their CHORD TYPE and VOICING set for it: parallel fifths (organum), minor
+     * chords. SPACE isn't a sound's (the project's, the track's REV send): the
+     * manual says how to set it */
+    FSNDV(CAT_VOICE, 6, VT_GREG, 95, 12, 75, 15, 82, 90, 120, 110, 0, 0x15, 40, 0, 0, 0),  /* GREGORIAN: O, FIFTH OPEN (chord mode off) */
+    FSNDV(CAT_VOICE, 7, VT_GREG, 0, 9, 85, 18, 80, 90, 120, 106, 0, 0x00, 40, 0, 0, 0),    /* PLAINCHANT: A, one line,
+                                                                                             * close */
+    FSNDV(CAT_VOICE, 8, VT_CATH, 0, 15, 80, 12, 85, 90, 105, 112, 0, 0x21, 40, 0, 0, 0),   /* CATHEDRAL CHOIR: A, MIN
+                                                                                             * SPREAD, wide */
+    FSNDV(CAT_VOICE, 9, VT_NUNS, 95, 12, 90, 20, 84, 90, 120, 108, 0, 0x11, 40, 0, 0, 0),  /* NUNS: O, MIN OPEN */
 };
 static const char *const SND_FNAME[] = {
     "CRYPT PAD", "ASH VEIL", "FROZEN HALL", "LAST LIGHT", "MOSS", "BLACK VELVET",
@@ -140,6 +158,7 @@ static const char *const SND_FNAME[] = {
     "HAUNTED STRINGS", "DUNGEON BRASS", "WAR HORN", "CELLO GRAVE", "SORROW STRINGS",
     "WRAITH", "LANTERN", "SPIDER PLUCK", "LUTE", "CANDLE",
     "WIND THRU STONE",
+    "GREGORIAN", "PLAINCHANT", "CATHEDRAL CHOIR", "NUNS",
 };   /* (16 characters at most: the header beside HOME's tempo) */
 #define SND_NFACT (sizeof SND_FACTORY / sizeof SND_FACTORY[0])
 _Static_assert(SND_NFACT == sizeof SND_FNAME / sizeof SND_FNAME[0], "a name a factory sound");
@@ -276,17 +295,35 @@ static int snd_put(uint32_t i, const uint8_t *rec)   /* slot i := rec (0: cleare
     for (k = 0; k < SND_SIZE; k++) st_img[i * SND_SIZE + k] = rec ? rec[k] : 0xFFu;
     return st_write(0, st_img);
 }
+/* (V2) PHASE's LINE 2 and envelopes in a sound (bytes 18 .. 24, the FM patch's room: a PHASE sound's free; saved
+ * before: 0, all as before): 18 bit 0 RING, bit 1 NOISE; 19 LINE 2's WAVE (0 SAME, 1 .. 8); 20 its DCW (0 SAME, 1 .. 127);
+ * 21 DCW ENV, 22 its DECAY, 23 PITCH ENV (-64 .. 63, a signed byte), 24 its DECAY */
+static void pd_pk(uint8_t *r, uint32_t t)
+{
+    r[0] = (uint8_t)((trk[t].pd_ring != 0) | (trk[t].pd_noise != 0) << 1);
+    r[1] = (uint8_t)clamp(trk[t].pd_wav, 0, 8), r[2] = (uint8_t)clamp(trk[t].pd_dcw, 0, 127);
+    r[3] = (uint8_t)clamp(trk[t].pd_de, 0, 127), r[4] = (uint8_t)clamp(trk[t].pd_dd, 0, 127);
+    r[5] = (uint8_t)(int8_t)clamp(trk[t].pd_pe, -64, 63), r[6] = (uint8_t)clamp(trk[t].pd_pd, 0, 127);
+}
+static void pd_uk(const uint8_t *r, uint32_t t)
+{
+    trk[t].pd_ring = r[0] & 1u, trk[t].pd_noise = r[0] >> 1 & 1u;
+    trk[t].pd_wav = r[1] <= 8u ? r[1] : 0, trk[t].pd_dcw = r[2] & 127u;
+    trk[t].pd_de = r[3] & 127u, trk[t].pd_dd = r[4] & 127u, trk[t].pd_pe = clamp((int8_t)r[5], -64, 63), trk[t].pd_pd = r[6] & 127u;
+}
 static void snd_pack(uint8_t *r, uint32_t t, uint32_t cat, uint32_t num)   /* track t's sound as a record */
 {
     uint32_t k, e = (uint32_t)clamp(trk[t].eng, 0, NENG - 1);
     for (k = 0; k < SND_SIZE; k++) r[k] = 0;
     r[0] = SND_MAGIC, r[1] = (uint8_t)cat, r[2] = (uint8_t)num, r[3] = (uint8_t)e;
     if (e == ENG_FM) pk_fm(r + 18, t);          /* (FM: its own patch) */
+    if (e == ENG_VOICE) r[18] = (uint8_t)clamp(trk[t].vty, 0, NVT - 1);   /* (V2: VOICE: its TYPE in the patch's room) */
+    if (e == ENG_PHASE) pd_pk(r + 18, t);       /* (V2: PHASE: its LINE 2 and envelopes there) */
     for (k = 0; k < 4u; k++) {
         r[4 + k] = (uint8_t)clamp(trk[t].p[e][k], 0, 255);
         r[8 + k] = (uint8_t)clamp(trk[t].env[k], 0, 127);
     }
-    r[12] = (uint8_t)(trk[t].latch != 0);
+    r[12] = (uint8_t)((trk[t].latch != 0) | clamp(trk[t].glide, 0, 127) << 1);   /* (V2: GLIDE over LATCH's bit) */
     r[13] = ch_pack(t);
     lfo_pk(r + 14, t);
     st_wr32(r + 60, st_crc(r, 60));
@@ -309,18 +346,25 @@ static int snd_save(uint32_t i, uint32_t t, uint32_t cat)   /* track t's sound i
     return snd_put(i, r);
 }
 static int snd_clear(uint32_t i) { return snd_put(i, 0); }
+static uint8_t snd_latch_off;                   /* (V2) SYSTEM 3's LATCH ALWAYS OFF: a sound loaded sets the track's
+                                                 * LATCH OFF (grimm.c's sys_sync) */
 static void snd_apply(const uint8_t *r, uint32_t t)   /* a sound record into track t (a new source: its notes go over) */
 {
-    uint32_t k, e = r[3];
-    for (k = 0; k < 4u; k++) {
-        trk[t].p[e][k] = r[4 + k];
-        trk[t].env[k] = r[8 + k];
+    uint32_t k, e = r[3] < NENG ? r[3] : 0u, la;
+    for (k = 0; k < 4u; k++) {                  /* (rc9: within the knobs' ranges: a sound the editor wrote, a broken
+                                                 * one, can't put a value past them, nor a filter out of control) */
+        trk[t].p[e][k] = clamp(r[4 + k], 0, ENGINES[e]->max[k]);
+        trk[t].env[k] = clamp(r[8 + k], 0, 127);
     }
-    if (trk[t].latch && !r[12]) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
-    trk[t].latch = r[12];
+    la = snd_latch_off ? 0u : r[12] & 1u;       /* (V2: SYSTEM 3's ALWAYS OFF: LATCH OFF, whatever the sound's) */
+    trk[t].glide = r[12] >> 1;                  /* (V2: GLIDE; saved before: 0, off) */
+    if (trk[t].latch && !la) nq_put(NQ_RELEASE, t, 0);   /* (LATCH ON -> OFF: its latched notes released) */
+    trk[t].latch = (int32_t)la;
     ch_unpack(t, r[13]);
     lfo_uk(r + 14, t);                          /* (saved before the LFO: zeros, DEPTH 0) */
     if (e == ENG_FM) uk_fm(snd_fname(r) ? 0 : r + 18, t);   /* (FM: its patch; a factory sound's: the PATCH as built) */
+    if (e == ENG_VOICE) trk[t].vty = r[18] < NVT ? r[18] : VT_SOLO;   /* (V2: its TYPE; saved before: 0, SOLO) */
+    if (e == ENG_PHASE) pd_uk(r + 18, t);       /* (V2: saved before: zeros, all as before) */
     if ((uint32_t)trk[t].eng != e) {
         trk[t].eng = (int32_t)e;
         nq_put(NQ_RESTART, t, 0);
@@ -353,6 +397,35 @@ static uint32_t cat_len(uint32_t c)
 }
 
 /* ---- packing: a track (52 B), a sequence (260 B), a track's step locks (288 B) */
+/* (V2) a track's newer settings in the spare bits of its 52 bytes (their values never use them; every save before
+ * has 0 there: all off, as before): bit 7 of bytes 1 .. 30, 33 .. 36, 38 .. 42, 47 .. 49; bits 3 .. 6 of byte 25
+ * (PHASE's WAVE, 0 .. 7), 4 .. 6 of byte 26 (its WAVE2, 0 .. 8). In order: PHASE's RING, NOISE; GLIDE (7); LINE 2's WAVE (4), DCW (7); PHASE ENV's DCW ENV, DECAY,
+ * PITCH ENV (two's complement), DECAY (7 each): 48 of the 49 */
+static const uint16_t XB_POS[49] = {
+    1 << 3 | 7, 2 << 3 | 7, 3 << 3 | 7, 4 << 3 | 7, 5 << 3 | 7, 6 << 3 | 7, 7 << 3 | 7, 8 << 3 | 7, 9 << 3 | 7, 10 << 3 | 7,
+    11 << 3 | 7, 12 << 3 | 7, 13 << 3 | 7, 14 << 3 | 7, 15 << 3 | 7, 16 << 3 | 7, 17 << 3 | 7, 18 << 3 | 7, 19 << 3 | 7,
+    20 << 3 | 7, 21 << 3 | 7, 22 << 3 | 7, 23 << 3 | 7, 24 << 3 | 7, 25 << 3 | 7, 26 << 3 | 7, 27 << 3 | 7, 28 << 3 | 7,
+    29 << 3 | 7, 30 << 3 | 7, 33 << 3 | 7, 34 << 3 | 7, 35 << 3 | 7, 36 << 3 | 7, 38 << 3 | 7, 39 << 3 | 7, 40 << 3 | 7,
+    41 << 3 | 7, 42 << 3 | 7, 47 << 3 | 7, 48 << 3 | 7, 49 << 3 | 7, 25 << 3 | 3, 25 << 3 | 4, 25 << 3 | 5, 25 << 3 | 6,
+    26 << 3 | 4, 26 << 3 | 5, 26 << 3 | 6};
+static void xb_put(uint8_t *q, uint32_t *at, uint32_t v, uint32_t n)   /* v's n bits into the next n spare bits */
+{
+    uint32_t i;
+    for (i = 0; i < n && *at < sizeof XB_POS / sizeof XB_POS[0]; i++, (*at)++) {
+        uint32_t b = XB_POS[*at];
+        q[b >> 3] = (uint8_t)((q[b >> 3] & ~(1u << (b & 7u))) | (v >> i & 1u) << (b & 7u));
+    }
+}
+static uint32_t xb_get(uint8_t *q, uint32_t *at, uint32_t n)   /* the next n spare bits' value, taken out of q */
+{
+    uint32_t i, v = 0;
+    for (i = 0; i < n && *at < sizeof XB_POS / sizeof XB_POS[0]; i++, (*at)++) {
+        uint32_t b = XB_POS[*at];
+        v |= (uint32_t)(q[b >> 3] >> (b & 7u) & 1u) << i;
+        q[b >> 3] &= (uint8_t)~(1u << (b & 7u));
+    }
+    return v;
+}
 static uint8_t *pk_track(uint8_t *q, uint32_t t)
 {
     uint32_t e, k;
@@ -360,19 +433,37 @@ static uint8_t *pk_track(uint8_t *q, uint32_t t)
     q[0] = (uint8_t)clamp(trk[t].eng, 0, NENG - 1);
     for (e = 0; e < NENG; e++)
         for (k = 0; k < 4u; k++) q[1 + e * 4u + k] = (uint8_t)clamp(trk[t].p[e][k], 0, 255);
+    q[1 + ENG_VOICE * 4u + 1u] = (uint8_t)(clamp(trk[t].p[ENG_VOICE][1], 0, 24) | clamp(trk[t].vty, 0, NVT - 1) << 5);   /*
+                                                 * (V2: VOICE's TYPE over its SHIFT, 0..24: 1.0 had 0 there) */
     for (k = 0; k < 4u; k++) q[33 + k] = (uint8_t)clamp(trk[t].env[k], 0, 127);
     q[29] = (uint8_t)(127 - clamp(trk[t].cut, 0, 127)), q[30] = (uint8_t)clamp(trk[t].res, 0, 127);   /* TRACK (0, 0, 0:
                                                  * open, 0, 100 %: as a save from before it) */
     q[31] = (uint8_t)(int8_t)(clamp(trk[t].fx, 0, 200) - 100);
-    q[37] = (uint8_t)(trk[t].latch != 0);
+    q[37] = (uint8_t)((trk[t].latch != 0) | clamp(trk[t].drv, 0, 127) << 1);   /* (V2: the DRIVE send above LATCH's
+                                                 * bit; 1.0's: 0, no send) */
     q[38] = (uint8_t)clamp(trk[t].level, 0, 127), q[39] = (uint8_t)clamp(trk[t].dly, 0, 127);
     q[40] = (uint8_t)clamp(trk[t].rev, 0, 127), q[41] = (uint8_t)clamp(trk[t].grn, 0, 127);
     q[42] = (uint8_t)clamp(trk[t].pan, 0, 127);
+    q[32] = (uint8_t)(clamp(trk[t].ftype, 0, NFTYPE - 1) | clamp(trk[t].fpos, 0, 1) << 2 |   /* (V2: MIXER 2's TYPE, POS; */
+                      (clamp(trk[t].tap, 0, 127) & 31) << 3);   /* MIXER 1's TAPE send: its low five bits here, its top
+                                                 * two in byte 46's bits 5, 6, over OCTAVES: 1.0 had 0 in both) */
     q[43] = ch_pack(t);
     q[44] = (uint8_t)((trk[t].arp ? 0x80u : 0u) | (uint32_t)clamp(trk[t].arp_mode, 0, NARPMODE - 1));   /* ARP */
-    q[45] = (uint8_t)clamp(trk[t].arp_rate, 0, NARPRATE - 1), q[46] = (uint8_t)clamp(trk[t].arp_oct, 1, 4);
+    q[45] = (uint8_t)clamp(trk[t].arp_rate, 0, NARPRATE - 1), q[46] = (uint8_t)(clamp(trk[t].arp_oct, 1, 4) | (clamp(trk[t].tap, 0, 127) >> 5) << 5);
     q[47] = (uint8_t)clamp(trk[t].arp_gate, 10, 100);
     lfo_pk(q + 48, t);                          /* LFO */
+    {                                           /* (V2: its newer settings in the spare bits) */
+        uint32_t at = 0;
+        xb_put(q, &at, trk[t].pd_ring != 0, 1);
+        xb_put(q, &at, trk[t].pd_noise != 0, 1);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].glide, 0, 127), 7);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_wav, 0, 8), 4);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_dcw, 0, 127), 7);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_de, 0, 127), 7);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_dd, 0, 127), 7);
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_pe, -64, 63) & 127u, 7);   /* (two's complement, 7 bits) */
+        xb_put(q, &at, (uint32_t)clamp(trk[t].pd_pd, 0, 127), 7);
+    }
     return q + TRK_PK;
 }
 static void trk_def(uint8_t *q, uint32_t n)     /* a track's bytes from n on (a save before ARP, before the LFO) as at
@@ -394,22 +485,45 @@ static const uint8_t *uk_track(const uint8_t *q0, uint32_t t, int isr, uint32_t 
     uint32_t e, k;
     for (k = 0; k < TRK_PK && k < n; k++) q[k] = q0[k];
     trk_def(q, n);                              /* (what an older save has not: as at power-on) */
-    for (e = 0; e < NENG; e++)
-        for (k = 0; k < 4u; k++) trk[t].p[e][k] = q[1 + e * 4u + k];
-    for (k = 0; k < 4u; k++) trk[t].env[k] = q[33 + k];
-    if (trk[t].latch && !q[37]) {               /* (LATCH ON -> OFF: its latched notes released; at the bar, now) */
+    {                                           /* (V2: its newer settings out of the spare bits, first: the rest as
+                                                 * ever; saved before: 0) */
+        uint32_t at = 0;
+        trk[t].pd_ring = (int32_t)xb_get(q, &at, 1);
+        trk[t].pd_noise = (int32_t)xb_get(q, &at, 1);
+        trk[t].glide = (int32_t)xb_get(q, &at, 7);
+        trk[t].pd_wav = (int32_t)xb_get(q, &at, 4), trk[t].pd_wav = trk[t].pd_wav > 8 ? 0 : trk[t].pd_wav;
+        trk[t].pd_dcw = (int32_t)xb_get(q, &at, 7);
+        trk[t].pd_de = (int32_t)xb_get(q, &at, 7);
+        trk[t].pd_dd = (int32_t)xb_get(q, &at, 7);
+        trk[t].pd_pe = (int32_t)xb_get(q, &at, 7), trk[t].pd_pe = trk[t].pd_pe >= 64 ? trk[t].pd_pe - 128 : trk[t].pd_pe;
+        trk[t].pd_pd = (int32_t)xb_get(q, &at, 7);
+    }
+    for (e = 0; e < NENG; e++)                  /* (rc9: every value loaded within its knob's range: a broken save
+                                                 * can't put one past it) */
+        for (k = 0; k < 4u; k++) trk[t].p[e][k] = clamp(q[1 + e * 4u + k], 0, ENGINES[e]->max[k]);
+    trk[t].p[ENG_VOICE][1] = clamp(q[1 + ENG_VOICE * 4u + 1u] & 31u, 0, ENGINES[ENG_VOICE]->max[1]);
+    trk[t].vty = q[1 + ENG_VOICE * 4u + 1u] >> 5 & 3u;   /* (V2) */
+    for (k = 0; k < 4u; k++) trk[t].env[k] = clamp(q[33 + k], 0, 127);
+    if (trk[t].latch && !(q[37] & 1u)) {               /* (LATCH ON -> OFF: its latched notes released; at the bar, now) */
         if (!isr) nq_put(NQ_RELEASE, t, 0);
         else {
             release_keys(t);
             if (trk[t].arp) arp_clear(t);
         }
     }
-    trk[t].latch = q[37];
-    trk[t].level = q[38], trk[t].dly = q[39], trk[t].rev = q[40], trk[t].grn = q[41], trk[t].pan = q[42];
+    int32_t was[CF_N];
+    for (k = 0; k < CF_N; k++) was[k] = *cf_ptr(t, k);   /* (rc9: what the load changed, logged) */
+    trk[t].latch = q[37] & 1u, trk[t].drv = clamp(q[37] >> 1, 0, 127);
+    trk[t].level = clamp(q[38], 0, 127), trk[t].dly = clamp(q[39], 0, 127), trk[t].rev = clamp(q[40], 0, 127);
+    trk[t].grn = clamp(q[41], 0, 127), trk[t].pan = clamp(q[42], 0, 127);
     trk[t].cut = 127 - clamp(q[29], 0, 127), trk[t].res = clamp(q[30], 0, 127), trk[t].fx = clamp((int8_t)q[31] + 100, 0, 200);
+    trk[t].ftype = clamp(q[32] & 3u, 0, NFTYPE - 1), trk[t].fpos = q[32] >> 2 & 1u;   /* (saved before V2: LP PRE) */
+    trk[t].tap = clamp((int32_t)(q[32] >> 3 | (q[46] >> 5 & 3u) << 5), 0, 127);   /* (V2: the TAPE send; before: 0) */
+    for (k = 0; k < CF_N; k++)
+        if (*cf_ptr(t, k) != was[k]) clog_add(CL_LOAD, 255u, k, t, was[k], *cf_ptr(t, k));
     ch_unpack(t, q[43]);
     trk[t].arp_mode = clamp(q[44] & 0x7Fu, 0, NARPMODE - 1), trk[t].arp_rate = clamp(q[45], 0, NARPRATE - 1);
-    trk[t].arp_oct = clamp(q[46], 1, 4), trk[t].arp_gate = clamp(q[47], 10, 100);
+    trk[t].arp_oct = clamp(q[46] & 7u, 1, 4), trk[t].arp_gate = clamp(q[47], 10, 100);
     trk[t].arp = (int32_t)(q[44] >> 7 & 1u);    /* (on or off: arp.c's arp_watch starts it empty) */
     lfo_uk(q + 48, t);
     if (trk[t].eng != (int32_t)q[0] && q[0] < NENG) {
@@ -442,8 +556,8 @@ static const uint8_t *uk_seq(const uint8_t *q, uint32_t t, uint32_t sq)   /* (sq
     for (k = 0; k < SEQ_N; k++) {
         const uint8_t *b = q + 4 + k * w;
         uint32_t v = b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16;
-        P->st[k].note = (int32_t)(v & 127u), P->st[k].chance = clamp((int32_t)(v >> 7 & 127u), 0, 100);
-        P->st[k].ratchet = (int32_t)(v >> 14 & 3u) + 1, P->st[k].len = (int32_t)(v >> 16 & 63u) + 1;
+        P->st[k].note = (uint8_t)(v & 127u), P->st[k].chance = (uint8_t)clamp((int32_t)(v >> 7 & 127u), 0, 100);
+        P->st[k].ratchet = (uint8_t)((v >> 14 & 3u) + 1u), P->st[k].len = (uint8_t)((v >> 16 & 63u) + 1u);
         P->st[k].chord = w == 4u && (b[3] & 0x80u) ? b[3] : 0;
     }
     return q + sq;
@@ -488,17 +602,22 @@ static void pk_work(uint8_t *q)
     q[16] = (uint8_t)clamp(song_mode, 0, NSONGMODE - 1);   /* MODE, */
     q[17] = (uint8_t)((trk_mute & 15u) | (trk_solo & 15u) << 4), q[18] = q[19] = 0;   /* the mutes and solos */
     for (t = 0; t < NT; t++) pk_fm(q + SONG_PK + t * FM_PK, t);   /* the FM patches */
+    q += SONG_PK + FM_ALL;                      /* (V2) MASTER, DRIVE */
+    q[0] = (uint8_t)clamp(mf_cut, 0, 127), q[1] = (uint8_t)clamp(mf_res, 0, 127);
+    q[2] = (uint8_t)clamp(mf_type, 0, NFTYPE - 1), q[3] = (uint8_t)clamp(mf_pos, 0, NMPOS - 1);
+    q[4] = (uint8_t)clamp(dr_amt, 0, 127), q[5] = (uint8_t)clamp(dr_type, 0, NDTYPE - 1);
+    q[6] = (uint8_t)clamp(dr_tone, 0, 127), q[7] = (uint8_t)clamp(dr_mix, 0, 127);
 }
 enum { UW_GLOBALS = 1, UW_CHAIN = 2 };
 static void uk_work(const uint8_t *q, uint32_t f, const uint16_t *vs)   /* (f: UW_GLOBALS, the effects, tempo, slot,
                                                  * SCALE, MODE, mutes too; UW_CHAIN, the song's chain too; vs: its
                                                  * version's row of OBJ_VERS, the sizes) */
 {
-    uint32_t t, k, tn = vs[1], sg = vs[2], sq = vs[3], lk = vs[4], fm = vs[5];
+    uint32_t t, k, tn = vs[1], sg = vs[2], sq = vs[3], lk = vs[4], fm = vs[5], fx = vs[6];
     int globals = (f & UW_GLOBALS) != 0;
     for (t = 0; t < NT; t++) q = uk_track(q, t, 0, tn);
     if (globals) {
-        for (k = 0; k < 16u; k++) *PK_FX[k] = q[k];
+        for (k = 0; k < 16u; k++) *PK_FX[k] = clamp(q[k], 0, 127);   /* (rc9: within the knobs' range) */
         seq_bpm = clamp(q[16] | q[17] << 8, 20, 300);
         slot_cur = q[18] & 3u;
         sel = q[19] & 3u;
@@ -508,6 +627,13 @@ static void uk_work(const uint8_t *q, uint32_t f, const uint16_t *vs)   /* (f: U
     for (t = 0; t < NT; t++) q = uk_seq(q, t, sq);
     for (t = 0; t < NT; t++) q = uk_lock(q, t, lk);
     for (t = 0; t < NT; t++) uk_fm(fm ? q + sg + t * FM_PK : 0, t);   /* (saved before them: the PATCH as built) */
+    if (globals) {                              /* (V2) MASTER, DRIVE; saved before them: MASTER open, DRIVE off */
+        const uint8_t *x = q + sg + fm;
+        mf_cut = fx ? clamp(x[0], 0, 127) : 127, mf_res = fx ? clamp(x[1], 0, 127) : 0;
+        mf_type = fx ? clamp(x[2], 0, NFTYPE - 1) : FT_LP, mf_pos = fx ? clamp(x[3], 0, NMPOS - 1) : MP_END;
+        dr_amt = fx ? clamp(x[4], 0, 127) : 0, dr_type = fx ? clamp(x[5], 0, NDTYPE - 1) : DT_SOFT;
+        dr_tone = fx ? clamp(x[6], 0, 127) : 127, dr_mix = fx ? clamp(x[7], 0, 127) : 127;
+    }
     if (!sg) return;                            /* (saved before the song: as it is) */
     if (f & UW_CHAIN)
         for (k = 0; k < SONG_N; k++) song_pat[k] = clamp(q[k] & 7u, 0, SONG_END), song_rep[k] = (q[k] >> 3 & 15u) + 1u;
@@ -558,7 +684,7 @@ static const uint8_t *obj_find(uint32_t type, const uint16_t **vs, uint32_t *s_o
     uint32_t v;
     for (v = type == OBJ_SLOTS ? 2u : 0u; v < NOBJV; v++) {
         const uint16_t *r = OBJ_VERS[v];
-        uint32_t len = type == OBJ_WORK ? WORK_LEN(r[1], r[2], r[3], r[4], r[5]) : 4u * SLOT_LEN(r[1], r[3], r[4]);
+        uint32_t len = type == OBJ_WORK ? WORK_LEN(r[1], r[2], r[3], r[4], r[5], r[6]) : 4u * SLOT_LEN(r[1], r[3], r[4]);
         const uint8_t *f = obj_newest(type, len, r[0], s_out);
         if (f) { *vs = r; return f; }
     }
@@ -757,12 +883,20 @@ static void project_new(void)                   /* NEW: the four tracks' power-o
         trk[t].arp_oct = T0.arp_oct, trk[t].arp_gate = T0.arp_gate;
         trk[t].lfo_rate = T0.lfo_rate, trk[t].lfo_depth = T0.lfo_depth, trk[t].lfo_dest = T0.lfo_dest;
         trk[t].lfo_shape = T0.lfo_shape;
+        trk[t].level = T0.level, trk[t].dly = T0.dly, trk[t].rev = T0.rev, trk[t].grn = T0.grn, trk[t].pan = T0.pan;   /* (rc9:
+                                                 * the mix too, as at power-on: a track left at VOLUME 0, its filter
+                                                 * closed, its FX 0 came out of NEW silent) */
+        trk[t].cut = T0.cut, trk[t].res = T0.res, trk[t].fx = T0.fx, trk[t].drv = T0.drv, trk[t].tap = T0.tap;
+        trk[t].ftype = T0.ftype, trk[t].fpos = T0.fpos, trk[t].glide = T0.glide, trk[t].vty = T0.vty;
+        trk[t].pd_ring = T0.pd_ring, trk[t].pd_noise = T0.pd_noise, trk[t].pd_wav = T0.pd_wav, trk[t].pd_dcw = T0.pd_dcw;
+        trk[t].pd_de = T0.pd_de, trk[t].pd_dd = T0.pd_dd, trk[t].pd_pe = T0.pd_pe, trk[t].pd_pd = T0.pd_pd;
         fm_builtin(t, T0.p[ENG_FM][0]);
         if (trk[t].eng != T0.eng) {
             trk[t].eng = T0.eng;
             nq_put(NQ_RESTART, t, 0);
         }
     }
+    trk_mute = trk_solo = 0;                    /* (rc9: no track left muted or soloed) */
     seq_clear();
 }
 

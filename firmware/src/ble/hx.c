@@ -226,7 +226,7 @@ static uint32_t hx_init(const hx_host_t *h, const uint8_t rec[HX_KEPT], uint32_t
 }
 
 #if BLE_DIAG
-/* GR!MM's BLE report (editor.c command 24, tools/fm1_ble_diag.py, which names the fields in this order): HX_DUMP_N
+/* GR!MM's BLE report (editor.c command 26, tools/fm1_ble_diag.py, which names the fields in this order): HX_DUMP_N
  * little-endian u32s, the last eight LL control and ATT opcodes received (newest first, FF none), then the event ring
  * (ble_diag.h: now_us, ev_n, 32 x {t_us u32, code u8, pad u8, arg u16}), then the good packets on each data channel 0..36
  * this link (u16 each, LASTCHMAP's). Read only: the BLE interrupts' state is only

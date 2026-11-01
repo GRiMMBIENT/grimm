@@ -26,11 +26,13 @@
 #define RV_NC 128u                              /* a block at half the rate: app_audio's 256 frames */
 #define RV_MOD 10                               /* the drifting taps' swing, samples (read 2 .. 22 short of the end) */
 #define RV_DRIFT 0x96u                          /* the lines that drift: 1 2 4 7 (Felucca's) */
-#define RV_LOUD 32                              /* a line this loud (two samples' sum) rounds its gain to the nearest */
+#define RV_LOUD 16                              /* a line this loud (two samples' sum) rounds its gain to the nearest (V2:
+                                                 * 16: the lines at half, as 32 was) */
 #define RV_KD(d) (32767 - (d) * 210)            /* DAMP d's low-pass (Q15): none at 0 .. ~650 Hz at 127 */
-#define RV_IN 10320                             /* the send's level (Q15): 4 x Felucca's, the lines 12 dB hotter: the tail
-                                                 * holds 12 dB longer before its last LSBs round away */
-#define RV_OUT 5                                /* the outputs' gain, / 4 (RV_IN's 4 x back out) */
+#define RV_IN 5160                              /* the send's level (Q15): 2 x Felucca's, the lines 6 dB hotter: the tail
+                                                 * holds 6 dB longer before its last LSBs round away (V2: half of 1.0's,
+                                                 * 6 dB of headroom: loud chords never reach the lines' soft knee) */
+#define RV_OUT 10                               /* the outputs' gain, / 4 (V2: RV_IN's halving back out) */
 #define RV_PRE_MAX 5513u                        /* PRE-DELAY at most 250 ms (22.05 kHz) */
 #define RV_PRE_LEN 5760u                        /* its line: that and a block (and a little) */
 #define RV_LINES (853u + 941u + 1031u + 1123u + 1237u + 1361u + 1493u + 1637u + RV_NL)   /* (+1 each: the mirror) */
@@ -160,6 +162,7 @@ static void hall_render(const int32_t *in, int32_t *out, uint32_t n)
         sd += sd < st ? 256 : sd > st ? -256 : 0;   /* (~6 ms from full to 0) */
         sd = clamp(sd, 0, 32767);
         rv_pbuf[w] = (int16_t)clamp(mulq15(x - hp, sd), -32768, 32767);
+        LV_COUNT(lv_pre, mulq15(x - hp, sd), 32767);
         rv.bx[i] = rv_pbuf[rd];
         if (++w == RV_PRE_LEN) w = 0;
         if (++rd == RV_PRE_LEN) rd = 0;
@@ -206,6 +209,11 @@ static void hall_render(const int32_t *in, int32_t *out, uint32_t n)
         p4 = y6 + y7 + y2, p5 = y7 + y1 + y3, p6 = y1 + y2 + y4;
         y0 += t;
         /* back into the lines through a soft knee (linear to half scale; GR!MM's: nothing feeding back clips) */
+        LV_COUNT(lv_rvk, t + x, 16384), LV_COUNT(lv_rvk, 2 * p0 + y1 - y0 + x, 16384);   /* (host: the lines' inputs past
+                                                 * the knee, tests/level_test.py) */
+        LV_COUNT(lv_rvk, 2 * p1 + y2 - y0 + x, 16384), LV_COUNT(lv_rvk, 2 * p2 + y3 - y0 + x, 16384);
+        LV_COUNT(lv_rvk, 2 * p3 + y4 - y0 + x, 16384), LV_COUNT(lv_rvk, 2 * p4 + y5 - y0 + x, 16384);
+        LV_COUNT(lv_rvk, 2 * p5 + y6 - y0 + x, 16384), LV_COUNT(lv_rvk, 2 * p6 + y7 - y0 - x, 16384);
         rv.y[0][i] = (int16_t)clamp(soft_knee(t + x, 16384), -32767, 32767);
         rv.y[1][i] = (int16_t)clamp(soft_knee(2 * p0 + y1 - y0 + x, 16384), -32767, 32767);
         rv.y[2][i] = (int16_t)clamp(soft_knee(2 * p1 + y2 - y0 + x, 16384), -32767, 32767);

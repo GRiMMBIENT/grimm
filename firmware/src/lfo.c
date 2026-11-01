@@ -99,7 +99,11 @@ static const volatile int32_t *lfo_params(uint32_t v, uint32_t t, uint32_t e)
 }
 static int32_t lfo_move(uint32_t t, uint32_t dest, int32_t v, int32_t mx)   /* track t's VOLUME, PAN or a send: v moved */
 {
-    int32_t a = lfo_amt[t];
+    int32_t a = lfo_amt[t], d;
     if (!a || trk[t].lfo_dest != (int32_t)dest) return v;
-    return clamp(v + (a * mx + (a < 0 ? -32767 : 32767)) / 65534, 0, mx);
+    d = (a * mx + (a < 0 ? -32767 : 32767)) / 65534;
+    if ((dest == LD_VOLUME || dest == LD_REV || dest == LD_GRAIN) && v < 64)
+        d = d * v / 64;                         /* (rc9: VOLUME, a send: the swing less under half, none at 0: a knob at
+                                                 * 0 stays silent, as the screen says; from 64 up as before) */
+    return clamp(v + d, 0, mx);
 }

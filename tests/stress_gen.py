@@ -19,7 +19,7 @@ locks), SEL + OCT- (the locks cleared); steps recorded in chord mode (chord step
 MIDI CHANNEL 2-5, TUNE +7, SCREEN OFF 1 MIN; SYSTEM 2: SEQ MIDI OUT on, MIDI LEARN (ENV's ATTACK, CC 21); the settings
 saved; a minute untouched (the screen dark), a key (it only wakes it). In the rounds also: CCs (linked or not), MIDI
 LEARN on any page's knob (OCT- cancelling), MIDI CHANNEL changed with notes on, SEQ MIDI OUT off and on, CLEAR ALL.
-Then a user sound saved (SAVE > SOUNDS) and PRESETS turned through the 40 factory sounds into the user's, checked on
+Then a user sound saved (SAVE > SOUNDS) and PRESETS turned through the 44 factory sounds into the user's, checked on
 the way and at the end; the editor's mailbox (x_editor: reads, writes, refusals); from the rounds on, garbage to it
 every 47 ms (y_garbage). HOME's CUTOFF, RESONANCE, FX on every track in each round (T1's set before
 the power-on, checked back; the upgrade's old saves: open, 100 %); the LFO's TRK CUTOFF among its destinations.
@@ -359,7 +359,7 @@ set_keys(0, 50)
 tap(SAVE)                                       # a user sound: SOUNDS, slot 1, DRONE, SAVE (OCT+), back (OCT-)
 turn(K4, 1); tap(OCTU, 40); tap(OCTD, 300)
 page(HOME)                                      # PRESETS through the factory sounds, into the user's
-for i in range(45):
+for i in range(49):                              # (V2: 44 factory sounds, then the user's)
     turn(PRESETS, 1, 30)
     if i == 2:
         checks.append(f"{t + 5} factory")

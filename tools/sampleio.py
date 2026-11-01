@@ -349,10 +349,10 @@ def note_from_name(name, default=60):
     return max(0, min(127, (int(m.group(3)) + 1) * 12 + pc))
 
 
-def to_int16(x):
-    """mono float -> int16 list, peak normalised to 30000"""
+def to_int16(x, norm=True):
+    """mono float -> int16 list, peak normalised to 30000 (GR!MM: norm False, its level as it is)"""
     pk = peak(x)
-    return [max(-32768, min(32767, int(v / pk * 30000))) for v in x]
+    return [max(-32768, min(32767, int(v / pk * 30000 if norm else v * 32768))) for v in x]
 
 
 def user_slot(name, zones, look=True):

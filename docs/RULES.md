@@ -35,6 +35,13 @@ runs late the sound crackles; when it never ends the watchdog resets the FM-1.
   16 or 32 frames is plenty.
 - Measure: `fm1_ticks()` before and after, divided by `FM1_TICKS_PER_US`. Under half the budget (2.9 ms) leaves
   room.
+- **Off costs nothing (GR!MM V2).** A feature switched off costs no CPU at all: its code is skipped whole, tested
+  once a block, never run at a level of zero or through a filter that passes everything. For V2.0: the track filter
+  on LP (the V1.0 filter, at its V1.0 cost), POST off, the master filter off, the distortion off, the clock on INT.
+  Off, the sound is V1.0's to the byte: the host tests compare it.
+- Measure on the FM-1, not only on a computer: `tools/fm1_cpu.py` shows where the time goes (the sources, the mix,
+  each effect, the key scan). A computer's count of the work can fall where the FM-1's does not (its compiler makes
+  other code): check the loop in `build/grimm.dis` too.
 - No flash, no screen, no `platform_poll()`, no waiting in it.
 - Share with the main loop through `volatile` variables, one writer each. A 32-bit store is atomic; a struct
   is not: write the parts in an order that is safe to see half-done (grimm.c sets the pitch before the gate).

@@ -26,8 +26,10 @@
 #define NPARAM 4u                               /* an engine's parameters: KNOB 1..4 on the SOUND page */
 #define VPH 8u                                  /* a voice's phases for its engine (SUPERSAW: 7) */
 #define FADE_STEP 1198373                       /* Q24 a control step: a stolen voice is silent in 14 steps (~10 ms) */
-#define REL_END (1 << 15)                       /* Q24: a release ends here, 54 dB down (a voice's last ~16 LSB, -66 dBFS;
-                                                 * Felucca's 1 << 12 rendered the last ~2.7 s of a 6 s release unheard) */
+#define REL_FIN (1 << 14)                       /* Q24: 60 dB down (RELEASE's time): from here a release's quick finish,
+                                                 * a straight line to 0 in ~150 ms (V2; it ended at 1 << 15, 54 dB down,
+                                                 * at once: ~0.9 of its RELEASE, a voice's last ~16 LSB) */
+#define FIN_STEP (REL_FIN / 207)                /* Q24 a control step: 207 steps, ~150 ms */
 enum { ST_OFF, ST_ATK, ST_SUS, ST_REL, ST_FADE };
 enum { ENG_VA, ENG_FM, ENG_SAMPLE, ENG_VOICE, ENG_WHEEL, ENG_PHYS, ENG_PHASE, NENG };
 
@@ -67,6 +69,17 @@ typedef struct {
     volatile int32_t fm_alg, fm_fb, fmo[6][5];  /* FM: the track's own patch (FM ALGO, FM OP): ALGO 0..31, FEEDBACK
                                                  * 0..7; an operator's (OP1 first) RATIO 0..31, FINE, LEVEL, ATTACK,
                                                  * DECAY 0..99 (fm.c; a built-in PATCH's: fm_builtin) */
+    volatile int32_t ftype, fpos;               /* (V2) MIXER 2: the track filter's TYPE (FT_: LP, HP, BP), POS (0 PRE:
+                                                 * the sends hear it filtered; 1 POST: only the dry sound filtered) */
+    volatile int32_t drv;                       /* (V2) MIXER 1: the DRIVE send, 0..127 (master.c drive_send) */
+    volatile int32_t tap;                       /* (V2) MIXER 1: TAPE, how far the track goes through it, 0..127
+                                                 * (tapefx.c tape_trk) */
+    volatile int32_t vty;                       /* (V2) VOICE's TYPE (VT_: SOLO, GREGORIAN, NUNS, CATHEDRAL; formant.c) */
+    volatile int32_t pd_ring, pd_noise;         /* (V2) PHASE's LINE 2: RING (line 1 x line 2), NOISE (phase.c) */
+    volatile int32_t pd_wav, pd_dcw;            /* (V2) LINE 2's WAVE (0 SAME: line 1's, 1 .. 8), DCW (0 SAME, 1 .. 127) */
+    volatile int32_t pd_de, pd_dd, pd_pe, pd_pd;   /* (V2) PHASE ENV: DCW ENV (0 .. 127), its DECAY, PITCH ENV (-64 .. 63
+                                                 * semitones), its DECAY (0 .. 127: 10 ms .. ~9.7 s, as ENV's DECAY) */
+    volatile int32_t glide;                     /* (V2) SOURCE's GLIDE: 0 off, 1 .. 127 (~10 ms .. 2.5 s; vc_gl) */
 } track_t;
 #define TRK_DEF {ENG_VA, {{0, 10, 90, 30}, {0, 64, 64, 20}, {0, 0, 127, 0}, {0, 12, 64, 10}, {4, 0, 40, 0}, {0, 64, 80, 64}, {0, 0, 60, 0}}, 100, 0, 100, 0, 64, 0, \
                  {22, 85, 127, 89}, 0, 0, 0, 0, 0, 4, 1, 50, 64, 0, 0, 0, 127, 0, 100, 0, 0, {{0}}}
@@ -101,6 +114,13 @@ static char *put_s(char *s, const char *a)     /* returns the end */
     return s;
 }
 
+/* (V2) the voices and the tracks' mix run PB bits finer than Q15 (Q15 << PB: the DAC's 24-bit words, grimm.c
+ * out_stage): a fading tail keeps its detail. The envelope's amplitude comes as Q15 << PB (env_tick); a source folds its
+ * level into it once a block (amp_lv) and takes each sample through it (vca) */
+#define PB 7
+static inline int32_t amp_lv(int32_t amp, int32_t lv) { return (int32_t)(((int64_t)amp * lv) >> 15); }   /* (Q15 << PB) */
+static inline int32_t vca(int32_t s, int32_t a) { return (int32_t)(((int64_t)s * a) >> 15); }   /* s (Q15) at a (amp_lv's):
+                                                 * Q15 << PB */
 /* the amplitude at frame i of a block that ramps from amp0 by damp (dsp.c amp_at: / CTL as a shift, rounded towards 0) */
 static inline int32_t amp_at(int32_t amp0, int32_t damp, int32_t i)
 {
@@ -111,15 +131,26 @@ static inline int32_t amp_at(int32_t amp0, int32_t damp, int32_t i)
 /* the LFO's (lfo.c, the audio ISR a control step): a track's pitch offset (1/16 semitones: VP16, a voice's pitch, every
  * engine's), and a voice's parameters, one of them moved (else the track's own) */
 static volatile int32_t lfo_p16[NT];
-#define VP16(v) ((int32_t)(v)->note * 16 + lfo_p16[(v)->trk % NT])
+#define VP16(v) ((int32_t)(v)->note * 16 + lfo_p16[(v)->trk % NT] + (vc_gl[(v) - vc] >> 8))   /* (V2: GLIDE's way left) */
+static int32_t vc_gl[NV];                       /* (V2) GLIDE: a voice's pitch still to go (1/16 semitones x 256; 0: there) */
+static int32_t vc_pdl[NV][2];                   /* (V2) PHASE ENV: a voice's DCW, PITCH envelopes now (Q16: 65536 at its
+                                                 * note's start, decaying to 0; phase.c) */
+static uint32_t env_k(uint32_t t_ms_q16);
 static const volatile int32_t *lfo_params(uint32_t v, uint32_t t, uint32_t e);
 /* SYSTEM's TUNE (main loop): every source's pitch times 1 + tune_f / 4096 (-50 .. +50 cents: -117 .. +120; finer than
  * VP16's 6.25-cent steps); vinc: a pitch's phase increment, tuned */
 static volatile int32_t tune_f;
+static int32_t wow_f;                           /* (V2) audio: TAPE's WOW, a bend on a source's pitch as TUNE's (its
+                                                 * units), now: a control step's, between wow_a and wow_b, as far as
+                                                 * the voice's track goes through the tape (0: none) */
+static int32_t wow_a, wow_b;                    /* (V2) audio: the bend at a render's start and end (Q8 of tune_f's
+                                                 * units; tapefx.c tape_wow) */
+static int32_t tt_a[NT];                        /* (V2) audio: how far each track goes through the tape this block (Q15,
+                                                 * 32768 all of it; tapefx.c tape_begin) */
 static inline uint32_t vinc(int32_t p16)
 {
     uint32_t inc = pitch_inc((uint32_t)clamp(p16, 0, 2047));
-    return inc + (uint32_t)((int32_t)(inc >> 12) * tune_f);
+    return inc + (uint32_t)((int32_t)(inc >> 12) * (tune_f + wow_f));
 }
 
 #include "analog.c"                             /* the engines */
@@ -132,10 +163,21 @@ static inline uint32_t vinc(int32_t p16)
 static const engine_t *const ENGINES[NENG] = {&VA_ENGINE, &FM_ENGINE, &SAMPLE_ENGINE, &FORMANT_ENGINE, &WHEEL_ENGINE,
                                               &PHYS_ENGINE, &PHASE_ENGINE};   /* (by ENG_) */
 
+/* (V2) GENERATE's notes (gen.c): a voice's volume (0: full; else x / 256) and attack (0: the track's ATTACK; else
+ * GEN_ATK's k - 1), asked with the note (gen_vel, gen_atk: the next note_on's), taken as it begins */
+static uint8_t vc_vel[NV], vc_atk[NV], vc_wvel[NV], vc_watk[NV], gen_vel, gen_atk;
+static int32_t vc_wgl[NV], gl_want;             /* (V2) GLIDE: a voice's way to go, asked (gl_want: the next note_on's) */
+static uint8_t gen_lo, gen_hi;                  /* (V2) the next note_on's range, GENERATE's (0 0: none): its chord's
+                                                 * notes past it folded in by octaves (grimm.c note_on) */
+static const int32_t GEN_ATK[8] = {2434783, 608696, 202899, 81159, 40580, 20290, 10145, 4870};   /* ATTACK steps
+                                                 * (Q24 a control step): 5, 20, 60, 150, 300, 600, 1200, 2500 ms */
+
 /* main loop: voice v plays note for track t (a sounding voice fades out first; the same note of the same track
  * sounding goes on up from where it is) */
 static void voice_start(uint32_t v, uint32_t t, uint32_t note)
 {
+    vc_wvel[v] = gen_vel, vc_watk[v] = gen_atk; /* (V2: GENERATE's; 0 0: the voice as ever) */
+    vc_wgl[v] = gl_want;                        /* (V2: GLIDE's; 0: none) */
     vc[v].want_note = (uint8_t)note;
     vc[v].want_trk = (uint8_t)t;
     vc[v].want_on = 1;
@@ -164,6 +206,9 @@ static void voice_begin(voice_t *v)             /* a note from silence */
     ENGINES[v->eng]->begin(v);
     v->env = 0;
     v->stage = ST_ATK;
+    vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc];   /* (V2: GENERATE's volume, attack) */
+    vc_gl[v - vc] = vc_wgl[v - vc];             /* (V2: GLIDE: from the track's last note) */
+    vc_pdl[v - vc][0] = vc_pdl[v - vc][1] = 65536;   /* (V2: PHASE ENV: from the top) */
 }
 
 /* the tracks' ENV as steps, from the knobs, once a render: ATTACK a linear step (Q24 a control step), DECAY and RELEASE
@@ -171,6 +216,7 @@ static void voice_begin(voice_t *v)             /* a note from silence */
  * 2^(v 20 / 192) (~9.6 s at 127), DECAY 10 ms x 2^(v 15 / 192) (~9.7 s), RELEASE 10 ms x 2^(v 16.5 / 192) (~19 s) */
 typedef struct { int32_t atk, sus; uint32_t dec, rel; } env_c_t;
 static env_c_t env_c[NT];
+static uint32_t gl_k[NT];                       /* (V2) GLIDE: the share of the way a control step (env_k's; 0: off) */
 static uint32_t env_k(uint32_t t_ms_q16)        /* 60 dB in t: 6.9 / (t / 0.726 ms) of the way a control step, Q16 */
 {
     uint32_t k = (uint32_t)((((uint64_t)328516u) << 16) / t_ms_q16);   /* (64 / 32: the chip's divide) */
@@ -203,13 +249,15 @@ static int32_t env_tick(voice_t *v)
             e = 0;
         } else if (v->want_note == v->note && v->want_trk == v->trk && v->eng == trk[v->trk].eng && v->stage != ST_FADE) {
             v->stage = ST_ATK;                  /* the same note again (same engine): on up from where it is */
+            vc_vel[v - vc] = vc_wvel[v - vc], vc_atk[v - vc] = vc_watk[v - vc], vc_gl[v - vc] = vc_wgl[v - vc];
+            vc_pdl[v - vc][0] = vc_pdl[v - vc][1] = 65536;
         } else {
             v->stage = ST_FADE;                 /* another note: out first, then begin */
         }
     }
     switch (v->stage) {
     case ST_ATK:
-        e += c->atk;
+        e += vc_atk[v - vc] ? GEN_ATK[(vc_atk[v - vc] - 1u) & 7u] : c->atk;   /* (V2: GENERATE's attack, or the track's) */
         if (e >= (1 << 24)) {
             e = 1 << 24;
             v->stage = ST_SUS;
@@ -221,8 +269,13 @@ static int32_t env_tick(voice_t *v)
         break;
     }
     case ST_REL:
-        e -= mulq16(e, c->rel);
-        if (e < REL_END) {
+        {
+            int32_t d = mulq16(e, c->rel);
+            if (e < REL_FIN && d < FIN_STEP)
+                d = FIN_STEP;                   /* (V2: the quick finish, unless the release is quicker) */
+            e -= d ? d : 1;                     /* (V2: at least a step: a long RELEASE's last ones round to 0) */
+        }
+        if (e <= 0) {
             e = 0;
             v->stage = ST_OFF;
         }
@@ -243,7 +296,8 @@ static int32_t env_tick(voice_t *v)
         break;
     }
     v->env = e;
-    return e >> 9;                              /* Q15 */
+    return vc_vel[v - vc] ? ((e >> (9 - PB)) * vc_vel[v - vc]) >> 8 : e >> (9 - PB);   /* Q15 << PB (V2: GENERATE's
+                                                 * volume; PB bits finer) */
 }
 
 /* the audio ISR: n frames (a multiple of CTL, at most VB) of every sounding voice into tb[its track] (mono); returns
@@ -254,17 +308,23 @@ static void ctl_hook(void);                     /* grimm.c: a control block's no
 static uint32_t voices_render(int32_t (*tb)[VB], uint32_t n)
 {
     uint32_t b, i, k, used = 0, envd = 0;
+    int32_t wq;
     if (n > VB)
         return 0;
     for (b = 0; b < n; b += CTL, vblock++) {
+        wq = (wow_a | wow_b) ? wow_a + (wow_b - wow_a) * (int32_t)b / (int32_t)n : 0;   /* (V2: WOW's bend, a control
+                                                 * step's; Q8) */
         ctl_hook();
         for (k = 0; k < NV; k++)                /* nothing sounds and nothing is asked for: nothing to do */
             if (vc[k].stage != ST_OFF || vc[k].amp || vc[k].req != vc[k].seen) break;
         if (k == NV)
             continue;
         if (!envd) {                            /* the tracks' ENV, as the knobs are now (once a render) */
-            for (k = 0; k < NT; k++)
+            for (k = 0; k < NT; k++) {
                 env_coef(&env_c[k], trk[k].env);
+                gl_k[k] = trk[k].glide > 0 ? env_k(10u * pow2_q16(clamp(trk[k].glide, 0, 127) * 12)) : 0u;   /* (V2:
+                                                 * GLIDE: 10 ms x 2^(v 12 / 192), ~2.5 s at 127, 60 dB of the way) */
+            }
             envd = 1;
         }
         for (k = 0; k < NV; k++) {
@@ -274,11 +334,17 @@ static uint32_t voices_render(int32_t (*tb)[VB], uint32_t n)
             v->amp = amp1;
             if (!amp0 && !amp1)
                 continue;                       /* silent: costs nothing */
+            if (vc_gl[k]) {                     /* (V2: GLIDE: its pitch a step nearer; GLIDE off: there at once) */
+                int32_t x = vc_gl[k], d = gl_k[t] ? mulq16(x, gl_k[t]) : x;
+                x -= d ? d : x > 0 ? 1 : -1;
+                vc_gl[k] = x > -32 && x < 32 ? 0 : x;
+            }
             if (!(used >> t & 1u)) {            /* the track's first sound this block */
                 used |= 1u << t;
                 for (i = 0; i < n; i++)
                     tb[t][i] = 0;
             }
+            wow_f = wq && tt_a[t] ? (wq * (tt_a[t] >> 3)) >> 20 : 0;   /* (V2: as far as its track is on tape) */
             ENGINES[v->eng]->block(v, lfo_params(k, t, v->eng), tb[t] + b, amp0, amp1);   /* (the engine it began
                                                  * with; the LFO's on one of its knobs) */
         }

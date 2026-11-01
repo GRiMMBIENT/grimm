@@ -3,7 +3,7 @@
 GR!MM is one C program, `firmware/src/grimm.c` (it includes the other `.c` files), on the FM-1 platform of
 [Felucca](https://github.com/hugelton/Felucca) as [SLOOP](https://github.com/isod89/sloop-fm1) and
 [Dinghy](https://github.com/zvenson/dinghy) carry it. The same file builds three ways: for the FM-1, for your
-computer (host mode: the screen as images, the sound as a WAV) and for the browser (the demo and the editor).
+computer (host mode: the screen as images, the sound as a WAV) and for the browser (the web emulator and the editor).
 
 ## Set up once
 
@@ -25,9 +25,9 @@ For the browser build: the [Emscripten SDK](https://emscripten.org) in `~/emsdk`
 ## The firmware
 
 ```sh
-./build.sh                                  # -> build/grimm.fwsc (identity FM-1_966, version 1.0)
-./build.sh --release 1.1                    # -> build/grimm-1.1.fwsc, the version "1.1" on the screen
-./build.sh --ble                            # with BLE-MIDI (experimental): SYSTEM 2's BT MIDI
+./build.sh                                  # -> build/grimm.fwsc (identity FM-1_966, version 2.0)
+./build.sh --release 2.1                    # -> build/grimm-2.1.fwsc, the version "2.1" on the screen
+./build.sh --ble                            # with BLE-MIDI (experimental): SYSTEM 3's BT MIDI
 py tools/fm1_install.py build/grimm.fwsc    # install it over USB (asks first); --info: what the FM-1 runs
 ```
 
@@ -37,14 +37,14 @@ much RAM, a register touched outside `firmware/hal/`. [RULES.md](RULES.md) says 
 **BLE-MIDI** (`--ble`): [Optimist](https://github.com/w0ts/optimist)'s stack as [fm1-dock](https://github.com/joakimeriksson/fm1-dock)
 carries it (`firmware/src/ble/`, with GR!MM's fixes: its `README.md`), ~25 KiB of flash, its RAM in RAMTEXT, and
 ~2.3 KiB of the main 96 KiB for its diagnostics. It is off at every
-power-on; SYSTEM 2's KNOB 4 (BT MIDI) starts it, and the FM-1 shows up as `GR!MM XXXX` to a computer or phone (no
+power-on; SYSTEM 3's KNOB 4 (BT MIDI) starts it, and the FM-1 shows up as `GR!MM XXXX` to a computer or phone (no
 pairing), MIDI both ways as over USB. The radio needs the unit's factory trims from the stock firmware's VM: at its
 first start `firmware/src/ble_keep.c` copies those four records to 0xE8000 (where the stack looks) from wherever stock
 left its VM below it; with none found it says NO CAL and the radio never starts. The register check above does not
 cover `firmware/src/ble/` (its driver is the radio's). At its first start the radio's PLL bands are calibrated on the
 chip (~400 measurements, a moment of silence). Tested on one FM-1 with a Mac and a CME WIDI: 99-100 % of the events
 heard (the README's "deaf channels"). With the FM-1 on USB, `python3 tools/fm1_ble_diag.py --watch` prints the link's
-state and, when a link ends, a whole report (editor command 24).
+state and, when a link ends, a whole report (editor command 26).
 
 ## Host mode and the tests
 
@@ -53,15 +53,15 @@ tests/run_host.sh                           # -> build/host/grimm.wav and screen
 tests/stress.sh 1                           # the stress test (seeds 1, 2, 3), with address and undefined-behaviour checks
 ```
 
-## The browser: demo and editor
+## The browser: web emulator and editor
 
 ```sh
-web/build_web.sh                            # -> web/dist/ (index.html: the demo, editor.html: the editor, grimm.wasm)
+web/build_web.sh                            # -> web/dist/ (index.html: the web emulator, editor.html: the editor, grimm.wasm)
 node web/test_web.mjs                       # after tests/run_host.sh: the browser build against host mode, the editor
 cd web/dist && python3 -m http.server 8000  # then open http://localhost:8000/ (or /editor.html)
 ```
 
-`APP_VER=1.0 web/build_web.sh` puts the version on the browser build's screen.
+`APP_VER=2.0 web/build_web.sh` puts the version on the browser build's screen.
 
 ## The factory samples
 

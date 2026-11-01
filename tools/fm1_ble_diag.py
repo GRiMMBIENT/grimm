@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM's BLE report over USB (a --ble build: editor command 24, firmware/src/ble/hx.c hx_dump): the link's state and
+"""GR!MM's BLE report over USB (a --ble build: editor command 26, firmware/src/ble/hx.c hx_dump): the link's state and
 counters, the central's CONNECT_IND and last update, its last LL control and ATT opcodes, and the driver's ring of the
 last 32 radio events. For debugging BLE-MIDI; paste what it prints.
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-BLE = 24
+BLE = 26
 FIELDS = ["state", "evts", "rx_evts", "miss_max", "crc_bad", "repeats", "rx_irqs", "closes", "sup_timeouts",
           "close_reason", "close_by", "close_since_rx_us", "close_since_start_us", "close_evt", "cind_interval",
           "cind_win_off", "cind_win_size", "cind_latency", "cind_timeout", "cind_sca", "cind_hop", "chm_used",

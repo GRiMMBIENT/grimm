@@ -29,6 +29,7 @@ static void recovery_step(void)
         usb_detach();
         fm1_delay_ms(30);
         bootguard_clear(&bootguard);
+        hl_boot.clean = 1;
         fm1_enter_uboot();
         return;
     }

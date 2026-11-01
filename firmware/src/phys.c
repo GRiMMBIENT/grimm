@@ -107,7 +107,7 @@ static void phys_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int
 {
     phys_slot_t *S = &ph_slot[v - vc];
     uint32_t md = phys_model(p), i, f0 = vinc(VP16(v));
-    int32_t y[CTL], ax[CTL], damp = amp1 - amp0;
+    int32_t y[CTL], ax[CTL], a0 = amp_lv(amp0, VOICE_LV), damp = amp_lv(amp1, VOICE_LV) - a0;
     int32_t strc = clamp(p[1], 0, 127) * 516, brit = PHYS_BRIT * 516, dmp = clamp(p[2], 0, 127) * 516;
     int32_t pos = PHYS_POS, k4 = clamp(p[3], 0, 127), bow = k4 * 206;   /* BOW: Dust at up to 0.4 */
     int32_t acc = clamp(PHYS_ACC * PHYS_VEL * 4, 0, 65536);   /* ACC at the velocity, Q16 */
@@ -158,7 +158,7 @@ static void phys_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int
             a = 24000 + (softclip(clamp(a - 24000, 0, 1 << 20) * 2) >> 1);
             s = s < 0 ? -a : a;
         }
-        mono[i] += mulq15(mulq15(s, amp_at(amp0, damp, (int32_t)i)), VOICE_LV) << 1;
+        mono[i] += (int32_t)(((int64_t)s * amp_at(a0, damp, (int32_t)i)) >> 14);   /* (V2: Q15 << PB) */
     }
 }
 

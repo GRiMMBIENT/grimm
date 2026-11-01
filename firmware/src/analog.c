@@ -35,7 +35,8 @@ static void va_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32
 {
     int32_t wave = p[0], det = p[1], p16 = VP16(v), i;
     int32_t cut = (p[2] << 8) + ((64 * (p16 - 60 * 16)) >> 4);   /* KTR 64 */
-    int32_t ic1 = v->s[0], ic2 = v->s[1], damp = amp1 - amp0;
+    int32_t ic1 = v->s[0], ic2 = v->s[1], a0 = amp_lv(amp0, VOICE_LV), damp = amp_lv(amp1, VOICE_LV) - a0;   /* (V2:
+                                                 * the level in the envelope, Q15 << PB) */
     uint32_t inc1 = vinc(p16);
     tsvf_t flt;
     tsvf_coef(&flt, cut, p[3]);
@@ -58,12 +59,12 @@ static void va_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32
             }
             s = mulq15(mid, 9830) + mulq15(side, 4915);                 /* the middle saw 0.3, each side one 0.15 */
             y = soft_knee(tsvf_lp(&flt, s >> 1, &ic1, &ic2), 16000) << 1;
-            mono[i] += mulq15(mulq15(y, amp_at(amp0, damp, i)), VOICE_LV);
+            mono[i] += vca(y, amp_at(a0, damp, i));
         }
         for (k = 0; k < NSAW; k++)
             v->ph[k] = ph[k];
     } else {
-        uint32_t inc2 = det ? cents_inc(p16, det, tune_f) : inc1;          /* DTN in cents */
+        uint32_t inc2 = det ? cents_inc(p16, det, tune_f + wow_f) : inc1;          /* DTN in cents */
         uint32_t ph0 = v->ph[0], ph1 = v->ph[1];
         for (i = 0; i < (int32_t)CTL; i++) {
             int32_t a, b, s, y;
@@ -78,7 +79,7 @@ static void va_block(voice_t *v, const volatile int32_t *p, int32_t *mono, int32
             ph1 += inc2;
             s = mulq15(a, 16255) + mulq15(b, 16512);                    /* MIX 64: m1 = 32767 - 64 * 258, m2 */
             y = soft_knee(tsvf_lp(&flt, s >> 1, &ic1, &ic2), 16000) << 1;
-            mono[i] += mulq15(mulq15(y, amp_at(amp0, damp, i)), VOICE_LV);
+            mono[i] += vca(y, amp_at(a0, damp, i));
         }
         v->ph[0] = ph0;
         v->ph[1] = ph1;

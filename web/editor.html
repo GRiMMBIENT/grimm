@@ -13,14 +13,15 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 fill=%22%230b0b0a%22/%3E%3Crect x=%223%22 y=%223%22 width=%2210%22 height=%2210%22 fill=%22%23c8321e%22/%3E%3C/svg%3E">
 <style>
 @font-face { font-family: "Press Start 2P"; src: url("PressStart2P-Regular.ttf") format("truetype"); font-display: block; }
-:root { --k: #0b0b0a; --d: #26251f; --m: #5e5b54; --l: #b8b4a9; --w: #e8e4d8; --a: #c8321e; color-scheme: dark; }
+:root { --k: #0b0b0a; --d: #26251f; --m: #5e5b54; --n: #8f887b; --l: #b8b4a9; --w: #e8e4d8; --a: #c8321e; --f: #ff6a3d; color-scheme: dark; }
+/* --m: off, empty, disabled things; --n: help text (as the hub's --ash); --f: keyboard focus (the hub's ember) */
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--k); color: var(--l); }
 body { font: 13px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
 .px, h1, h2, h3, button, label, select, input, nav a, .slot, table { font-family: "Press Start 2P", monospace; font-size: 8px; line-height: 1.6; }
 header { display: flex; gap: 6px; padding: 6px; }
-header .tag { background: var(--a); color: var(--k); padding: 8px 10px; font-size: 16px; }
-header .bar { flex: 1; background: var(--d); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+header .tag { background: var(--a); color: var(--k); padding: 8px 10px; font-size: 16px; text-decoration: none; }
+header .bar { flex: 1; min-width: 0; background: var(--d); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 0 12px; }
 header .bar span { font-size: 8px; }
 header .bar b { font-size: 16px; font-weight: normal; color: var(--l); }
 #conn { color: var(--m); }
@@ -35,7 +36,8 @@ section { display: none; }
 section.on { display: block; }
 h2 { font-size: 16px; font-weight: normal; margin: 6px 0 12px; color: var(--w); }
 h3 { font-weight: normal; color: var(--m); margin: 16px 0 6px; }
-p.note { color: var(--m); max-width: 60em; margin: 6px 0; }
+p.note, footer.note { color: var(--n); }
+p.note { max-width: 60em; margin: 6px 0; }
 button { background: var(--d); color: var(--w); border: 2px solid var(--m); padding: 8px 10px; cursor: pointer; }
 button:hover { border-color: var(--l); }
 button.go { background: var(--a); color: var(--k); border-color: var(--a); }
@@ -51,9 +53,11 @@ select, input[type=text], input[type=number] { background: var(--k); color: var(
 table.kv td { padding: 3px 14px 3px 0; }
 table.kv td:first-child { color: var(--m); }
 .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 3px; }
-.slot { background: var(--d); padding: 7px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 2px solid transparent; }
+.slot { background: var(--d); padding: 7px 8px; cursor: pointer; overflow-wrap: anywhere; border: 2px solid transparent; }   /* (the name whole, never cut) */
+.slot .src { display: block; color: var(--n); font-size: 8px; margin-top: 3px; }
 .slot .n { color: var(--m); }
 .slot.empty { color: var(--m); }
+.slot.sel .src { color: var(--l); }
 .slot.sel { border-color: var(--a); }
 .slot.dirty::after { content: " *"; color: var(--a); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
@@ -69,6 +73,7 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 18px; background: var
 .ops td { padding: 2px 4px 2px 0; vertical-align: middle; }
 .ops td.o { color: var(--w); width: 34px; }
 .ops input[type=range] { margin: 0; }
+.ops input[type=range] { min-width: 56px; }
 .ops .v { color: var(--w); width: 56px; padding-right: 16px; text-align: right; }
 canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pixelated; background: var(--k); margin-top: 6px; }
 .toggle { border-color: var(--m); }
@@ -95,21 +100,68 @@ canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pix
 #screen { width: 480px; max-width: 100%; aspect-ratio: 1; image-rendering: pixelated; display: block; background: var(--k); }
 .play .keys { flex: 1 1 360px; min-width: 0; }
 .pickbar { position: sticky; top: 46px; z-index: 2; background: var(--k); padding: 4px 0; }
+.sqgrid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin-top: 6px; }
+.sqs { padding: 6px 0; min-height: 46px; text-align: center; background: var(--d); border: 2px solid transparent; color: var(--m); }
+.sqs small { display: block; font-size: 8px; color: var(--m); margin-bottom: 3px; }
+.sqs.has { background: var(--l); color: var(--k); }
+.sqs.has small { color: var(--d); }
+.sqs.out { opacity: .35; }
+.sqs.sel { border-color: var(--a); }
+.lock { display: flex; gap: 8px; align-items: flex-start; }
+.lock .ctl { flex: 1; min-width: 0; margin: 0 0 10px; }
+.lock input[type=checkbox] { margin-top: 2px; width: 18px; height: 18px; flex: none; }
+@media (min-width: 900px) { .sqgrid { grid-template-columns: repeat(16, minmax(0, 1fr)); } }
+#sq-from { color: var(--w); }
+.recrow button { min-height: 44px; min-width: 64px; }
+.toggle.on#sq-rec { background: var(--a); color: var(--w); border-color: var(--a); }
+.sqgrid.rec .sqs.sel { background: var(--a); color: var(--w); outline: 3px solid var(--f); outline-offset: 1px; }
+.sqgrid.rec .sqs.sel small { color: var(--w); }
+#sq-recst { color: var(--f); margin: 4px 0 0; }
+#sq-recmsg { color: var(--w); margin: 2px 0 6px; min-height: 14px; }
+#sq-recmsg.bad { color: var(--f); }
 a.lnk { color: var(--l); }
+/* the drip under the header: the hub's, in this page's colours */
+.drip { height: 22px; margin: 0 6px 10px; background:
+  linear-gradient(var(--d), var(--d)) 0 0 / 100% 6px no-repeat,
+  linear-gradient(var(--a), var(--a)) 8% 6px / 6px 9px no-repeat,
+  linear-gradient(var(--a), var(--a)) 21% 6px / 6px 16px no-repeat,
+  linear-gradient(var(--a), var(--a)) 37% 6px / 6px 6px no-repeat,
+  linear-gradient(var(--a), var(--a)) 52% 6px / 6px 14px no-repeat,
+  linear-gradient(var(--a), var(--a)) 68% 6px / 6px 8px no-repeat,
+  linear-gradient(var(--a), var(--a)) 83% 6px / 6px 16px no-repeat,
+  linear-gradient(var(--a), var(--a)) 95% 6px / 6px 7px no-repeat; }
+/* keyboard focus: seen on everything that takes it */
+a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, nav a:focus-visible, .slot:focus-visible,
+input[type=range]:focus-visible { outline: 3px solid var(--f); outline-offset: 2px; }
+.ops-box { overflow-x: auto; }
+@media (max-width: 599px) {
+  .wrap { flex-direction: column; min-height: 0; }
+  nav { width: auto; flex-direction: row; overflow-x: auto; padding-bottom: 6px; gap: 4px; }
+  nav a { flex: none; white-space: nowrap; }
+  html, body { overflow-x: hidden; }
+  header .tag { font-size: 12px; }
+  .play { gap: 6px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .slots { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
 </style>
 </head>
 <body>
 <header>
-  <div class="tag px">GR!MM</div>
-  <div class="bar"><b class="px">EDITOR</b><span><a class="lnk px" href="index.html">DEMO</a> · <span id="conn" class="px">NOT CONNECTED</span></span></div>
+  <a class="tag px" href="hub.html" aria-label="GR!MM: the hub">GR!MM</a>
+  <div class="bar"><b class="px">EDITOR 2.0</b><span><a class="lnk px" href="index.html">WEB EMULATOR</a> · <span id="conn" class="px">NOT CONNECTED</span></span></div>
 </header>
+<div class="drip" role="presentation"></div>
 <div class="wrap">
   <nav>
-    <a data-s="connect">CONNECT</a>
-    <a data-s="sounds">SOUNDS</a>
-    <a data-s="editor">SOUND EDITOR</a>
-    <a data-s="samples">SAMPLES</a>
-    <a data-s="backup">BACKUP</a>
+    <a href="#connect" data-s="connect">CONNECT</a>
+    <a href="#sounds" data-s="sounds">SOUNDS</a>
+    <a href="#editor" data-s="editor">SOUND EDITOR</a>
+    <a href="#sequencer" data-s="sequencer">SEQUENCER</a>
+    <a href="#samples" data-s="samples">SAMPLES</a>
+    <a href="#fx" data-s="fx">FX</a>
+    <a href="#settings" data-s="settings">SETTINGS</a>
+    <a href="#backup" data-s="backup">BACKUP</a>
   </nav>
   <main>
     <div id="msgs"><div id="msg" class="px">LOADING GR!MM…</div><div id="prog"><i></i></div></div>
@@ -126,6 +178,8 @@ a.lnk { color: var(--l); }
         TRY WITHOUT AN FM-1 runs GR!MM's own code in this page instead: everything works, nothing is kept.</p>
       <p class="note">The FM-1 only accepts writes while it is stopped and silent: stop the sequencer and let every
         note, release and DELAY or SPACE tail end. Nothing is ever written without you clicking a button.</p>
+      <p class="note">GR!MM 2.0 adds FX, SETTINGS (MIDI CHANNEL's CH n &gt; SEL, CLOCK, LATCH) and the samples in a
+        backup; an FM-1 with GR!MM 1.0 doesn't answer those (update it on the FM-1 Firmware Hub), the rest works.</p>
       <table class="kv" id="info"></table>
       <div class="row"><button id="b-log" class="toggle">MIDI LOG</button><button id="b-logclear">CLEAR LOG</button></div>
       <pre id="log" hidden></pre>
@@ -192,16 +246,99 @@ a.lnk { color: var(--l); }
       <div class="grp" id="fm" style="margin-top:6px"></div>
     </section>
 
+    <section id="s-sequencer">
+      <h2>SEQUENCER</h2>
+      <div class="row">
+        <label class="px" for="sq-slot">SLOT</label>
+        <select id="sq-slot"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select>
+        <button id="sq-import" class="go">IMPORT SLOT</button>
+        <button id="sq-now">IMPORT: PLAYING NOW</button>
+        <button id="sq-send" class="go">SEND TO SLOT</button>
+      </div>
+      <div class="row">
+        <button id="sq-preview" class="go">PREVIEW</button>
+        <button id="sq-stop">STOP</button>
+        <button id="sq-save">SAVE FILE</button>
+        <button id="sq-load">LOAD FILE</button>
+        <button id="sq-clear">CLEAR ALL</button>
+        <input type="file" id="sq-file" accept=".json,.grimmpattern" hidden>
+      </div>
+      <div class="row recrow">
+        <button id="sq-rec" class="toggle" aria-pressed="false">REC</button>
+        <button id="sq-rest">REST</button>
+        <button id="sq-tie">TIE</button>
+        <button id="sq-mon" class="toggle on">MONITOR</button>
+        <button id="sq-octd">OCT-</button><span class="px" id="sq-oct">OCT 4</span><button id="sq-octu">OCT+</button>
+      </div>
+      <div class="row">
+        <label class="px" for="sq-midi">MIDI IN</label>
+        <select id="sq-midi"><option value="">OFF</option></select>
+        <button id="sq-midi-scan">FIND MIDI INPUTS</button><span class="px" id="sq-midi-n"></span>
+      </div>
+      <p class="px" id="sq-recst"></p>
+      <p class="px" id="sq-recmsg"></p>
+      <p class="px" id="sq-from">EMPTY</p>
+      <div class="trks" id="sq-tracks"></div>
+      <div class="grp" id="sq-trk"></div>
+      <div class="sqgrid" id="sq-grid"></div>
+      <div class="grid" id="sq-step" style="margin-top:6px"></div>
+      <p class="note">The four tracks' patterns, as the FM-1's SEQ pages: pick a step, then set its NOTE (0 is OFF), CHANCE,
+        RATCHET, LENGTH, a chord step, and its locks (a lock replaces one of the track's four knobs on that step; move
+        a slider to lock it, untick to free it). In the grid, C marks a chord step, L a step with locks; dim steps are
+        after the track's last step. IMPORT SLOT reads a slot, IMPORT: PLAYING NOW what the FM-1 plays at this moment.
+        SEND TO SLOT first downloads a backup of the slot, then changes only its patterns (the sounds and mix stay),
+        reads it back and checks it; it is refused while the FM-1 plays or still sounds. Then, on the FM-1, hold SAVE + F3
+        (A), G3 (B), A3 (C) or B3 (D) to recall it. PREVIEW plays the patterns in this page's GR!MM, with the sounds of
+        T1&ndash;T4 as the SOUND EDITOR has them. SAVE FILE and LOAD FILE keep the patterns on this computer.</p>
+      <p class="note">STEP RECORD: press REC, then play: a MIDI keyboard (pick it under MIDI IN; the FM-1's own port is not
+        listed), or the computer's keys A W S E D F T G Y H U J K (one octave, Z and X move it). Each note goes into the
+        selected step and the cursor moves on, wrapping at the track's last step. REST, the sustain pedal (CC64) and Space
+        skip a step; TIE makes the step before one longer; Backspace clears the step; the arrow keys move the cursor. Three
+        or more keys pressed together that are one of the FM-1's chords (CHORD TYPE and VOICING, SCALE aside) make a chord
+        step; any other chord writes its lowest note. MONITOR plays what you press in this page's GR!MM.</p>
+    </section>
+
     <section id="s-samples">
       <h2>SAMPLES</h2>
-      <div class="row"><button id="b-sinfo">REFRESH</button><button id="b-sfactory">RESTORE FACTORY SAMPLES</button></div>
+      <div class="row"><button id="b-sinfo">REFRESH</button><button id="b-sfactory">RESTORE FACTORY SAMPLES</button>
+        <label class="px"><input type="checkbox" id="smp-norm" checked> NORMALISE</label></div>
       <div id="smp"></div>
       <p class="note">Any WAV (8 to 32 bit, float, mono or stereo, any rate) becomes mono, 22050 Hz, IMA ADPCM, as
-        tools/fm1_sample_upload.py makes it; a slot holds 6.64 s (longer: cut, with a short fade). The root note is C4
-        unless the file name has one ("drone_A2.wav"). A name is 8 characters (the slot's, what the FM-1 shows): a longer
-        one keeps its number ("Sample-002": SAMP-002). RESTORE FACTORY SAMPLES writes GR!MM's four (URCHIN, LEAVE,
-        NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot that holds
-        nothing.</p>
+        tools/fm1_sample_upload.py makes it; GR!MM 2.0's encoder no longer clicks on bright samples. A slot holds 6.64 s
+        (longer: cut, with a short fade). The root note is C4 unless the file name has one ("drone_A2.wav"). A name is
+        8 characters (the slot's, what the FM-1 shows): a longer one keeps its number ("Sample-002": SAMP-002).</p>
+      <p class="note">NORMALISE (switched on as the page opens) brings every WAV to the same loudness; switched off, a
+        sample keeps its own level (quiet ones stay quiet, as recorded). RESTORE FACTORY SAMPLES writes GR!MM's four
+        (URCHIN, LEAVE, NIKOLAI, M-SOFT) over all four slots; an FM-1 also gets them by itself at power-on in a slot
+        that holds nothing. A BACKUP holds the four slots too.</p>
+    </section>
+
+    <section id="s-fx">
+      <h2>FX</h2>
+      <div class="row"><button id="b-fxread" class="go">READ FROM FM-1</button></div>
+      <div class="grid" id="fx"></div>
+      <p class="note">The project's effects, as the FX pages on the FM-1 (TAPE, GRAIN, DELAY, SPACE, MASTER, DRIVE), and
+        each track's filter TYPE and POS (MIXER 2) and its five sends (MIXER 1). READ first; then every move reaches the FM-1 at once, as its knobs
+        (kept with the project: its autosave). The FM-1's own knobs and this page don't follow each other: READ again
+        after turning them. MASTER, DRIVE, the filter's TYPE and POS and the TAPE and DRIVE sends are GR!MM V2's.</p>
+    </section>
+
+    <section id="s-settings">
+      <h2>SETTINGS</h2>
+      <div class="row"><button id="b-setread" class="go">READ FROM FM-1</button><button id="b-setwrite">WRITE TO FM-1</button></div>
+      <div class="row"><label class="px" for="set-mch">MIDI CHANNEL</label><select id="set-mch"></select></div>
+      <div class="row"><label class="px" for="set-clk">CLOCK</label><select id="set-clk"></select></div>
+      <div class="row"><label class="px" for="set-latch">LATCH</label><select id="set-latch"></select></div>
+      <div class="row"><label class="px" for="set-vel">VELOCITY</label><select id="set-vel"></select></div>
+      <p class="note">The FM-1's own settings (SYSTEM, SYSTEM 2, SYSTEM 3), not the project's. MIDI CHANNEL: 1-4 puts T1–T4 on
+        channels 1–4 (up to 13-16); ALL &gt; SEL plays every channel on the selected track; CH n &gt; SEL plays only
+        channel n on the selected track and ignores the others. CLOCK: INT, the FM-1's own tempo; INT+OUT, the same
+        and its MIDI clock out over USB (START, STOP and 24 pulses a beat); USB or TRS, it follows the MIDI clock from
+        there (START, CONTINUE, STOP; the jack is MIDI IN only). LATCH: FROM SOUND, a sound you load brings its own
+        LATCH (as GR!MM 1.0); ALWAYS OFF, a sound you load sets the track's LATCH off (you can still latch it by hand:
+        EDIT's LATCH, SEL + OCT+). The same on the FM-1: SYSTEM's KNOB 2, SYSTEM 2's KNOB 4, SYSTEM 3's
+        KNOB 1. READ first; WRITE changes only these three (the FM-1 stopped and silent). GR!MM 1.0 has no CLOCK, and
+        no LATCH setting.</p>
     </section>
 
     <section id="s-backup">
@@ -211,14 +348,15 @@ a.lnk { color: var(--l); }
         <button id="b-restore">RESTORE FROM A FILE…</button>
         <input type="file" id="f-restore" accept=".json" hidden>
       </div>
-      <p class="note">A backup holds all 64 user sounds, slots A–D and the settings (the same file as
-        tools/fm1_editor_test.py makes). Restoring first makes a backup of what the FM-1 has now (downloaded), then
-        writes everything, then reads it back to check. Samples are not in it: the FM-1 cannot send them back yet; keep
-        their WAV files.</p>
+      <p class="note">A backup holds all 64 user sounds, slots A–D, the settings and the four sample slots (the same
+        file as tools/fm1_editor_test.py makes). Restoring first makes a backup of what the FM-1 has now (downloaded),
+        then writes everything, then reads it back to check; a sample slot that already holds the same sample is not
+        written again, one empty in the backup is emptied. An older backup (GR!MM 1.0's, without samples) restores the
+        rest and leaves the sample slots as they are.</p>
     </section>
     <footer class="note">
-      <p><b><a class="lnk" href="index.html">Try the GR!MM demo</a></b>: the FM-1's panel in your browser, the same firmware.</p>
-      <p>GR!MM · <a class="lnk" href="LICENSE">GPL-3.0-only</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm">source</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a class="lnk" href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a class="lnk" href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a class="lnk" href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a class="lnk" href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · built with Emscripten (<a class="lnk" href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a class="lnk" href="LICENSES/MIT-musl.txt">MIT</a>)</p>
+      <p><b><a class="lnk" href="index.html">Try the GR!MM web emulator</a></b>: the FM-1's panel in your browser, the same firmware.</p>
+      <p>GR!MM · <a class="lnk" href="LICENSE">GPL-3.0-only</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm">source</a> · <a class="lnk" href="https://github.com/GRiMMBIENT/grimm/blob/main/LICENSING.md">credits and licences</a> (<a class="lnk" href="LICENSING.md">as text</a>) · fonts: Press Start 2P, <a class="lnk" href="LICENSES/OFL-PressStart2P.txt">SIL OFL 1.1</a>; Terminus, <a class="lnk" href="Terminus-LICENSE.txt">SIL OFL 1.1</a> · factory samples: <a class="lnk" href="LICENSES/CC0-1.0.txt">CC0 1.0</a> · choir recordings: <a class="lnk" href="https://doi.org/10.5281/zenodo.1442513">VocalSet</a> (Wilkins et al., 2018), <a class="lnk" href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> · choir wavetables: made from <a class="lnk" href="https://doi.org/10.5281/zenodo.1442513">VocalSet</a> (Julia Wilkins, Prem Seetharaman, Alison Wahl, Bryan Pardo, Northwestern University), <a class="lnk" href="LICENSES/CC-BY-4.0.txt">CC BY 4.0</a>, single cycles made from its recordings · built with Emscripten (<a class="lnk" href="LICENSES/MIT-Emscripten.txt">MIT</a>, musl <a class="lnk" href="LICENSES/MIT-musl.txt">MIT</a>)</p>
       <p>Built on Dinghy (zvenson), Felucca (Leo Kuroshita, Hügelton Instruments) and SLOOP (isod89); the editor's
         sections and live editing follow SLOOP's editor. M-VAVE and FM-1 are trademarks of their owners; GR!MM is not
         affiliated with or endorsed by them.</p>

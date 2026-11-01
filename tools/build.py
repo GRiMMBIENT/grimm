@@ -48,10 +48,14 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_966"                # GR!MM 1.x: 966, every release (FM-1_9NN: the installers resume its loader; the hub's
+PRODUCT = "FM-1_966"                # GR!MM: 966, every release (1.x, 2.x) (FM-1_9NN: the installers resume its loader; the hub's
                                     # other firmwares hold 950, 95x, 961, so not Dinghy's 9 + minor); Dinghy is 99N
 VERSION = None                      # APP_VER for release builds (else DEFAULT_VERSION)
-DEFAULT_VERSION = "1.0"
+DEFAULT_VERSION = "2.0"
+DEFINES = []                        # --define: a test build's -D names for the app
+RAM_FREE_MIN = 4096                 # (V2) RAM after .data + .bss: at least this free
+STACK_FREE_MIN = 4096               # (V2) each stack (firmware/app.ld) its worst case (tools/stack_check.py) at least
+                                    # this under its size
 
 
 def toolchain():
@@ -154,14 +158,15 @@ def build_loader():
 # ---- app
 
 def build_app(ble=False):
-    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or DEFAULT_VERSION}"']
+    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or DEFAULT_VERSION}"',
+             *(f"-D{d}" for d in DEFINES)]
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
             ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
             ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
             ("cc", *flags, *(["-DGRIMM_BLE=1"] if ble else []), "-c", FW / "src" / "grimm.c", "-o", OUT / "grimm.o")]
     objs = [OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o", OUT / "grimm.o"]
     if ble:                         # BLE-MIDI: Optimist's stack, a unit of its own so app.ld can put its .bss in RAMTEXT.
-                                    # BLE_DIAG=1: the BLE report over USB (editor command 24, tools/fm1_ble_diag.py; ~2.3 KiB
+                                    # BLE_DIAG=1: the BLE report over USB (editor command 26, tools/fm1_ble_diag.py; ~2.3 KiB
                                     # of RAM). BLE_HW_IRQ_PRIO=4: above the audio (3), with TIMER5 (4): the driver's default 2
                                     # (stock's) waits for an audio half, and GR!MM's take up to ~4.6 ms. BLE_CONN_TIMEOUT=200:
                                     # a 2 s supervision timeout (stock's 1 s) rides out the runs of missed events
@@ -233,6 +238,15 @@ def check(img, syms, dis, rt):
         notes.append(f"BLE .bss {sym('_ble_bss_end') - sym('_ble_bss_start')} B in RAMTEXT, up to {sym('_ble_bss_end'):#x} of 0x1c06000")
     if ram > 96 * 1024:
         errors.append(f"RAM .data+.bss {ram} B > 96 KiB")
+    if 96 * 1024 - ram < RAM_FREE_MIN:      # (V2) never filled to the brim: a floor, whatever comes to need it
+        errors.append(f"RAM .data+.bss {ram} B: {96 * 1024 - ram} B free, under {RAM_FREE_MIN}")
+    st = subprocess.run([sys.executable, str(SRC / "tools" / "stack_check.py"), str(OUT / "grimm.dis"), "--min-margin",
+                         str(STACK_FREE_MIN)], capture_output=True, text=True)
+    for ln in st.stdout.splitlines()[1:]:   # (V2) the stacks' worst case (tools/stack_check.py), each at least
+        if ln.strip().startswith(("user stack", "system stack")):   # STACK_FREE_MIN under its region
+            notes.append(ln.strip().split(" free)")[0] + " free)")
+    if st.returncode:
+        errors.append("stack check: " + " | ".join(ln.strip() for ln in st.stdout.splitlines()[1:]))
     return errors, notes
 
 
@@ -286,14 +300,18 @@ def main():
     ap.add_argument("--release", metavar="X.Y", help="release build: the version string X.Y (identity FM-1_966 as always)")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     ap.add_argument("--ble", action="store_true", help="link the BLE-MIDI stack (src/ble/; off at run time until switched on)")
+    ap.add_argument("--define", action="append", default=[], metavar="NAME",
+                    help="a test build: -DNAME for the app (e.g. GRIMM_TRS_TEST); give it its own --name")
+    ap.add_argument("--name", metavar="FILE.fwsc", help="the package's file name (default grimm.fwsc)")
     a = ap.parse_args()
-    name = "grimm.fwsc"
+    DEFINES.extend(a.define)
+    name = a.name or "grimm.fwsc"
     if a.release:                   # one digit each: the identity has room for two (X.Y; a .Z only in the text)
         m = re.fullmatch(r"(\d)\.(\d)(\.\d)?(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y-suffix, one digit each")
         VERSION = m[1] + "." + m[2] + (m[3] or "")
-        name = f"grimm-{a.release}.fwsc"
+        name = a.name or f"grimm-{a.release}.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
