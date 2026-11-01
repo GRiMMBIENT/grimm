@@ -4,7 +4,7 @@
  * test. The matrix has no diode a switch: while closed switches join a row to a column through others (a rectangle:
  * three corners closed, or a longer chain), the switch at that row and column reads closed too, pressed or not.
  * fm1_ghost says if a switch can read closed that way; the input layer then takes a new press there as a ghost (one
- * pressed before the others stays). Pure logic, no registers: tests/host.c simulates the matrix with it (the stress
+ * pressed before the others stays). Pure logic, no registers: firmware/src/host.c simulates the matrix with it (the stress
  * test). */
 #pragma once
 #include <stdint.h>

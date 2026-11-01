@@ -110,7 +110,7 @@
  *              docs/EDITOR_PROTOCOL.md), writing only while stopped and silent
  *
  * Rules of the road (the chip has no FPU and no libgcc): integers only, no float, no 64-bit division.
- * tests/host.c runs this file on a computer (the screen as a PNG, the sound as a WAV), web/fm1_web.c in a browser.
+ * firmware/src/host.c runs this file on a computer (the screen as a PNG, the sound as a WAV), firmware/src/fm1_web.c in a browser.
  * What platform.c offers: docs/API.md. The chip's rules: docs/RULES.md. */
 #define APP_NAME "GR!MM"                        /* the app, the rescue and the crash screen say this */
 #include "platform.c"
@@ -700,7 +700,7 @@ static int pick_voice(uint32_t t, uint32_t note, uint32_t *v)
  * voice let go (the oldest note it replaces): never another track's (none: not played); a generated chord, its share's
  * notes at most (the root first). One track generating, the keys, the sequencer, the arp: the voice rule as ever */
 static volatile uint32_t gen_on;                /* (seq.c's: bit t, track t generates) */
-static uint32_t gen_took, gen_short;            /* (tests/probe.c: generated notes that took another track's voice, chord
+static uint32_t gen_took, gen_short;            /* (firmware/src/probe.c: generated notes that took another track's voice, chord
                                                  * notes within the share not played) */
 static uint32_t gen_share(uint32_t t)           /* track t's share (0: not two tracks generating, the rule as ever) */
 {
@@ -2048,11 +2048,11 @@ static void batt_poll(void)
 
 #include "editor.c"                             /* the editor's mailbox: sounds, slots, settings over SysEx */
 #ifdef GRIMM_STRESS
-#include "../../tests/stress_check.c"             /* (tests/stress.sh: the stress test's checks, host mode) */
+#include "stress_check.c"             /* (tests/stress.sh: the stress test's checks, host mode) */
 #endif
 #ifdef DINGHY_HOST
-#include "../../tests/compat.c"                   /* (host mode: saves across versions, tests/run_host.sh) */
-#include "../../tests/probe.c"                    /* (host mode: "T probe", the MIDI clock's test) */
+#include "compat.c"                   /* (host mode: saves across versions, tests/run_host.sh) */
+#include "probe.c"                    /* (host mode: "T probe", the MIDI clock's test) */
 #endif
 static void app_main(void)
 {
@@ -2561,5 +2561,5 @@ static void app_main(void)
 }
 
 #ifdef GRIMM_WEB
-#include "../../web/editor_web.c"                 /* (the browser build only: what the editor page asks of it) */
+#include "editor_web.c"                 /* (the browser build only: what the editor page asks of it) */
 #endif

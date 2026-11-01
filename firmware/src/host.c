@@ -104,7 +104,7 @@ static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
     return 1;
 }
 #ifdef GRIMM_STRESS
-static void stress_midi_out(uint32_t st, uint32_t d1);   /* (tests/stress_check.c: what is on out there) */
+static void stress_midi_out(uint32_t st, uint32_t d1);   /* (firmware/src/stress_check.c: what is on out there) */
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { (void)d2; stress_midi_out(st, d1); }
 #else
 static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  MIDI out %02X %u %u\n", fm1_ms, st, d1, d2); }
@@ -161,7 +161,7 @@ static int save_flash_erase(uint32_t i)
     printf("%6u ms  flash sector %u erased (a save)\n", fm1_ms, i);   /* (tests/rc11_test.py: when) */
     return 0;
 }
-static void compat_exit(void);                  /* (tests/compat.c) */
+static void compat_exit(void);                  /* (firmware/src/compat.c) */
 static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)   /* NOR: a write only clears bits */
 {
     const uint8_t *s = p;
@@ -203,10 +203,10 @@ static void app_main(void);
  * next millisecond), "T down ID" / "T up ID" (held, let go), "T midi ST D1 D2" (USB), "T trs ST D1 D2" (the TRS jack),
  * "T enc ID STEPS" (ENC_ id, + = clockwise), "T end"; GR!MM V2: "T clock usb|trs BPMx10 MS" (MIDI clock pulses from
  * T for MS ms, each at its exact time; BPMx10 0: none from T), "T probe" (the clock's and the sequencer's state out:
- * tests/probe.c) */
+ * firmware/src/probe.c) */
 typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps, kind, src; uint32_t a, b; } host_ev_t;
 enum { HK_PLAIN, HK_CLOCK, HK_PROBE };          /* (kind) */
-static void host_probe(void);                   /* (tests/probe.c) */
+static void host_probe(void);                   /* (firmware/src/probe.c) */
 #define CHORD1 (1u << 7 | 1u << 11 | 1u << 14)                  /* C E G (C4 .. G4 at OCTAVE +0) */
 #define CHORD2 (1u << 2 | 1u << 5 | 1u << 9)                   /* G Bb D (G3 .. D4) */
 #define DOWN 0x100                                              /* btn: held from now (a btn alone: a tap, 1 ms) */
@@ -339,7 +339,7 @@ static void write_wav(void)
  * hold (hm_); the matrix reads them, the encoders' contacts resting closed (KNOB1 A, KNOB3 A, ALGORITHM B: they join
  * rows 0 and 1 to columns 3, 6 and 8) and every ghost they make; the input layer's test takes the ghosts out, as on the
  * FM-1 (fm1_input.h fm1__keys): what is left is fm1_in, its edges the app's */
-#include "../firmware/hal/fm1_matrix.h"
+#include "../hal/fm1_matrix.h"
 static uint32_t hm_notes, hm_buttons, hm_bad;   /* (hm_bad: a press taken that no hand made, its id + 1) */
 static uint32_t fm1_ghosts;                     /* (the presses taken as ghosts) */
 static int hm_down(uint32_t id, uint32_t n, uint32_t b) { return id >= 14u ? (int)(n >> (id - 14u) & 1u) : (int)(b >> id & 1u); }
@@ -507,7 +507,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
     } else if (shot < sizeof SHOT / sizeof SHOT[0] && fm1_ms == SHOT[shot])
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
-        compat_exit();                          /* (tests/compat.c: saves out, the state as loaded) */
+        compat_exit();                          /* (firmware/src/compat.c: saves out, the state as loaded) */
         if (ho.n)
             printf("clock  out: %u pulses, %u.%03u .. %u.%03u ms apart\n", ho.n, ho.lo / 24000u, ho.lo / 24u % 1000u,
                    ho.hi / 24000u, ho.hi / 24u % 1000u);
@@ -540,7 +540,7 @@ int main(int argc, char **argv)
         fclose(f);
         host_store[0] = 1, host_store[1] = (uint8_t)n, host_store[2] = (uint8_t)(n >> 8);
     }
-    if (getenv("GRIMM_SAVE_IN")) {              /* (tests/compat.c: the save sectors an older GR!MM wrote) */
+    if (getenv("GRIMM_SAVE_IN")) {              /* (firmware/src/compat.c: the save sectors an older GR!MM wrote) */
         FILE *f = fopen(getenv("GRIMM_SAVE_IN"), "rb");
         (void)save_flash(0);
         if (!f || fread(fake_save, 1, sizeof fake_save, f) != sizeof fake_save) { perror("GRIMM_SAVE_IN"); exit(1); }

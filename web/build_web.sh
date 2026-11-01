@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-# GR!MM in the browser: firmware/src/grimm.c, unchanged, on the fake FM-1 web/fm1_web.c, compiled to WebAssembly
+# GR!MM in the browser: firmware/src/grimm.c, unchanged, on the fake FM-1 firmware/src/fm1_web.c, compiled to WebAssembly
 # with Emscripten, then Asyncify (Binaryen's wasm-opt) so the app's main loop can pause between audio blocks.
 # After Felucca's web/emu/build.sh (hugelton/Felucca, Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton
 # Instruments) and X0X's (charlesvestal/fm1-x0x), both GPL-3.0.

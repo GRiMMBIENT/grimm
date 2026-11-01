@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 GR!MM */
 /* Saves across versions (host mode, tests/run_host.sh): a project as an older GR!MM saved it loads as it did there.
- * Environment, at the end of a host run (tests/host.c):
+ * Environment, at the end of a host run (firmware/src/host.c):
  *   GRIMM_FILL=1          a varied project into RAM (every step's values over their ranges, chord steps, locks, the
  *                         patterns' settings), into slots A..C, and saved (autosave), with two user sounds
  *   GRIMM_SAVE_OUT=file   the save sectors (6 x 4 KiB) into file
  *   GRIMM_STATE_OUT=file  what was loaded, as text: each step's values, the packed project, the slots, the settings
  *                         (all but their version, which a newer GR!MM raises; then the bytes it adds) and the sounds
  *                         (hex)
- * and at the start, GRIMM_SAVE_IN=file: the save sectors from file (tests/host.c main).
+ * and at the start, GRIMM_SAVE_IN=file: the save sectors from file (firmware/src/host.c main).
  * tests/data/v1.0-saves.bin was made by GR!MM 1.0 (the v1.0 tag) with this file and GRIMM_FILL; v1.0-state.txt is what
  * 1.0 loaded from it. The same source works on both: the steps' fields are assigned, never pointed to. */
 static uint32_t cp_rng = 0x2468ACE1u;
@@ -42,7 +42,7 @@ static void compat_hex(FILE *f, const char *what, const uint8_t *p, uint32_t n)
     fprintf(f, "%s %u\n", what, n);
     for (i = 0; i < n; i++) fprintf(f, "%02x%s", p[i], (i & 31u) == 31u || i + 1u == n ? "\n" : "");
 }
-static void compat_exit(void)                   /* tests/host.c: at the end of the run */
+static void compat_exit(void)                   /* firmware/src/host.c: at the end of the run */
 {
     const char *e;
     FILE *f;

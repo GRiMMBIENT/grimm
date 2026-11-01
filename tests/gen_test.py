@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM V2's GENERATE in host mode (tests/host.c, its "probe": gen, ph, srcs):
+"""GR!MM V2's GENERATE in host mode (firmware/src/host.c, its "probe": gen, ph, srcs):
   - every note it plays is in the SCALE (C NATURAL MINOR), in each MODE, chord mode off and on
   - a track's pattern: playing; GENERATE on: its steps unheard (none of its sequenced notes on), the pattern itself
     unchanged; off: the pattern plays again, unchanged

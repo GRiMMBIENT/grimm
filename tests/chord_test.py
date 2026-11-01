@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM V2.0's chord mode is per track (host mode, tests/host.c; the probe's "notes" and "chd", tests/probe.c): a
+"""GR!MM V2.0's chord mode is per track (host mode, firmware/src/host.c; the probe's "notes" and "chd", firmware/src/probe.c): a
 track's chord on / off, CHORD TYPE and VOICING apply to that track only; only the SCALE is shared.
   - T1 chord on, T2 .. T4 off; each track played every way a note can play: the keys, MIDI in (a channel a track;
     ALL > SEL; CH n > SEL), the sequencer (steps recorded with REC, steps entered on GRID), ARP, GENERATE: only T1

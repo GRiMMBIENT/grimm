@@ -2,10 +2,10 @@
 // Copyright (C) 2026 GR!MM
 // After Felucca's web/emu/worklet.js (hugelton/Felucca, Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton
 // Instruments) and X0X's (charlesvestal/fm1-x0x), both GPL-3.0.
-// GR!MM in an AudioWorklet: grimm.wasm is firmware/src/grimm.c on the fake FM-1 (web/fm1_web.c). Each render quantum
+// GR!MM in an AudioWorklet: grimm.wasm is firmware/src/grimm.c on the fake FM-1 (firmware/src/fm1_web.c). Each render quantum
 // asks it for 128 frames, which runs the device's clock forward; about 30 times a second the screen, the lights and
 // the saved settings go to the page. The app's main loop never returns: it pauses in web_yield (below; Asyncify, see
-// web/fm1_web.c) once the frames are there, and the next quantum resumes it where it stopped.
+// firmware/src/fm1_web.c) once the frames are there, and the next quantum resumes it where it stopped.
 
 class Grimm extends AudioWorkletProcessor {
   constructor() {

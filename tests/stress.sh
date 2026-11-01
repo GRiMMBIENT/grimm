@@ -1,8 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-# The stress test: firmware/src/grimm.c in host mode (tests/host.c) with address and undefined-behaviour checking and
-# the checks of tests/stress_check.c, played by tests/stress_gen.py's script (every source on every track, chords,
+# The stress test: firmware/src/grimm.c in host mode (firmware/src/host.c) with address and undefined-behaviour checking and
+# the checks of firmware/src/stress_check.c, played by tests/stress_gen.py's script (every source on every track, chords,
 # voicings, SCALE, LATCH, the octaves, fast keys, MIDI in, every page and hold combo while notes sound and the sequencer
 # plays and records, slots, undo / redo, PRESETS; first a project come back from as at power-on), after
 # tests/device_names.py (no two variables made one in the device build). Prints "stress test: passed", or what failed (exit 1).

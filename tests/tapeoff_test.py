@@ -1,4 +1,4 @@
-"""GR!MM V2: TAPE off is TAPE off (host mode, tests/host.c). With TAPE's four knobs at 0 and every TAPE tile at 0, the
+"""GR!MM V2: TAPE off is TAPE off (host mode, firmware/src/host.c). With TAPE's four knobs at 0 and every TAPE tile at 0, the
 24-bit output (GRIMM_RAW_OUT) must be to the bit what GR!MM V2.0 RC made (tails3, tails4 alike; the reference:
 tests/data/tapeoff.sha256), for a set that sounds most of it:
   T1 MONK DRONE (a pad, chords), T2 GREGORIAN (a choir), T3 a SAMPLE track (slot 1, chords and single keys, the DLY, REV

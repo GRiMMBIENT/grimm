@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 GR!MM */
-/* Host mode's "T probe" (tests/host.c): the MIDI clock's and the sequencer's state at that moment, one line, for
+/* Host mode's "T probe" (firmware/src/host.c): the MIDI clock's and the sequencer's state at that moment, one line, for
  * tests/clock_test.py:
  *   probe MS play P seq S ext E bpm B10 own BPM ticks T pulses N done D pos P1,P2,P3,P4 mch M clk C links L notes ..
  * play: the main loop's PLAY; seq: the sequencer runs; ext: following a MIDI clock; bpm: its tempo x 10; own: the
