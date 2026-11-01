@@ -11,7 +11,9 @@ import { Client, MidiTransport, VirtualFM1, LiveSender, findFM1, HEAD, CMD, OBJ,
          recordOk, parseSound, buildRecord, soundTitle, makeBackup, checkBackup, restoreBackup, makeSlot, noteFromName,
          sampleName, noteName, pack7, hex, SET_V1, SET_V2, MCH_NAMES, CLOCK_NAMES, settingsOf, withSettings,
          sameSettings, FX_PAGES, FT_NAMES, checkSamples, restoreSamples, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
-         glideText, decayText, pctText, PITCH_TEXT } from "./editor_core.js";
+         glideText, decayText, pctText, PITCH_TEXT, SEQ, DIV_NAMES, MODE_NAMES, emptyPattern, emptyStep, patternsFromSlot,
+         patternsFromWork, slotWithPatterns, slotFromWork, slotTrack, patternFile, parsePatternFile, recallScript, stopScript,
+         BTN_PLAY, b64, recWrite, recRest, recTie, makeGrouper, pcKeyNote } from "./editor_core.js";
 
 const $ = (id) => document.getElementById(id);
 function el(tag, attrs, parent, text) {
@@ -84,6 +86,7 @@ function show(s) {
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.s === s));
   document.querySelectorAll("section").forEach((x) => x.classList.toggle("on", x.id === "s-" + s));
   if (s === "samples" && conn) sampleInfo();
+  if (s === "sequencer") drawSeq();
 }
 document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); show(a.dataset.s); history.replaceState(null, "", "#" + a.dataset.s); }));
 
@@ -117,7 +120,11 @@ function startEngine() {                                     // at once; the bro
         const m = e.data;
         if (m.type === "ready") res();
         else if (m.type === "error") rej(new Error(m.message));
-        else if (m.type === "frame" && m.fb) drawScreen(m.fb);
+        else if (m.type === "reply") engReply(m.data);
+        else if (m.type === "frame") {
+          if (m.leds) engLeds = m.leds, sqPlayState();
+          if (m.fb) drawScreen(m.fb);
+        }
       };
       node.port.postMessage({ type: "load", wasm: wasm.slice(0), master: 760 });
     });
@@ -316,7 +323,7 @@ function drawSlots() {
 }
 function refreshButtons() {
   const c = !!conn && !busy, u = !pick.fact, empty = u && isEmpty(user[pick.i]);
-  ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory", "b-setread", "b-fxread"].forEach((id) => { $(id).disabled = !c; });
+  ["b-readall", "b-store", "b-backup", "b-restore", "b-sinfo", "b-sfactory", "b-setread", "b-fxread", "sq-import", "sq-now", "sq-send"].forEach((id) => { $(id).disabled = !c; });
   document.querySelectorAll("#fx input, #fx select").forEach((x) => { x.disabled = !c || !fxVals; });
   $("b-setwrite").disabled = !c || !setBytes;
   $("set-mch").disabled = $("set-clk").disabled = $("set-latch").disabled = $("set-vel").disabled = !setBytes;
@@ -677,7 +684,7 @@ function press(key, down) {
 }
 addEventListener("keydown", (e) => {
   const k = KEYMAP[e.key.toLowerCase()];
-  if (k === undefined || e.repeat || e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) &&
+  if (k === undefined || e.repeat || (sq.rec && sqOn()) || e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) &&
       document.activeElement.type !== "range") return;
   e.preventDefault();
   press(k, true);
@@ -889,6 +896,374 @@ $("b-fxread").onclick = () => job("FX", async () => {
 });
 drawFx();
 
+// ------------------------------------------------------------------ the SEQUENCER (GR!MM 2.0, patterns only: no firmware change)
+// The four tracks' patterns: a 64-step grid a track, a step's NOTE, CHANCE, RATCHET, LENGTH, chord and locks, a track's STEPS,
+// DIVISION, SWING and PLAY MODE. They are read from a slot (or from the working project, what the FM-1 plays now), written back
+// into a slot (only its sequence and lock bytes 212-2403: the sounds and mix stay), kept in a file, or tried in this page's GR!MM.
+const sq = { pats: [0, 1, 2, 3].map(() => emptyPattern(16)), t: 0, s: 0, trk: null, from: "EMPTY", dirty: false, clip: null,
+             rec: false, oct: 4, mon: true, pedal: false };   // (REC armed, the computer keys' octave, MONITOR, the sustain pedal)
+const SQ_SLOT_KEY = ["F3", "G3", "A3", "B3"];
+const sqPat = () => sq.pats[sq.t];
+const sqTrk = (t) => (sq.trk ? sq.trk[t] : tracks[t] ? { eng: tracks[t].eng, k: tracks[t].k } : { eng: 0, k: [0, 0, 0, 0] });   // (for the locks' names)
+function sqStatus() {
+  $("sq-from").textContent = `${sq.from}${sq.dirty ? " * (NOT SENT)" : ""}`;
+}
+function setSq(pats, trk, from, dirty) {
+  sq.pats = pats, sq.trk = trk, sq.from = from, sq.dirty = dirty, sq.s = 0;
+  drawSeq();
+}
+function sqCell(i) {                                         // one step's button: its number, its note; C a chord step, L locks
+  const b = $("sq-grid").children[i], p = sqPat(), s = p.st[i];
+  b.className = "sqs" + (i >= p.steps ? " out" : "") + (s.note ? " has" : "") + (i === sq.s ? " sel" : "");
+  b.textContent = "";
+  el("small", {}, b, `${i + 1}${s.chord ? "C" : ""}${s.lmask ? "L" : ""}`);
+  b.append(s.note ? noteName(s.note) : "OFF");
+}
+function sqChanged(i) { sq.dirty = true; if (i !== undefined) sqCell(i); sqStatus(); drawSqTabs(); }
+function drawSqTabs() {
+  const b = $("sq-tracks");
+  b.textContent = "";
+  for (let t = 0; t < 4; t++) {
+    const p = sq.pats[t], n = p.st.slice(0, p.steps).filter((s) => s.note).length;
+    const x = el("button", { cls: "trk" + (t === sq.t ? " on" : "") }, b);
+    el("b", {}, x, `T${t + 1}`), x.append(` ${n} NOTES · ${p.steps} STEPS`);
+    x.onclick = () => { sq.t = t; sq.s = 0; drawSeq(); };
+  }
+}
+function drawSqTrack() {                                     // the track's own settings
+  const box = $("sq-trk"), p = sqPat();
+  box.textContent = "";
+  el("h3", {}, box, `T${sq.t + 1}: PATTERN SETTINGS`);
+  const g = el("div", { cls: "grid" }, box), a = el("div", {}, g), c = el("div", {}, g);
+  control(a, "STEPS", 1, 64, () => p.steps, (v) => { p.steps = v; for (let i = 0; i < 64; i++) sqCell(i); sqChanged(); drawSqStep(); },
+          (v) => `${v}`, true);
+  choice(a, "DIVISION", DIV_NAMES, () => p.div, (v) => { p.div = v; sqChanged(); }, true);
+  control(c, "SWING", 0, 127, () => p.swing, (v) => { p.swing = v; sqChanged(); }, (v) => `${Math.round(v * 100 / 127)}%`, true);
+  choice(c, "PLAY MODE", MODE_NAMES, () => p.mode, (v) => { p.mode = v; sqChanged(); }, true);
+  const r = el("div", { cls: "row" }, box);
+  el("button", { onclick: () => {
+    if (!confirm(`CLEAR ALL STEPS OF T${sq.t + 1} HERE?`)) return;
+    p.st = Array.from({ length: SEQ.N }, emptyStep), sq.s = 0, sqChanged(), drawSeq();
+  } }, r, `CLEAR T${sq.t + 1}`);
+}
+function drawSqGrid() {
+  const g = $("sq-grid");
+  g.textContent = "";
+  for (let i = 0; i < SEQ.N; i++) {
+    const b = el("button", { type: "button", "aria-label": `STEP ${i + 1}` }, g);
+    b.onclick = () => sqSelect(i);
+    sqCell(i);
+  }
+}
+function drawSqStep() {                                      // the selected step
+  const box = $("sq-step"), p = sqPat(), s = p.st[sq.s], inf = sqTrk(sq.t), eng = meta.engines[inf.eng];
+  box.textContent = "";
+  const hot = (fn) => (v) => { fn(v); sqChanged(sq.s); };
+  const g = el("div", { cls: "grp" }, box);
+  el("h3", {}, g, `T${sq.t + 1} · STEP ${sq.s + 1}` + (sq.s >= p.steps ? " (AFTER THE LAST STEP: NOT PLAYED)" : ""));
+  control(g, "NOTE", 0, 127, () => s.note, hot((v) => { s.note = v; }), (v) => (v ? noteName(v) : "OFF"), true);
+  control(g, "CHANCE", 0, 100, () => s.chance, hot((v) => { s.chance = v; }), (v) => `${v}%`, true);
+  choice(g, "RATCHET", ["1 HIT", "2 HITS", "3 HITS", "4 HITS"], () => s.ratchet - 1, hot((v) => { s.ratchet = v + 1; }), true);
+  control(g, "LENGTH", 1, 64, () => s.len, hot((v) => { s.len = v; }), (v) => `${v} ${v === 1 ? "STEP" : "STEPS"}`, true);
+  const c = el("div", { cls: "grp" }, box);
+  el("h3", {}, c, "CHORD STEP");
+  const tg = el("button", { cls: "toggle" + (s.chord ? " on" : "") }, c, s.chord ? "CHORD STEP ON" : "CHORD STEP OFF");
+  tg.onclick = () => { s.chord = s.chord ? 0 : 0x80; sqChanged(sq.s); drawSqStep(); };
+  if (s.chord) {
+    el("div", { cls: "ctl" }, c);
+    choice(c, "CHORD TYPE", meta.chords, () => s.chord & 15, hot((v) => { s.chord = 0x80 | (s.chord & 0x70) | v; }), true);
+    choice(c, "VOICING", meta.voicings, () => s.chord >> 4 & 7, hot((v) => { s.chord = 0x80 | (s.chord & 15) | v << 4; }), true);
+  }
+  const l = el("div", { cls: "grp" }, box);
+  el("h3", {}, l, `STEP LOCKS (${eng.name}'S FOUR KNOBS)`);
+  const vals = () => [0, 1, 2, 3].map((k) => (s.lmask >> k & 1 ? s.lv[k] : inf.k[k]));
+  for (let k = 0; k < 4; k++) {
+    const row = el("div", { cls: "lock" }, l), cb = el("input", { type: "checkbox", "aria-label": `LOCK ${eng.knobs[k]}` }, row);
+    cb.checked = !!(s.lmask >> k & 1);
+    const sl = control(row, eng.knobs[k], 0, eng.max[k], () => Math.min(eng.max[k], vals()[k]), hot((v) => {
+      s.lv[k] = v, s.lmask |= 1 << k, cb.checked = true;
+    }), (v) => (s.lmask >> k & 1 ? "" : "(TRACK) ") + vf.text("web_knob_text", inf.eng, ...vals().map((x, j) => (j === k ? v : x)), k), true);
+    cb.onchange = () => {
+      s.lmask = cb.checked ? s.lmask | 1 << k : s.lmask & ~(1 << k);
+      if (cb.checked) s.lv[k] = Math.min(eng.max[k], inf.k[k]);
+      sqChanged(sq.s), drawSqStep();
+    };
+  }
+  const r = el("div", { cls: "row" }, box);
+  el("button", { onclick: () => { p.st[sq.s] = emptyStep(); sqChanged(sq.s); drawSqStep(); } }, r, "CLEAR STEP");
+  el("button", { onclick: () => { sq.clip = JSON.parse(JSON.stringify(s)); say(`STEP ${sq.s + 1} COPIED`, "ok"); } }, r, "COPY STEP");
+  el("button", { onclick: () => {
+    if (!sq.clip) { say("NOTHING COPIED YET", "err"); return; }
+    p.st[sq.s] = JSON.parse(JSON.stringify(sq.clip)), sqChanged(sq.s), drawSqStep();
+  } }, r, "PASTE STEP");
+}
+function drawSeq() {
+  if (!meta) return;
+  drawSqTabs(), drawSqTrack(), drawSqGrid(), drawSqStep(), sqStatus(), sqRecStatus();
+}
+const sqNeedsV2 = () => {
+  if (conn.info.slotSize !== SEQ.SLOT_LEN) throw new EditorError("THIS FM-1'S SLOTS ARE NOT GR!MM 2.0'S: THE SEQUENCER NEEDS GR!MM 2.0", 0);
+};
+$("sq-import").onclick = () => job("IMPORT SLOT", async () => {
+  sqNeedsV2();
+  const k = +$("sq-slot").value, b = await conn.client.get(OBJ.SLOT + k, SEQ.SLOT_LEN);
+  if (!b[0]) throw new EditorError(`SLOT ${"ABCD"[k]} IS EMPTY: NOTHING TO IMPORT`, 0);
+  setSq(patternsFromSlot(b), [0, 1, 2, 3].map((t) => slotTrack(b, t)), `SLOT ${"ABCD"[k]} OF THE ${conn.kind === "virtual" ? "VIRTUAL " : ""}FM-1`, false);
+  return `SLOT ${"ABCD"[k]} IMPORTED: THE FOUR PATTERNS ARE IN THE GRID`;
+});
+$("sq-now").onclick = () => job("IMPORT", async () => {
+  sqNeedsV2();
+  let w;
+  try { w = await conn.client.get(OBJ.WORK, SEQ.WORK_LEN); } catch (e) {
+    throw e.rc === 1 ? new EditorError("THE FM-1 DID NOT GIVE ITS PROJECT: TRY AGAIN IN A MOMENT (OR IT IS NOT GR!MM 2.0)", 1) : e;
+  }
+  setSq(patternsFromWork(w), [0, 1, 2, 3].map((t) => slotTrack(w, t, 0)), `WHAT THE ${conn.kind === "virtual" ? "VIRTUAL " : ""}FM-1 PLAYS NOW`, false);
+  return "IMPORTED: THE FOUR PATTERNS THE FM-1 HAS NOW ARE IN THE GRID";
+});
+$("sq-send").onclick = () => {
+  const k = +$("sq-slot").value, L = "ABCD"[k];
+  if (!conn) { say("CONNECT FIRST (CONNECT)", "err"); return; }
+  if (!confirm(`SEND THE FOUR PATTERNS TO SLOT ${L}?\n\nOnly the patterns (steps, settings, locks) change; the slot's sounds and mix stay. ` +
+               "A backup of the slot is downloaded first, and the write is read back and checked.")) return;
+  job(`SEND TO SLOT ${L}`, async () => {
+    sqNeedsV2();
+    say(`READING SLOT ${L}…`);
+    let cur = await conn.client.get(OBJ.SLOT + k, SEQ.SLOT_LEN);
+    const empty = !cur[0];
+    if (empty) {                                             // (an empty slot: made of the FM-1's tracks as they are now)
+      if (!confirm(`SLOT ${L} IS EMPTY. FILL IT WITH THE PATTERNS AND THE FM-1'S FOUR TRACKS AS THEY ARE NOW (SOUNDS AND MIX)?`)) return false;
+      cur = slotFromWork(await conn.client.get(OBJ.WORK, SEQ.WORK_LEN), [0, 1, 2, 3].map(() => emptyPattern(16)));
+    }
+    const next = slotWithPatterns(cur, sq.pats);
+    await conn.client.canWrite(OBJ.SLOT + k, next, conn.info.fmt);   // (refused while the FM-1 plays or sounds: before anything is done)
+    const old = empty ? [0, 1, 2, 3].map(() => emptyPattern(16)) : patternsFromSlot(cur);
+    download(`grimm-slot-${L}-backup-${stamp()}.json`, JSON.stringify(patternFile(old, { slot: L, was: empty ? "empty" : "used",
+      firmware: conn.info.firmware, slotBytes: b64(cur) })));
+    await conn.client.put(OBJ.SLOT + k, next, conn.info.fmt, progress);
+    const back = await conn.client.get(OBJ.SLOT + k, SEQ.SLOT_LEN);
+    if (back.some((x, i) => x !== next[i])) throw new EditorError(`SLOT ${L} DID NOT READ BACK AS SENT`, 0);
+    const same = (a, b, from, to) => a.subarray(from, to).every((x, i) => x === b[from + i]);
+    if (!same(cur, back, 0, SEQ.SLOT_SEQ) || !same(cur, back, SEQ.SLOT_END, SEQ.SLOT_LEN))
+      throw new EditorError(`SLOT ${L}'S SOUNDS OR MIX CHANGED: RESTORE FROM THE BACKUP FILE`, 0);
+    sq.dirty = false, sq.from = `SLOT ${L} OF THE ${conn.kind === "virtual" ? "VIRTUAL " : ""}FM-1`, sq.trk = [0, 1, 2, 3].map((t) => slotTrack(back, t));
+    drawSeq();
+    return `SLOT ${L} WRITTEN AND READ BACK (THE SOUNDS AND MIX AS THEY WERE; A BACKUP FILE IS DOWNLOADED). ON THE FM-1: HOLD SAVE + ${SQ_SLOT_KEY[k]}`;
+  });
+};
+$("sq-save").onclick = () => {
+  download(`grimm-patterns-${stamp()}.json`, JSON.stringify(patternFile(sq.pats)));
+  say("PATTERNS SAVED TO A FILE (DOWNLOADED)", "ok");
+};
+$("sq-load").onclick = () => $("sq-file").click();
+$("sq-file").onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    setSq(parsePatternFile(JSON.parse(await f.text())), null, `FILE ${f.name.toUpperCase()}`, true);
+    say(`${f.name.toUpperCase()} LOADED: THE FOUR PATTERNS ARE IN THE GRID (SEND TO A SLOT TO KEEP THEM ON THE FM-1)`, "ok");
+  } catch (err) { say(`LOAD: ${errText(err)}`, "err"); }
+};
+$("sq-clear").onclick = () => {
+  if (!confirm("CLEAR ALL FOUR PATTERNS HERE? (THE FM-1 KEEPS WHAT IT HAS UNTIL YOU SEND)")) return;
+  setSq([0, 1, 2, 3].map(() => emptyPattern(16)), null, "EMPTY", false);
+};
+
+// the preview: the patterns into this page's own GR!MM (its slot, recalled, played), its sound as the SOUND EDITOR's
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let engClient = null, engWait = [], engLeds = null;
+function engReply(d) {                                       // a reply from the page's GR!MM (worklet.js): to the request waiting
+  const k = engWait.findIndex((w) => w.cmd === d[4]);
+  if (k < 0) return;
+  const [w] = engWait.splice(k, 1);
+  clearTimeout(w.timer), w.res(d.slice(5, d.length - 1));
+}
+const engTransport = {
+  request(frame, timeout = 3000) {
+    return new Promise((res, rej) => {
+      if (!node) { rej(new EditorError("THE PAGE'S GR!MM IS NOT RUNNING (CLICK ANYWHERE, THEN TRY AGAIN)", 0)); return; }
+      const w = { cmd: frame[3], res, timer: setTimeout(() => { engWait = engWait.filter((x) => x !== w); rej(new EditorError("no answer from this page's GR!MM", 97)); }, timeout) };
+      engWait.push(w);
+      node.port.postMessage({ type: "sysex", data: frame });
+    });
+  },
+};
+async function engRun(script) {                              // buttons and keys on the page's panel, one after the other
+  for (const m of script) {
+    if ("buttons" in m) node.port.postMessage({ type: "buttons", mask: m.buttons });
+    if ("keys" in m) node.port.postMessage({ type: "keys", mask: m.keys });
+    await sleep(m.ms);
+  }
+  node.port.postMessage({ type: "keys", mask: keyMask >>> 0 });   // (the keys held on this page's keyboard stay)
+}
+const enginePlays = () => !!(engLeds && engLeds[0] >>> BTN_PLAY & 1);
+function sqPlayState() { $("sq-preview").dataset.state = enginePlays() ? "playing" : "stopped"; }
+$("sq-preview").onclick = async () => {
+  const b = $("sq-preview");
+  b.disabled = true;
+  try {
+    await startEngine();
+    if (!node) throw new EditorError("THE PAGE'S GR!MM IS NOT RUNNING", 0);
+    const ec = engClient || (engClient = new Client(engTransport)), k = +$("sq-slot").value;
+    say("PREVIEW: PREPARING THIS PAGE'S GR!MM…");
+    node.port.postMessage({ type: "panic" });
+    if (enginePlays()) await engRun(stopScript());
+    const fmt = (await ec.info()).fmt, work = await ec.get(OBJ.WORK, SEQ.WORK_LEN);
+    const slot = slotFromWork(work, sq.pats);                // (this page's tracks as the SOUND EDITOR has them, these patterns)
+    for (let tries = 0; ; tries++) {
+      try { await ec.put(OBJ.SLOT + k, slot, fmt); break; } catch (e) {
+        if (e.rc !== 3 || tries >= 60) throw e;
+        say("PREVIEW: WAITING FOR THIS PAGE'S GR!MM TO FALL SILENT…");
+        await sleep(500);
+      }
+    }
+    await engRun(recallScript(k, true));
+    await sleep(200);
+    sqPlayState();
+    say("PREVIEW: PLAYING IN THIS PAGE, WITH THE SOUNDS OF T1–T4 AS IN THE SOUND EDITOR (STOP ENDS IT)", "ok");
+  } catch (e) { say(`PREVIEW: ${errText(e)}`, "err"); } finally { b.disabled = false; sqPlayState(); }
+};
+$("sq-stop").onclick = async () => {
+  if (!node) return;
+  node.port.postMessage({ type: "panic" });
+  if (enginePlays()) await engRun(stopScript());
+  await sleep(200);
+  sqPlayState();
+  say("PREVIEW STOPPED", "ok");
+};
+
+// ------------------------------------------------------------------ STEP RECORD: a MIDI keyboard or the computer's keys write the notes
+// REC armed: a note goes into the selected step of the selected track and the cursor moves on (wraps at STEPS); REST, the sustain
+// pedal and Space skip a step (OFF), TIE makes the step before one longer; 3+ keys pressed together that are one of the FM-1's
+// chords (any VOICING) make a chord step, else the lowest note is written. It writes only while this section is shown.
+const SQ_MIDI_KEY = "grimm-seq-midi";
+const FM1_PORT = /felucca|fm-?1|m-?vave|gr!?mm/i;            // (the FM-1's own port: not a keyboard)
+const sqOn = () => $("s-sequencer").classList.contains("on");
+const sqTyping = () => {                                     // a text field has the keys: never taken
+  const a = document.activeElement;
+  return !!a && (a.tagName === "TEXTAREA" || a.tagName === "SELECT" || (a.tagName === "INPUT" && !/^(range|checkbox|button)$/.test(a.type)));
+};
+const sqRecOn = () => sq.rec && sqOn();
+function sqRecMsg(text, bad = false) { const m = $("sq-recmsg"); m.textContent = text; m.className = "px" + (bad ? " bad" : ""); }
+function sqRecStatus() {
+  const p = sqPat();
+  $("sq-rec").textContent = sq.rec ? "REC ON" : "REC", $("sq-rec").classList.toggle("on", sq.rec);
+  $("sq-grid").classList.toggle("rec", sq.rec);
+  $("sq-oct").textContent = `OCT ${sq.oct}`;
+  $("sq-recst").textContent = sq.rec ? `REC: T${sq.t + 1} · STEP ${sq.s + 1} OF ${p.steps}` : "";
+}
+function sqSelect(i) {                                       // the cursor
+  const old = sq.s;
+  sq.s = i, sqCell(old), sqCell(i), drawSqStep(), sqRecStatus();
+  const c = $("sq-grid").children[i];
+  if (sq.rec && c && c.scrollIntoView) c.scrollIntoView({ block: "nearest" });
+}
+const noteLabel = (n) => noteName(n);
+function sqCommit(notes) {                                   // keys pressed together (within 50 ms)
+  if (!sqRecOn()) return;
+  const r = recWrite(sqPat(), sq.s, notes);
+  if (!r) return;
+  sqChanged(r.wrote);
+  const where = `T${sq.t + 1} STEP ${r.wrote + 1}`;
+  if (r.kind === "chord") sqRecMsg(`${where}: ${noteLabel(r.note)} ${meta.chords[r.chord & 15]} ${meta.voicings[r.chord >> 4 & 7]} (CHORD STEP)`);
+  else if (r.kind === "nomatch") sqRecMsg("CHORD NOT ON THE FM-1: THE LOWEST NOTE IS WRITTEN (" + noteLabel(r.note) + ")", true);
+  else if (r.kind === "pair") sqRecMsg(`${where}: 2 KEYS: THE LOWEST NOTE, ${noteLabel(r.note)}`);
+  else sqRecMsg(`${where}: ${noteLabel(r.note)}`);
+  sqSelect(r.cursor);
+}
+const sqGroup = makeGrouper(sqCommit, 50);
+function engMidi(st, n, v) { if (node) node.port.postMessage({ type: "midi", data: [st | sq.t, n, v] }); }   // (the page's GR!MM plays it: the track's sound)
+function sqNoteOn(n) {
+  if (sq.mon) engMidi(0x90, n, 100);
+  if (sqRecOn()) sqGroup.add(n);
+}
+const sqNoteOff = (n) => { if (sq.mon) engMidi(0x80, n, 0); };
+function sqRest() {
+  const r = recRest(sqPat(), sq.s);
+  sqChanged(r.wrote), sqRecMsg(`T${sq.t + 1} STEP ${r.wrote + 1}: REST`);
+  sqSelect(r.cursor);
+}
+function sqTie() {
+  const r = recTie(sqPat(), sq.s);
+  if (!r) { sqRecMsg("NOTHING TO TIE: THE STEP BEFORE HAS NO NOTE", true); return; }
+  sqChanged(r.tied), sqRecMsg(`T${sq.t + 1} STEP ${r.tied + 1} TIED: ${r.len} ${r.len === 1 ? "STEP" : "STEPS"} LONG`);
+  if (r.tied === sq.s) drawSqStep();
+}
+$("sq-rec").onclick = (e) => {
+  sq.rec = !sq.rec;
+  if (!sq.rec) { sqRecMsg("REC OFF"); node && node.port.postMessage({ type: "panic" }); } else sqRecMsg("REC ON: PLAY A KEY (MIDI KEYBOARD, OR A W S E D F T G Y H U J K ON THE COMPUTER)");
+  sqRecStatus();
+  e.currentTarget.blur();                                    // (Space is a REST in REC: not a click on this button)
+};
+$("sq-rest").onclick = sqRest;
+$("sq-tie").onclick = sqTie;
+$("sq-mon").onclick = () => { sq.mon = !sq.mon, $("sq-mon").classList.toggle("on", sq.mon); if (!sq.mon && node) node.port.postMessage({ type: "panic" }); };
+$("sq-octd").onclick = () => { sq.oct = Math.max(0, sq.oct - 1), sqRecStatus(); };
+$("sq-octu").onclick = () => { sq.oct = Math.min(8, sq.oct + 1), sqRecStatus(); };
+// the computer's keys (REC armed, this section shown, never in a text field)
+const sqDown = new Map();                                    // key -> the note it sounded
+addEventListener("keydown", (e) => {
+  if (!sqRecOn() || e.ctrlKey || e.metaKey || e.altKey || sqTyping()) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, n = pcKeyNote(k, sq.oct), cols = getComputedStyle($("sq-grid")).gridTemplateColumns.split(" ").length;
+  const onRange = document.activeElement && document.activeElement.type === "range";
+  let used = true;
+  if (n >= 0) { if (!e.repeat) sqDown.set(k, n), sqNoteOn(n); }
+  else if (k === "z") sq.oct = Math.max(0, sq.oct - 1), sqRecStatus();
+  else if (k === "x") sq.oct = Math.min(8, sq.oct + 1), sqRecStatus();
+  else if ((k === "ArrowLeft" || k === "ArrowRight") && !onRange) {   // (the cursor wraps at the track's STEPS)
+    const n = sqPat().steps;
+    sqSelect((((sq.s + (k === "ArrowRight" ? 1 : -1)) % n) + n) % n);
+  } else if (k === "ArrowUp" || k === "ArrowDown") sqSelect(Math.max(0, Math.min(sqPat().steps - 1, sq.s + (k === "ArrowDown" ? cols : -cols))));
+  else if (k === "Backspace") { sqPat().st[sq.s] = emptyStep(); sqChanged(sq.s), drawSqStep(), sqRecMsg(`T${sq.t + 1} STEP ${sq.s + 1}: CLEARED`); }
+  else if (k === " ") { if (!e.repeat) sqRest(); }
+  else used = false;
+  if (used) e.preventDefault();
+}, true);
+addEventListener("keyup", (e) => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (sqDown.has(k)) { sqNoteOff(sqDown.get(k)), sqDown.delete(k); }
+  if (k === " " && sqRecOn() && !sqTyping()) e.preventDefault();   // (not a click on a button that has the focus)
+}, true);
+addEventListener("blur", () => { sqDown.forEach((n) => sqNoteOff(n)); sqDown.clear(); });
+// MIDI in: Web MIDI, any input but the FM-1's own; the choice kept in this browser
+let sqMidiAcc = null, sqMidiIn = null;
+const savedMidi = () => { try { return localStorage.getItem(SQ_MIDI_KEY) || ""; } catch { return ""; } };
+const saveMidi = (v) => { try { localStorage.setItem(SQ_MIDI_KEY, v); } catch { /* (no storage: not kept) */ } };
+function sqMidiMsg(e) {
+  const [st, d1, d2] = e.data, c = st & 0xf0;
+  if (c === 0x90 && d2 > 0) sqNoteOn(d1);
+  else if (c === 0x80 || (c === 0x90 && d2 === 0)) sqNoteOff(d1);
+  else if (c === 0xb0 && d1 === 64) {                        // the sustain pedal: down = a REST
+    const down = d2 >= 64;
+    if (down && !sq.pedal && sqRecOn()) sqRest();
+    sq.pedal = down;
+  }
+}
+function sqMidiList() {
+  if (!sqMidiAcc) return;
+  const sel = $("sq-midi"), own = conn && conn.kind === "fm1" ? conn.transport.input.name : "", want = sel.value || savedMidi();
+  const ins = [...sqMidiAcc.inputs.values()].filter((i) => !FM1_PORT.test(i.name || "") && i.name !== own);
+  sel.textContent = "";
+  el("option", { value: "" }, sel, "OFF");
+  ins.forEach((i) => el("option", { value: i.name }, sel, i.name));
+  sel.value = ins.some((i) => i.name === want) ? want : "";
+  if (sqMidiIn) sqMidiIn.onmidimessage = null, sqMidiIn = null;
+  sqMidiIn = ins.find((i) => i.name === sel.value) || null;
+  if (sqMidiIn) sqMidiIn.onmidimessage = sqMidiMsg;
+  $("sq-midi-n").textContent = ins.length ? `${ins.length} FOUND` : "NONE FOUND";
+}
+async function sqMidiInit(ask) {
+  if (!navigator.requestMIDIAccess) { if (ask) sqRecMsg("THIS BROWSER HAS NO WEB MIDI: USE CHROME OR EDGE (THE COMPUTER'S KEYS STILL WORK)", true); return; }
+  try {
+    sqMidiAcc = sqMidiAcc || await navigator.requestMIDIAccess({ sysex: false });
+    sqMidiAcc.onstatechange = sqMidiList;
+    sqMidiList();
+  } catch (e) { if (ask) sqRecMsg(`MIDI: ${errText(e)}`, true); }
+}
+$("sq-midi-scan").onclick = () => sqMidiInit(true);
+$("sq-midi").onchange = () => { saveMidi($("sq-midi").value), sqMidiList(); };
+if (savedMidi()) sqMidiInit(false);                          // (a keyboard chosen before: found again, no question if allowed already)
+
 // ------------------------------------------------------------------ start: the four tracks as GR!MM starts
 (async () => {
   try {
@@ -912,6 +1287,7 @@ drawFx();
   drawSlots();
   drawTracks();
   drawEditor();
+  drawSeq();
   drawSamples();
   setConn(null);
   say("READY: CONNECT THE FM-1, OR TRY WITHOUT ONE. THE EDITOR WORKS HERE ALREADY.");

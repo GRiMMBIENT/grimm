@@ -51,7 +51,7 @@ class Grimm extends AudioWorkletProcessor {
     else if (m.type === "enc") ex.web_enc(m.enc, m.n | 0);
     else if (m.type === "master") ex.web_master(m.value | 0);
     else if (m.type === "midi") ex.web_midi(m.data[0], m.data[1], m.data[2]);
-    else if (m.type === "sysex") {                          // the editor: a frame without F0 / F7 (its reply dropped);
+    else if (m.type === "sysex") {                          // the editor: a frame without F0 / F7 (its reply goes back as {type: "reply"});
       const f = m.data, set = (q) => q[3] === 23 && q[4] === 1, k = set(f) ? this.sx.findIndex((q) => set(q) && q[5] === f[5]) : -1;
       if (k >= 0) this.sx[k] = f; else this.sx.push(f);      // (a track's sound waiting: the newest in its place)
     }
@@ -117,6 +117,8 @@ class Grimm extends AudioWorkletProcessor {
       ex.web_sysex_in(f.length);
     }
     if (!ex.web_ready()) this.run();
+    const rn = ex.web_sysex_out_len();                       // (the editor page's own requests: the reply goes back to it)
+    if (rn) this.port.postMessage({ type: "reply", data: Array.from(new Uint8Array(ex.memory.buffer, ex.web_sysex_out_buf(), rn)) });
     ex.web_sysex_out_clear();
     ex.web_take();
     out[0].set(new Float32Array(ex.memory.buffer, ex.web_out_l(), n));

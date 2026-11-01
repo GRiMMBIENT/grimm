@@ -63,7 +63,7 @@ Copyright (C) 2026 GR!MM, GPL-3.0-only, unless a line says otherwise.
 | The screens `firmware/src/ui.c`, after the concept designs in `docs/ui-concept` |  |
 | SYSTEM and MIDI (step 20): COLOUR, MIDI CHANNEL, TUNE, SCREEN OFF, MIDI LEARN, SEQ MIDI OUT, in `firmware/src/grimm.c` and `ui.c` | |
 | The moving pictures (step 21): the boot screen, HOME's eye, candles and stars, in `firmware/src/ui.c` | |
-| The 40 factory sounds (step 22): `SND_FACTORY` and `SND_FNAME` in `firmware/src/store.c` | Written for GR!MM; no factory data of any instrument |
+| The 44 factory sounds (step 22; the 40 of GR!MM 1.0 and the four choirs of 2.0): `SND_FACTORY` and `SND_FNAME` in `firmware/src/store.c` | Written for GR!MM; no factory data of any instrument |
 | The track filter (step 23, HOME's CUTOFF and RESONANCE) and the FM editor (step 24, FM ALGO and FM OP: each track its own patch) in `firmware/src/grimm.c`, `voices.c`, `fm.c` (GR!MM changes) and `ui.c` | The FM ALGO drawing follows the 32 algorithms' wiring in `fm6_core.c` (msfa, below) |
 | The battery icon (step 26a2): `batt_poll` in `firmware/src/grimm.c`, `ui_bat_draw` in `ui.c` | The thresholds (531, 561, 591 on ADC channel 3) are the stock firmware's, as Felucca has them |
 | The editor's sound names, live TRACK, the factory samples' install and RESTORE (steps 26b2, 26c): `firmware/src/editor.c`, `store.c`, `samples.c`, `grimm.c`, `web/editor*.js` | |

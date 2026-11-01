@@ -100,6 +100,25 @@ canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pix
 #screen { width: 480px; max-width: 100%; aspect-ratio: 1; image-rendering: pixelated; display: block; background: var(--k); }
 .play .keys { flex: 1 1 360px; min-width: 0; }
 .pickbar { position: sticky; top: 46px; z-index: 2; background: var(--k); padding: 4px 0; }
+.sqgrid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin-top: 6px; }
+.sqs { padding: 6px 0; min-height: 46px; text-align: center; background: var(--d); border: 2px solid transparent; color: var(--m); }
+.sqs small { display: block; font-size: 8px; color: var(--m); margin-bottom: 3px; }
+.sqs.has { background: var(--l); color: var(--k); }
+.sqs.has small { color: var(--d); }
+.sqs.out { opacity: .35; }
+.sqs.sel { border-color: var(--a); }
+.lock { display: flex; gap: 8px; align-items: flex-start; }
+.lock .ctl { flex: 1; min-width: 0; margin: 0 0 10px; }
+.lock input[type=checkbox] { margin-top: 2px; width: 18px; height: 18px; flex: none; }
+@media (min-width: 900px) { .sqgrid { grid-template-columns: repeat(16, minmax(0, 1fr)); } }
+#sq-from { color: var(--w); }
+.recrow button { min-height: 44px; min-width: 64px; }
+.toggle.on#sq-rec { background: var(--a); color: var(--w); border-color: var(--a); }
+.sqgrid.rec .sqs.sel { background: var(--a); color: var(--w); outline: 3px solid var(--f); outline-offset: 1px; }
+.sqgrid.rec .sqs.sel small { color: var(--w); }
+#sq-recst { color: var(--f); margin: 4px 0 0; }
+#sq-recmsg { color: var(--w); margin: 2px 0 6px; min-height: 14px; }
+#sq-recmsg.bad { color: var(--f); }
 a.lnk { color: var(--l); }
 /* the drip under the header: the hub's, in this page's colours */
 .drip { height: 22px; margin: 0 6px 10px; background:
@@ -138,6 +157,7 @@ input[type=range]:focus-visible { outline: 3px solid var(--f); outline-offset: 2
     <a href="#connect" data-s="connect">CONNECT</a>
     <a href="#sounds" data-s="sounds">SOUNDS</a>
     <a href="#editor" data-s="editor">SOUND EDITOR</a>
+    <a href="#sequencer" data-s="sequencer">SEQUENCER</a>
     <a href="#samples" data-s="samples">SAMPLES</a>
     <a href="#fx" data-s="fx">FX</a>
     <a href="#settings" data-s="settings">SETTINGS</a>
@@ -224,6 +244,58 @@ input[type=range]:focus-visible { outline: 3px solid var(--f); outline-offset: 2
       </div>
       <div class="grid" id="ed" style="margin-top:6px"></div>
       <div class="grp" id="fm" style="margin-top:6px"></div>
+    </section>
+
+    <section id="s-sequencer">
+      <h2>SEQUENCER</h2>
+      <div class="row">
+        <label class="px" for="sq-slot">SLOT</label>
+        <select id="sq-slot"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select>
+        <button id="sq-import" class="go">IMPORT SLOT</button>
+        <button id="sq-now">IMPORT: PLAYING NOW</button>
+        <button id="sq-send" class="go">SEND TO SLOT</button>
+      </div>
+      <div class="row">
+        <button id="sq-preview" class="go">PREVIEW</button>
+        <button id="sq-stop">STOP</button>
+        <button id="sq-save">SAVE FILE</button>
+        <button id="sq-load">LOAD FILE</button>
+        <button id="sq-clear">CLEAR ALL</button>
+        <input type="file" id="sq-file" accept=".json,.grimmpattern" hidden>
+      </div>
+      <div class="row recrow">
+        <button id="sq-rec" class="toggle" aria-pressed="false">REC</button>
+        <button id="sq-rest">REST</button>
+        <button id="sq-tie">TIE</button>
+        <button id="sq-mon" class="toggle on">MONITOR</button>
+        <button id="sq-octd">OCT-</button><span class="px" id="sq-oct">OCT 4</span><button id="sq-octu">OCT+</button>
+      </div>
+      <div class="row">
+        <label class="px" for="sq-midi">MIDI IN</label>
+        <select id="sq-midi"><option value="">OFF</option></select>
+        <button id="sq-midi-scan">FIND MIDI INPUTS</button><span class="px" id="sq-midi-n"></span>
+      </div>
+      <p class="px" id="sq-recst"></p>
+      <p class="px" id="sq-recmsg"></p>
+      <p class="px" id="sq-from">EMPTY</p>
+      <div class="trks" id="sq-tracks"></div>
+      <div class="grp" id="sq-trk"></div>
+      <div class="sqgrid" id="sq-grid"></div>
+      <div class="grid" id="sq-step" style="margin-top:6px"></div>
+      <p class="note">The four tracks' patterns, as the FM-1's SEQ pages: pick a step, then set its NOTE (0 is OFF), CHANCE,
+        RATCHET, LENGTH, a chord step, and its locks (a lock replaces one of the track's four knobs on that step; move
+        a slider to lock it, untick to free it). In the grid, C marks a chord step, L a step with locks; dim steps are
+        after the track's last step. IMPORT SLOT reads a slot, IMPORT: PLAYING NOW what the FM-1 plays at this moment.
+        SEND TO SLOT first downloads a backup of the slot, then changes only its patterns (the sounds and mix stay),
+        reads it back and checks it; it is refused while the FM-1 plays or still sounds. Then, on the FM-1, hold SAVE + F3
+        (A), G3 (B), A3 (C) or B3 (D) to recall it. PREVIEW plays the patterns in this page's GR!MM, with the sounds of
+        T1&ndash;T4 as the SOUND EDITOR has them. SAVE FILE and LOAD FILE keep the patterns on this computer.</p>
+      <p class="note">STEP RECORD: press REC, then play: a MIDI keyboard (pick it under MIDI IN; the FM-1's own port is not
+        listed), or the computer's keys A W S E D F T G Y H U J K (one octave, Z and X move it). Each note goes into the
+        selected step and the cursor moves on, wrapping at the track's last step. REST, the sustain pedal (CC64) and Space
+        skip a step; TIE makes the step before one longer; Backspace clears the step; the arrow keys move the cursor. Three
+        or more keys pressed together that are one of the FM-1's chords (CHORD TYPE and VOICING, SCALE aside) make a chord
+        step; any other chord writes its lowest note. MONITOR plays what you press in this page's GR!MM.</p>
     </section>
 
     <section id="s-samples">
