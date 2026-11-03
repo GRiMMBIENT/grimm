@@ -42,11 +42,55 @@ static void compat_hex(FILE *f, const char *what, const uint8_t *p, uint32_t n)
     fprintf(f, "%s %u\n", what, n);
     for (i = 0; i < n; i++) fprintf(f, "%02x%s", p[i], (i & 31u) == 31u || i + 1u == n ? "\n" : "");
 }
+/* (V2.0.2, tests/samplefix_test.py) the sample area as another firmware or a cut upload left it, before boot:
+ *   GRIMM_SMP_PRE=xxxx    a letter a slot: - blank, J junk bytes, P data without a header (first sector erased), C a good
+ *                         header and data with one byte wrong (the CRC fails), U a good sample of the user's (named
+ *                         USERTEST), F the factory sample
+ *   GRIMM_SMP_FAIL=1      every erase fails (a write that cannot be done: it is not tried again)
+ *   GRIMM_SMP_OUT=file    at the end, a line a slot: what it holds (playing, name, as the factory's, as before boot) and
+ *                         the erases tried */
+static uint32_t cp_smp_pre[SMP_SLOTS];
+static uint32_t cp_smp_fnv(const uint8_t *p, uint32_t n)
+{
+    uint32_t h = 2166136261u;
+    while (n--) h = (h ^ *p++) * 16777619u;
+    return h;
+}
+static void compat_init(void)                   /* firmware/src/host.c: before app_main */
+{
+    const char *e = getenv("GRIMM_SMP_PRE");
+    uint32_t k, i, r = 0x9E3779B9u;
+    host_erase_fail = getenv("GRIMM_SMP_FAIL") != 0;
+    for (k = 0; e && *e && k < SMP_SLOTS; k++, e++) {
+        uint8_t *s = fake_flash + k * SMP_SLOT_SIZE;
+        if (*e == 'J')
+            for (i = 0; i < SMP_SLOT_SIZE; i++) r = r * 1664525u + 1013904223u, s[i] = (uint8_t)(r >> 24);
+        else if (*e == 'P' || *e == 'C' || *e == 'U' || *e == 'F') {
+            memcpy(s + SMP_DATA_OFF, SMP_FACT_DATA[k], SMP_FACT_LEN[k]);
+            if (*e == 'P') memset(s, 0xFF, 0x1000);
+            else memcpy(s, SMP_FACT_HDR[k], SMP_HDR_LEN);
+            if (*e == 'C') s[SMP_DATA_OFF + 100] ^= 0x55;
+            if (*e == 'U') memcpy(s + 8, "USERTEST", 8);
+        }
+        cp_smp_pre[k] = cp_smp_fnv(s, SMP_SLOT_SIZE);
+    }
+    for (; k < SMP_SLOTS; k++) cp_smp_pre[k] = cp_smp_fnv(fake_flash + k * SMP_SLOT_SIZE, SMP_SLOT_SIZE);
+}
 static void compat_exit(void)                   /* firmware/src/host.c: at the end of the run */
 {
     const char *e;
     FILE *f;
     uint32_t t, k;
+    if ((e = getenv("GRIMM_SMP_OUT")) != 0 && (f = fopen(e, "w")) != 0) {
+        for (k = 0; k < SMP_SLOTS; k++) {
+            const uint8_t *s = fake_flash + k * SMP_SLOT_SIZE;
+            fprintf(f, "slot %u playing %u name %s factory %u same %u\n", k + 1u, smp[k].ready, smp[k].ready ? smp[k].name : "-",
+                    !memcmp(s, SMP_FACT_HDR[k], SMP_HDR_LEN) && !memcmp(s + SMP_DATA_OFF, SMP_FACT_DATA[k], SMP_FACT_LEN[k]),
+                    cp_smp_fnv(s, SMP_SLOT_SIZE) == cp_smp_pre[k]);
+        }
+        fprintf(f, "erases %u\n", host_erases);
+        fclose(f);
+    }
     if (getenv("GRIMM_FILL")) {
         for (k = 0; k < 3u; k++) compat_fill_seq(), slot_save(k);
         compat_fill_seq();

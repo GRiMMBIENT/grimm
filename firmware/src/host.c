@@ -129,9 +129,12 @@ static int usb_powered(void) { return 0; }
 #define SAMPLE_AREA_LEN 0x48000u
 static uint8_t fake_flash[SAMPLE_AREA_LEN];
 static const uint8_t *sample_flash(void) { return fake_flash; }
+static uint32_t host_erases, host_erase_fail;   /* (tests/samplefix_test.py: the erases tried; GRIMM_SMP_FAIL: they fail) */
 static int sample_flash_erase(uint32_t off)
 {
     uint32_t i;
+    host_erases++;
+    if (host_erase_fail) return -2;
     if ((off & 0xFFFu) || off >= SAMPLE_AREA_LEN) return -8;
     for (i = 0; i < 4096u; i++) fake_flash[off + i] = 0xFF;
     return 0;
@@ -162,6 +165,7 @@ static int save_flash_erase(uint32_t i)
     return 0;
 }
 static void compat_exit(void);                  /* (firmware/src/compat.c) */
+static void compat_init(void);                  /* (firmware/src/compat.c: GRIMM_SMP_PRE, the sample area before boot) */
 static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)   /* NOR: a write only clears bits */
 {
     const uint8_t *s = p;
@@ -546,6 +550,7 @@ int main(int argc, char **argv)
         if (!f || fread(fake_save, 1, sizeof fake_save, f) != sizeof fake_save) { perror("GRIMM_SAVE_IN"); exit(1); }
         fclose(f);
     }
+    compat_init();
     app_main();
     return 0;
 }

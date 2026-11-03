@@ -60,3 +60,6 @@ python3 tests/chord_test.py build/host/grimm
 # GR!MM V2.0 rc11: no flash step (autosave, the settings' save) while a computer reads the USB audio: it stopped the key scan,
 # the LEDs and the stream ~50 ms (tests/rc11_test.py)
 python3 tests/rc11_test.py build/host/grimm
+# GR!MM V2.0.2: the sample slots after another firmware or a cut upload: any slot that does not play gets its factory
+# sample once the boot checks are done, one that plays is never touched, the header says which (tests/samplefix_test.py)
+python3 tests/samplefix_test.py build/host/grimm

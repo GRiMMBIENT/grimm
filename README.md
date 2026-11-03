@@ -79,7 +79,9 @@ them with your own:
 2. Drop a WAV on a slot (any rate, mono or stereo; up to 6.6 s are kept), check its name and root note, press **UPLOAD**.
 
 Then set a track's source to **SAMPLE** and pick the slot. **RESTORE FACTORY SAMPLES** (in the editor, or SYSTEM 2 on
-the FM-1) brings the four factory samples back.
+the FM-1) brings the four factory samples back. A slot that cannot play (left over from another firmware, say) gets its
+factory sample by itself at the first start (the header says `SAMPLES RESTORED`); a slot with a working sample is
+never touched.
 
 Optionally, from a command line with Python 3:
 

@@ -2515,6 +2515,17 @@ static void app_main(void)
         tapefx_poll();                          /* (TAPE: SATURATION's curve, when the knob has moved) */
         samples_poll(quiet() && !playing);      /* an upload's frame (writes only while nothing sounds, never while
                                                  * the sequencer plays), the slots' checks */
+        if (smp_say) {                          /* (V2.0.2) smp_fix wrote the factory samples into slots that did not play */
+            if (smp_say & 15u) {
+                char *q = put_s(hd_msg, "SAMPLES RESTORED: ");
+                for (k = 0; k < SMP_SLOTS; k++)
+                    if (smp_say >> k & 1u) *q++ = (char)('1' + k);   /* (no spaces: 24 characters hold "1234") */
+                *q = 0;
+            } else
+                put_s(hd_msg, "SAMPLE RESTORE FAILED");
+            hd_until = fm1_ms + 6000u;
+            smp_say = 0;
+        }
 
         {                                       /* (a save waits for silence: since when) */
             uint32_t w = !playing && (as_wait || sv_pend >= 0) && !voices_silent();
