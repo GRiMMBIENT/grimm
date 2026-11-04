@@ -1070,6 +1070,8 @@ static volatile int32_t sy_vel;                 /* (V2) SYSTEM 3's VELOCITY (its
 static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk, sy_latch;   /* SYSTEM's,
                                                  * SYSTEM 2's, SYSTEM 3's knobs (sy_fac: SAMPLES, 1 RESTORE: OCT+
                                                  * writes the factory ones) */
+static volatile int32_t sy_ble;                 /* SYSTEM 3, KNOB 4: BT MIDI (GRIMM_BLE builds); OFF at every power-on, not
+                                                 * in the settings */
 static uint32_t fac_at;                         /* RESTORE confirmed: when it writes (the header said first), 0 none */
 static uint32_t learn_st;                       /* MIDI LEARN: 0 none; 1 TURN A KNOB; 2 MOVE A CC (learn_to: the knob) */
 static uint8_t learn_to[4];                     /* (the page, the knob, the track, x) */
@@ -1173,7 +1175,7 @@ static const page_t PAGES[NPAGE] = {
     {"FM OP", BTN_EDIT, 1, 1, 1, {"RATIO", "LEVEL", "ATTACK", "DECAY"}},  /* (the operator OP selects) */
     {"MASTER", BTN_FX, 1, 0, 1, {"CUTOFF", "RESONANCE", "TYPE", "POSITION"}},   /* (V2: FX's 5th and 6th, master.c) */
     {"DRIVE", BTN_FX, 1, 0, 1, {"AMOUNT", "TYPE", "TONE", "MIX"}},
-    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "VELOCITY", "", ""}},   /* (V2: VELOCITY: a MIDI note's volume; a NEW
+    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "VELOCITY", "", GRIMM_BLE ? "BT MIDI" : ""}},   /* (V2: VELOCITY: a MIDI note's volume; a NEW
                                                  * project's tracks' LATCH) */
     {"LINE 2", BTN_EDIT, 1, 1, 1, {"WAVE", "DCW", "RING", "NOISE"}},   /* (V2: a PHASE track's, after SOURCE: phase.c) */
     {"PHASE ENV", BTN_EDIT, 1, 1, 1, {"DCW ENV", "DCW DECAY", "PITCH ENV", "PITCH DECAY"}},   /* (V2: a PHASE track's, after
@@ -1291,7 +1293,8 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
     case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : &sy_clk;
-    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : 0;   /* (V2: LATCH, VELOCITY) */
+    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : k == 3u && GRIMM_BLE ? &sy_ble : 0;   /* (V2: LATCH,
+                                                 * VELOCITY; BT MIDI) */
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -2398,6 +2401,9 @@ static void app_main(void)
             hd_say(rc ? "RESTORE FAILED" : "SAMPLES RESTORED");
         }
         sys_sync();
+#if GRIMM_BLE
+        if ((sy_ble != 0) != (ble_state() != HX_S_OFF)) ble_set(sy_ble != 0);   /* BT MIDI: its first ON starts the radio */
+#endif
         if ((page == PG_FMALGO || page == PG_FMOP) && sel_eng() != ENG_FM) page = PG_SOUND;   /* (not FM now: SOUND) */
         if ((page == PG_PDLINE || page == PG_PDENV) && sel_eng() != ENG_PHASE) page = PG_SOUND;   /* (V2: not PHASE
                                                  * now: SOUND) */

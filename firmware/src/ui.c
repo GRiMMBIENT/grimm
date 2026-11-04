@@ -203,7 +203,7 @@ static const char *const LONG_LAB[][2] = {
     {"DECAY", "DEC"}, {"SUSTAIN", "SUS"}, {"RELEASE", "REL"}, {"DENSITY", "DENS"}, {"SCATTER", "SCAT"},
     {"REVERSE", "REV"}, {"SECTION", "SECT"}, {"PATTERN", "PATT"}, {"REPEATS", "REPEAT"}, {"OCTAVES", "OCTAVE"},
     {"RATCHET", "RATCH"}, {"VOICING", "VOICNG"}, {"CHANCE", "CHNC"}, {"ACTION", "DO"}, {"MIDI LEARN", "LEARN"},
-    {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"}, {"VELOCITY", "VELO"},
+    {"SEQ MIDI OUT", "SEQOUT"}, {"TRK CUTOFF", "TRKCUT"}, {"VELOCITY", "VELO"}, {"BT MIDI", "BTMIDI"},
     {"DCW ENV", "DCW"}, {"DCW DECAY", "D DEC"}, {"PITCH ENV", "PITCH"}, {"PITCH DECAY", "P DEC"},
 };
 static void ui_label(char *d, const char *s)    /* a knob's name on a slab (at most 6 characters: 48 px) */
@@ -356,7 +356,16 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         }
         else ui_time(S->val, 10u * pow2_q16(clamp(v, 0, 127) * 15));
         return;
-    case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
+    case PG_SYS3:
+#if GRIMM_BLE
+        if (k == 3u) {                          /* BT MIDI: the link's state (hx.h HX_S_*), lit once a computer listens */
+            static const char *const BLE_ST[6] = {"OFF", "NO CAL", "HELD", "ADV", "LINK", "READY"};
+            uint32_t b = ble_state();
+            put_s(S->val, BLE_ST[b < 6u ? b : 0u]), S->acc = (uint8_t)(b == HX_S_READY);
+            return;
+        }
+#endif
+        put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
                                                  * ALWAYS OFF; VELOCITY: OFF, ON */
     case PG_SOUNDS:
         if (k == 0u) { ui_3(S->val, (uint32_t)v + 1u); return; }

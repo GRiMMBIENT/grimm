@@ -25,6 +25,9 @@ enum { BTN_OCT_DOWN = 0, BTN_OCT_UP = 1, BTN_FX = 2, BTN_SEL = 3, BTN_ENV = 4, B
        BTN_GLO = 7, BTN_HOME = 8, BTN_SAVE = 9, BTN_ARP = 10, BTN_SEQ = 11, BTN_PLAY = 12, BTN_REC = 13 };
 enum { ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB3 = 4, ENC_KNOB4 = 5, ENC_PRESETS = 6 };
 #define KEY_LED(k) (14u + (k))
+#ifndef GRIMM_BLE
+#define GRIMM_BLE 0                             /* BLE-MIDI (src/ble/, Optimist's stack): tools/build.py --ble (the FM-1 only) */
+#endif
 #include <stdint.h>
 static volatile uint32_t isr_in_audio;          /* the timer ISR's fm1_ticks inside the audio ISR, summed (GR!MM V2:
                                                  * the CPU meter's SCAN; on a computer 0) */
@@ -116,6 +119,10 @@ hl_boot_t hl_boot __attribute__((section(".noinit")));   /* (not static: the com
 #define MIDI_RT_SOON() (ro_r != ro_w && (int32_t)(ro_t[ro_r % RTQ] - fm1_ticks()) < 28800)   /* (usb.c: a clock message
                                                  * out due within 1.2 ms: EP1 left free for it, rt_flush) */
 static uint32_t rt_now(void) { return fm1_ticks(); }
+#if GRIMM_BLE
+static void ble_out(uint32_t pkt);
+#define APP_MIDI_OUT ble_out                    /* BLE-MIDI out, from the audio ISR (usb.c midi_out_event) */
+#endif
 #include "usb.c"
 #if FELUCCA_UART
 #include "midi_uart.c"
@@ -161,7 +168,13 @@ static void rt_flush(void)
 static const uint32_t SAVE_SECT[SAVE_NSECT] = {0xDF000u, 0xE5000u, 0xE6000u, 0xE7000u, 0xFD000u, 0xFE000u};
 #define FL_RANGE_OK(off, n) (FL_IN(off, n, FL_OTA_LO, FL_OTA_HI) || FL_IN(off, n, SETTINGS_AT, SETTINGS_AT + 0x1000u) || \
                              FL_IN(off, n, SAMPLE_AREA, SAMPLE_AREA + SAMPLE_AREA_LEN) || FL_IN(off, n, 0xDF000u, 0xE0000u) || \
-                             FL_IN(off, n, 0xE5000u, 0xE8000u) || FL_IN(off, n, 0xFD000u, 0xFF000u))
+                             FL_IN(off, n, 0xE5000u, 0xE8000u) || FL_IN(off, n, 0xFD000u, 0xFF000u) || BLE_VM_OK(off, n))
+#if GRIMM_BLE                                   /* stock's VM sector (the radio's trims): written only by ble_vm_keep (erased */
+#define BLE_VM_AT 0x000E8000u                   /* first only when it holds GR!MM's own earlier copy) */
+#define BLE_VM_OK(off, n) FL_IN(off, n, BLE_VM_AT, BLE_VM_AT + 0x1000u)
+#else
+#define BLE_VM_OK(off, n) 0
+#endif
 #include "fm1_flash.h"
 static uint8_t flash_ok;
 static int st_read(uint32_t off, void *dst, uint32_t n)
@@ -225,6 +238,54 @@ static void ota_commit(const uint8_t *parm)
     fm1_enter_update(parm);
 }
 #include "recovery.c"
+
+#if GRIMM_BLE
+/* ---- BLE-MIDI: Optimist's stack (src/ble/, w0ts/optimist) with fm1-dock's glue (src/ble/hx.c), linked as ble.o,
+ * after fm1-dock's dock.c. OFF until ble_set(1): before it none of its code runs and no BLE / RF register is
+ * written. BLE in goes into the USB-MIDI ring (TIMER5, as USB's own), so midi_get has it; midi_send goes to BLE too */
+#include "ble/hx.h"
+extern const hx_api_t hx_head;
+static volatile uint8_t ble_live;               /* its TIMER5 and audio ISR parts may run */
+static uint8_t ble_kept[HX_KEPT];               /* its address and the radio's trims copy (not saved yet: a new
+                                                 * address each boot) */
+static int ble_flash_read(uint32_t off, void *dst, uint32_t n) { return flash_ok ? st_read(off, dst, n) : -1; }
+static int ble_midi_in(uint32_t pkt)            /* TIMER5: the USB-MIDI ring's other producer, in the same ISR */
+{
+    uint32_t st = pkt >> 8 & 0xFFu;
+    if ((pkt & 0xFu) == 0xFu && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) {
+        rt_in(st, RT_USB);                      /* (clock, transport: as USB's, CLOCK USB follows them) */
+        return 1;
+    }
+    if (mi_w - mi_r >= MQ)
+        return 0;
+    midi_in_q[mi_w % MQ] = pkt;
+    RING_PUBLISH();
+    mi_w++;
+    return 1;
+}
+static const hx_host_t ble_host = {ble_flash_read, ble_midi_in};
+static void ble_out(uint32_t pkt) { if (ble_live) hx_head.out(pkt); }
+static void ble_poll(void) { if (ble_live) hx_head.poll(); }
+static uint32_t ble_state(void) { return ble_live ? hx_head.state() : HX_S_OFF; }
+#include "ble_keep.c"                           /* ble_vm_keep: the radio's trims at 0xE8000, where the stack finds them */
+static void ble_set(uint32_t on)                /* the main loop */
+{
+    if (ble_live) {
+        hx_head.set(on);
+        return;
+    }
+    if (!on)
+        return;
+    ble_vm_keep();
+    fm1_irq_off();                              /* (the radio's start-up: before any BLE interrupt) */
+    fm1_guard_unlock_top();                     /* it attaches its two vectors: the write limit over the vector table
+                                                 * (hal/fm1_guard.h) faulted fm1-dock's on an FM-1 */
+    hx_head.init(&ble_host, ble_kept, 1, 0);
+    fm1_guard_lock_top();
+    ble_live = 1;
+    fm1_irq_on();
+}
+#endif
 
 /* ---- settings: [magic][length][crc32] then the bytes; settings_save erases the sector (~50 ms with
  * the interrupts off: the sound drops out), so save when nothing plays, not on every knob step */
@@ -400,8 +461,12 @@ void fm1_timer5_irq(void)
         return;
     }
     rt_flush();
-    if (owed & 1u)
+    if (owed & 1u) {
         usb_poll();
+#if GRIMM_BLE
+        ble_poll();                             /* BLE in -> the USB-MIDI ring (src/ble/hx.c hx_poll) */
+#endif
+    }
     if (sub % 5u == 3u)
         uart_midi_poll();                       /* (2 kHz: ~7 bytes a call at most, 31250 baud) */
     owed = 0;
@@ -551,6 +616,12 @@ void fm1_cstart(void)
     for (d = _pool_start; d < _pool_end; d++) *d = 0;
     for (s = _data_load, d = _data_start; d < _data_end; s++, d++) *d = *s;
     for (s = _rt_load, d = _rt_start; d < _rt_end; s++, d++) *d = *s;
+#if GRIMM_BLE
+    {
+        extern uint32_t _ble_bss_start[], _ble_bss_end[];
+        for (d = _ble_bss_start; d < _ble_bss_end; d++) *d = 0;   /* (app.ld: ble.o's .bss, in RAMTEXT) */
+    }
+#endif
     fm1_mailbox_clear();
     fm1_guard_enable(FM1_GUARD_STACK | FM1_GUARD_WRITE | FM1_GUARD_BUS | FM1_GUARD_PC);
     fm1_boot.p3_rst = (uint8_t)p3;

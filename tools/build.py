@@ -157,17 +157,25 @@ def build_loader():
 
 # ---- app
 
-def build_app():
+def build_app(ble=False):
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or DEFAULT_VERSION}"',
              *(f"-D{d}" for d in DEFINES)]
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
             ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
             ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
-            ("cc", *flags, "-c", FW / "src" / "grimm.c", "-o", OUT / "grimm.o")]
+            ("cc", *flags, *(["-DGRIMM_BLE=1"] if ble else []), "-c", FW / "src" / "grimm.c", "-o", OUT / "grimm.o")]
+    objs = [OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o", OUT / "grimm.o"]
+    if ble:                         # BLE-MIDI: Optimist's stack, a unit of its own so app.ld can put its .bss in RAMTEXT.
+                                    # BLE_DIAG=1: the BLE report over USB (editor command 26, tools/fm1_ble_diag.py; ~2.3 KiB
+                                    # of RAM). BLE_HW_IRQ_PRIO=4: above the audio (3), with TIMER5 (4): the driver's default 2
+                                    # (stock's) waits for an audio half, and GR!MM's take up to ~4.6 ms. BLE_CONN_TIMEOUT=200:
+                                    # a 2 s supervision timeout (stock's 1 s) rides out the runs of missed events
+        cmds.append(("cc", *CFLAGS, "-Ifirmware/hal", "-DBLE_DIAG=1", "-DBLE_HW_IRQ_PRIO=4u", "-DBLE_CONN_TIMEOUT=200u",
+                     "-c", FW / "src" / "ble" / "hx.c", "-o", OUT / "ble.o"))
+        objs.append(OUT / "ble.o")
     tc_all(*cmds)
     elf = OUT / "grimm.elf"
-    tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o",
-       OUT / "fm1_isr.o", OUT / "grimm.o", "-o", elf)
+    tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", FW / "app.ld", *objs, "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin"):
         (OUT / sect).unlink(missing_ok=True)
     *_, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
@@ -226,6 +234,8 @@ def check(img, syms, dis, rt):
     ram = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - 0x01C20000
     notes.append(f"image {len(img)} B of {APP_SLOT}; RAM .data+.bss {ram} B of 98304; pool {pool} B of 344064")
+    if sym("_ble_bss_end") > sym("_ble_bss_start"):
+        notes.append(f"BLE .bss {sym('_ble_bss_end') - sym('_ble_bss_start')} B in RAMTEXT, up to {sym('_ble_bss_end'):#x} of 0x1c06000")
     if ram > 96 * 1024:
         errors.append(f"RAM .data+.bss {ram} B > 96 KiB")
     if 96 * 1024 - ram < RAM_FREE_MIN:      # (V2) never filled to the brim: a floor, whatever comes to need it
@@ -289,6 +299,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y", help="release build: the version string X.Y (identity FM-1_966 as always)")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
+    ap.add_argument("--ble", action="store_true", help="link the BLE-MIDI stack (src/ble/; off at run time until switched on)")
     ap.add_argument("--define", action="append", default=[], metavar="NAME",
                     help="a test build: -DNAME for the app (e.g. GRIMM_TRS_TEST); give it its own --name")
     ap.add_argument("--name", metavar="FILE.fwsc", help="the package's file name (default grimm.fwsc)")
@@ -307,7 +318,7 @@ def main():
             print(f"warning: SDK {rel} differs from AC79NN_SDK_V1.2.1; the package will not match the reference")
     OUT.mkdir(parents=True, exist_ok=True)
     ota = build_loader()
-    img, syms, dis, rt = build_app()
+    img, syms, dis, rt = build_app(a.ble)
     errors, notes = check(img, syms, dis, rt)
     hal_err = mmio_check()
     errors += hal_err

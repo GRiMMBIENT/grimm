@@ -67,7 +67,12 @@ DRAW = [f for f in funcs if re.search(r"draw|^pic_", f)]
 RAMT = [f for f in funcs if f.startswith(("rt_flash", "fl_", "spi_", "flash_")) and not calls[f]]
 TARGETS = {"app_audio": ENG, "voice_begin": BEG, "app_main": TXT, "ui_region": DRAW,
            "fl_write": RAMT, "st_read": RAMT, "st_write": RAMT, "ota_erase": RAMT, "sample_flash_erase": RAMT,
-           "settings_save": RAMT}
+           "settings_save": RAMT,
+           # (--ble: hx_head's calls, platform.c ble_poll / ble_out; the host's, hx.c; the VM's reader, ble_vm.c;
+           # the RF burst run from RAM, fm1_ble_rf.h)
+           "fm1_timer5_irq": ["hx_poll"], "midi_send": ["hx_out"], "hx_poll": ["ble_midi_in"],
+           "hx_init": ["vm_rd"], "vm_data": ["vm_rd"], "vm_rd": ["ble_flash_read"],
+           "fm1_ble_rf_exec": ["fm1_rf_burst_run"]}
 unknown = [f for f in funcs if ind[f] and f not in TARGETS and f != "fm1_cstart"]
 memo, path = {}, {}
 

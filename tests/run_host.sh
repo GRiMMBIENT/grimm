@@ -5,6 +5,8 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/host
+cc -Wall -Wno-unused-function -Ifirmware/src/ble -o build/host/ble_keep_test tests/ble_keep_test.c   # (BLE's trims, ble_keep.c)
+build/host/ble_keep_test
 cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-2.0}\"" -Ifirmware/src -Ifirmware/gen -o build/host/grimm firmware/src/grimm.c
 GRIMM_MASTER=1022 GRIMM_RAW_OUT=build/host/grimm.raw build/host/grimm build/host/grimm   # (V2: MASTER as web/test_web.mjs turns it: 1022, Q12 4080)
 python3 - <<'PY'
