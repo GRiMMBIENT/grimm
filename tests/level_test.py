@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM V2's gain staging in host mode (tests/host.c; GRIMM_MASTER: the MASTER knob, 0 .. 1023):
+"""GR!MM V2's gain staging in host mode (firmware/src/host.c; GRIMM_MASTER: the MASTER knob, 0 .. 1023):
   - every factory sound at LEVEL 100 (T1, the default FX): a note, a chord (chord mode on), two chord keys: no sample
     reaches full scale (the limiter, just under it) with MASTER all the way up, at 3/4 or low
   - four tracks together (four mixes, chord mode off and on, DLY sends up): the same

@@ -438,6 +438,33 @@ static void stress_fsamples(void)               /* x_editor: power-on's factory 
         while (smp[k].state == SS_SCAN) smp_scan(k);
     if (!smp[0].ready || strcmp(smp[0].name, "URCHIN") || !smp[3].ready || strcmp(smp[3].name, "M-SOFT"))
         stress_fail("x_editor: the factory samples do not check out", 0);
+    {                                           /* (V2.0.2) smp_fix: slot 1 junk, 2 a user's good sample, 3 blank, 4 a wrong CRC */
+        static uint8_t user[SMP_SLOT_SIZE];
+        uint32_t r = 12345u;
+        memset(fake_flash, 0xFF, sizeof fake_flash);
+        for (k = 0; k < SMP_SLOT_SIZE; k++) r = r * 1664525u + 1013904223u, fake_flash[k] = (uint8_t)(r >> 24);
+        memcpy(fake_flash + SMP_SLOT_SIZE + SMP_DATA_OFF, SMP_FACT_DATA[2], SMP_FACT_LEN[2]);
+        memcpy(fake_flash + SMP_SLOT_SIZE, SMP_FACT_HDR[2], SMP_HDR_LEN);
+        memcpy(fake_flash + SMP_SLOT_SIZE + 8, "USERTEST", 8);
+        memcpy(user, fake_flash + SMP_SLOT_SIZE, SMP_SLOT_SIZE);
+        memcpy(fake_flash + 3u * SMP_SLOT_SIZE + SMP_DATA_OFF, SMP_FACT_DATA[3], SMP_FACT_LEN[3]);
+        memcpy(fake_flash + 3u * SMP_SLOT_SIZE, SMP_FACT_HDR[3], SMP_HDR_LEN);
+        fake_flash[3u * SMP_SLOT_SIZE + SMP_DATA_OFF + 100u] ^= 0x55;
+        for (k = 0; k < SMP_SLOTS; k++) {
+            smp_look(k);
+            while (smp[k].state == SS_SCAN) smp_scan(k);
+        }
+        if (smp[0].ready || !smp[1].ready || smp[2].ready || smp[3].ready)
+            stress_fail("x_editor: smp_fix's start is not junk, a good sample, blank, a bad CRC (ready)", 0);
+        if ((m = smp_fix()) != 13u) stress_fail("x_editor: smp_fix did not write the three slots that do not play (mask)", m);
+        if (memcmp(fake_flash + SMP_SLOT_SIZE, user, SMP_SLOT_SIZE)) stress_fail("x_editor: smp_fix touched a good sample", 0);
+        for (k = 0; k < SMP_SLOTS; k++)
+            while (smp[k].state == SS_SCAN) smp_scan(k);
+        if (!smp[0].ready || strcmp(smp[0].name, "URCHIN") || !smp[1].ready || strcmp(smp[1].name, "USERTEST") ||
+            !smp[2].ready || strcmp(smp[2].name, "NIKOLAI") || !smp[3].ready || strcmp(smp[3].name, "M-SOFT"))
+            stress_fail("x_editor: smp_fix's slots do not check out", 0);
+        if ((m = smp_fix()) != 0u) stress_fail("x_editor: smp_fix wrote where every slot plays (mask)", m);
+    }
     memcpy(fake_flash, keep, sizeof keep);      /* (back as it was, checked and indexed again) */
     for (k = 0; k < SMP_SLOTS; k++) {
         smp_look(k);

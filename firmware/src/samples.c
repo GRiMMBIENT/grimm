@@ -28,8 +28,10 @@
  *   (the flash stops the audio while it writes: notes, a release, DELAY's or SPACE's tail), 7 no flash.
  * pack7: groups of up to 7 bytes, each after one byte of their top bits (bit j = bit 7 of byte j), as Felucca's.
  * Factory samples (tools/gen_samples.py: the four of assets/samples/, as an upload makes them): at power-on each slot
- * that is erased (every byte 0xFF: it holds nothing, not even another firmware's data) gets its own; a slot that
- * holds anything is never touched there. RESTORE (SYSTEM 2's SAMPLES, the editor's FACTORY) writes all four. */
+ * that is erased (every byte 0xFF: it holds nothing) gets its own. (V2.0.2) Once per boot, when the slots' checks are
+ * done and nothing sounds, each slot that still does not play (another firmware's data, a broken or unfinished upload)
+ * gets its own too (smp_fix); a slot that plays is never touched. RESTORE (SYSTEM 2's SAMPLES, the editor's FACTORY)
+ * writes all four. */
 #include "grimm_samples.h"
 
 #define SMP_SLOTS 4u
@@ -265,6 +267,23 @@ static uint32_t smp_erased(void)                /* power-on: the slots that hold
     return m;
 }
 
+/* (V2.0.2) once per boot, the slots' checks done and nothing sounding: the factory sample into every slot that does not
+ * play (no good header, or the data's CRC wrong). A slot that plays is not touched. A write that fails is not tried
+ * again (this runs once). smp_say tells the main loop: the slots written (bit k), the ones that failed (bit 8 + k) */
+static uint32_t smp_say;
+static uint32_t smp_fix(void)                   /* -> the slots written | failed << 8 */
+{
+    uint32_t k, ok = 0, bad = 0;
+    if (!sample_flash())
+        return 0;
+    for (k = 0; k < SMP_SLOTS; k++)
+        if (!smp[k].ready) {
+            if (smp_factory(k)) bad |= 1u << k;
+            else ok |= 1u << k;
+        }
+    return ok | bad << 8;
+}
+
 /* one frame (7-bit bytes after F0, the head included); silent: nothing sounds (the flash may stop the audio) */
 static void smp_frame(const uint8_t *f, uint32_t n, int silent)
 {
@@ -383,7 +402,7 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent);   /* (editor.c: t
  * nothing sounds */
 static void samples_poll(int silent)
 {
-    static uint8_t booted;
+    static uint8_t booted, fixed;
     const uint8_t *f;
     uint32_t n, k;
     if (!booted) {                              /* the slots as the flash holds them */
@@ -400,4 +419,10 @@ static void samples_poll(int silent)
             smp_scan(k);
             break;                              /* one slot a pass */
         }
+    if (!fixed && silent && up_slot < 0) {      /* (V2.0.2) every slot checked, none being uploaded: once */
+        for (k = 0; k < SMP_SLOTS && smp[k].state != SS_SCAN; k++)
+            ;
+        if (k == SMP_SLOTS)
+            fixed = 1, smp_say = smp_fix();
+    }
 }

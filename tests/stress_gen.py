@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""The stress test's script (tests/stress.sh): host.c's script lines, and the times tests/stress_check.c checks that
+"""The stress test's script (tests/stress.sh): host.c's script lines, and the times firmware/src/stress_check.c checks that
 everything let go has stopped. Seven rounds: every source on every track (round r: track t plays source (r + t) mod 7),
 each track's chord mode, CHORD TYPE, VOICING and LATCH at random, SCALE off or set; then a burst of playing: white and
 black keys fast, held and let go, chords of keys, MIDI notes in (doubled note-ons too), the lowest and the highest

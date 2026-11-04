@@ -51,7 +51,7 @@ GR!MM has **four tracks (T1–T4)**. Each track plays one sound, has its own seq
 
 **Undo:** hold **EDIT** and press **OCT−** to undo the last edit, **OCT+** to redo it.
 
-**At the first start** after installing, GR!MM writes its four factory samples into any sample slot that is still empty (the boot screen says `INSTALLING SAMPLES` for a few seconds). Slots that already hold something are never touched.
+**At the first start** after installing, GR!MM writes its four factory samples into any sample slot that is still empty (the boot screen says `INSTALLING SAMPLES` for a few seconds). A few seconds later it does the same for any slot that holds something that cannot play, such as data left by another firmware or an upload that was cut short (the header says `SAMPLES RESTORED: 1 2`). A slot with a working sample is never touched.
 
 ---
 

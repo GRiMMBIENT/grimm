@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # GR!MM changes (file names): Copyright (C) 2026 GR!MM
-# Run firmware/src/grimm.c on this computer (tests/host.c): build/host/grimm.wav and the screens as PNG.
+# Run firmware/src/grimm.c on this computer (firmware/src/host.c): build/host/grimm.wav and the screens as PNG.
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/host
@@ -17,7 +17,7 @@ for p in sorted(Path("build/host").glob("grimm-*.ppm")):
     p.unlink()
     print("screen ->", p.with_suffix(".png"))
 PY
-# saves across versions (tests/compat.c): the project GR!MM 1.0 saved (tests/data/v1.0-saves.bin) loads as 1.0 loaded it
+# saves across versions (firmware/src/compat.c): the project GR!MM 1.0 saved (tests/data/v1.0-saves.bin) loads as 1.0 loaded it
 mkdir -p build/compat
 GRIMM_SAVE_IN=tests/data/v1.0-saves.bin GRIMM_STATE_OUT=build/compat/v1.0-state.txt build/host/grimm build/compat/run \
     tests/data/compat.txt > /dev/null
@@ -62,3 +62,6 @@ python3 tests/chord_test.py build/host/grimm
 # GR!MM V2.0 rc11: no flash step (autosave, the settings' save) while a computer reads the USB audio: it stopped the key scan,
 # the LEDs and the stream ~50 ms (tests/rc11_test.py)
 python3 tests/rc11_test.py build/host/grimm
+# GR!MM V2.0.2: the sample slots after another firmware or a cut upload: any slot that does not play gets its factory
+# sample once the boot checks are done, one that plays is never touched, the header says which (tests/samplefix_test.py)
+python3 tests/samplefix_test.py build/host/grimm

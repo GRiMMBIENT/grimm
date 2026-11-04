@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 GR!MM
 // The browser build against host mode: runs web/dist/grimm.wasm as web/worklet.js does (Asyncify), one millisecond at
-// a time, with tests/host.c's script, and compares with what tests/run_host.sh made:
+// a time, with firmware/src/host.c's script, and compares with what tests/run_host.sh made:
 //   - the sound, sample for sample (GR!MM V2: the app applies MASTER, fm1_master: tests/run_host.sh renders at the
 //     knob's 1022, as here; its 24-bit words, build/host/grimm.raw, rounded as the page's floats are here);
 //   - the screen at 2500, 3500, 6000 and 15500 ms, pixel for pixel (build/host/grimm-*.png), all but the CPU row: it shows the
@@ -50,7 +50,7 @@ function run() {                                   // as worklet.js run()
   if (ex.asyncify_get_state() === 1) ex.asyncify_stop_unwind();
 }
 
-// tests/host.c SCRIPT0: [ms, what, ...]
+// firmware/src/host.c SCRIPT0: [ms, what, ...]
 const BTN_FX = 2, BTN_EDIT = 6, BTN_HOME = 8, ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB3 = 4,
       ENC_KNOB4 = 5;
 const CHORD1 = 1 << 7 | 1 << 11 | 1 << 14, CHORD2 = 1 << 2 | 1 << 5 | 1 << 9;

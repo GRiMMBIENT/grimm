@@ -63,9 +63,9 @@ static void rt_out(uint32_t st, uint32_t due)   /* audio ISR: a realtime byte ou
 #define OUT_FS (32767 << 7)                     /* (V2) the app's output words: the DAC's 24 bits, Q15 << 7 (-6 dBFS ceiling) */
 static void out_usb16(const int32_t *o, int32_t *u, uint32_t n);   /* (grimm.c: those words as 16 bit, rounded: USB) */
 #if defined GRIMM_WEB
-#include "../../web/fm1_web.c"                 /* in a browser: a fake FM-1 (web/fm1_web.c) */
+#include "fm1_web.c"                 /* in a browser: a fake FM-1 (firmware/src/fm1_web.c) */
 #elif defined DINGHY_HOST
-#include "../../tests/host.c"                  /* on a computer: a fake FM-1 (tests/host.c) */
+#include "host.c"                  /* on a computer: a fake FM-1 (firmware/src/host.c) */
 #else
 #include <stdint.h>
 #include "fm1_time.h"

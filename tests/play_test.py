@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM V2's playing additions in host mode (tests/host.c):
+"""GR!MM V2's playing additions in host mode (firmware/src/host.c):
   - VELOCITY (SYSTEM 3, KNOB 2): ON, a MIDI note's volume from how hard; OFF (as before): the same at any velocity;
     the keys at full either way; the setting loaded from the settings (byte 169's bit 1)
   - PHASE's LINE 2 page (RING, NOISE) and GLIDE (SOURCE, KNOB 4): off, as before; on, at work; saved, loaded; 1.0: off

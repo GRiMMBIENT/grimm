@@ -5,7 +5,7 @@
 5 minutes each (the tempo shown, no drift: 4 ticks a pulse, exactly), START / STOP / CONTINUE, the clock lost (the
 FM-1's own tempo, playing on), the other source's clock and the tempo knobs ignored, the clock out (CLOCK INT+OUT:
 evenly spaced, START and STOP), INT ignoring it all, and MIDI CHANNEL's CH n > SEL. Each a script for build/host/grimm
-(tests/host.c: "clock", "trs", "probe"); prints a line a check, exit 1 on a failure.
+(firmware/src/host.c: "clock", "trs", "probe"); prints a line a check, exit 1 on a failure.
   python3 tests/clock_test.py [build/host/grimm]"""
 import os
 import re

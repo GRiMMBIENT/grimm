@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM V2.0 rc11's fix for the flicker and the hole in the USB recording (host mode, tests/host.c). A flash step (an
+"""GR!MM V2.0 rc11's fix for the flicker and the hole in the USB recording (host mode, firmware/src/host.c). A flash step (an
 autosave, the settings' save) stops the key scan, the LEDs and the USB audio for ~50 ms: while a computer reads the USB
 audio (host mode: GRIMM_USB_REC=FROM,TO) they wait for the hands to rest a minute, not 2.5 s (the settings' 2 s). Not reading:
 as before. The reading ends: they go at once. Nothing is lost: it is saved, later.

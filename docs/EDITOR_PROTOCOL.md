@@ -285,9 +285,10 @@ or CRC, 6 something sounds, 7 no flash. Before step 26b2, INFO came back cut sho
 names (and overran a buffer on the FM-1).
 
 The factory samples (step 26c, `tools/gen_samples.py` from `assets/samples/`, CC0 1.0): URCHIN, LEAVE, NIKOLAI,
-M-SOFT, as an upload makes them (root C4). At power-on a slot whose 72 KiB are all erased (0xFF) gets its own; a slot
-that holds anything is never touched there. FACTORY, or SYSTEM 2's SAMPLES: RESTORE and OCT+ on the FM-1, write all
-four.
+M-SOFT, as an upload makes them (root C4). At power-on a slot whose 72 KiB are all erased (0xFF) gets its own; (V2.0.2)
+once the slots have been checked and nothing sounds, so does every slot that still does not play (state 0: no good
+header, or the data's CRC wrong), once per boot. A slot that plays is never touched. FACTORY, or SYSTEM 2's SAMPLES:
+RESTORE and OCT+ on the FM-1, write all four.
 
 ## A backup
 

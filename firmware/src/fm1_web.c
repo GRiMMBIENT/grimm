@@ -4,7 +4,7 @@
  * the lights and the saved bytes read back through exports) follows Felucca's browser build, web/emu/felucca_web.c
  * of hugelton/Felucca (Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments, GPL-3.0), which
  * follows X0X's, web/emu/x0x_web.c of charlesvestal/fm1-x0x (GPL-3.0). */
-/* GR!MM in a browser: a fake FM-1, as tests/host.c is one for a computer. platform.c includes this file instead of
+/* GR!MM in a browser: a fake FM-1, as firmware/src/host.c is one for a computer. platform.c includes this file instead of
  * the hardware when GRIMM_WEB is set; the app (firmware/src/grimm.c) runs unchanged on it.
  *
  *   web/build_web.sh   ->  web/dist/{index.html, panel.js, worklet.js, grimm.wasm}
