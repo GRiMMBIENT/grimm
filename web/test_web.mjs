@@ -226,7 +226,21 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
       check(sameSettings(sv, s5) && v5.velocity === 1 && v5.latch === 1 && settingsOf(s4).velocity === 0,
             "editor: SETTINGS: VELOCITY ON written beside LATCH, read back");
     }
-    await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0, velocity: 0 }), info.fmt);
+    {                                                        // (V3.0: CLICK, bit 2 of the same byte: kept, and the editor's own LATCH / VELOCITY writes leave it)
+      const sc = Uint8Array.from(s4);
+      sc[SET_V2] |= 4;
+      await cl.put(OBJ.SET, sc, info.fmt);
+      const s6 = await cl.get(OBJ.SET, info.setSize);
+      const sw = withSettings(s6, { mch: 0, clk: 0, latch: 0, velocity: 1 });
+      await cl.put(OBJ.SET, sw, info.fmt);
+      const s7 = await cl.get(OBJ.SET, info.setSize), bad = Uint8Array.from(s4);
+      bad[SET_V2] |= 8;
+      let rc = -1;
+      try { await cl.put(OBJ.SET, bad, info.fmt); } catch (e) { rc = e.rc; }
+      check(s6[SET_V2] === 5 && s7[SET_V2] === 6 && rc === 2 && (await cl.get(OBJ.SET, info.setSize))[SET_V2] === 6,
+            `editor: SETTINGS: CLICK ON (bit 2) written and read back; the editor's LATCH / VELOCITY write leaves it on; a byte past bit 2 is refused (rc ${rc})`);
+    }
+    await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0, velocity: 0 }), info.fmt);   // (all off: CLICK too, as before)
   }
   {                                                          // GR!MM V2: FX (25): read, set live (MASTER, DRIVE, T2's filter)
     const f0 = await cl.fx();
@@ -534,6 +548,52 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
         `song: on GR!MM 2.0.2 READ and SEND say "NEEDS GR!MM 3.0" and send nothing (${sent.length} frames sent)`);
 }
 
+// CLICK (GR!MM 3.0, the metronome): SEQ held + F#3 on the virtual FM-1 (the firmware's own code): the setting, the key's light, the click in the sound
+{
+  const vf = await VirtualFM1.create(readFileSync("web/dist/grimm.wasm")), cl = new Client(vf);   // (a fresh one: the patterns empty, as at power-on)
+  vf.warmUp();
+  const info = await cl.info();
+  const peak = (ms) => {
+    let pk = 0;
+    for (let i = 0; i < ms; i++) {
+      vf.run();
+      const n = vf.ex.web_avail();
+      if (n) {
+        vf.ex.web_want_frames(n), vf.ex.web_take();
+        const l = new Float32Array(vf.ex.memory.buffer, vf.ex.web_out_l(), n);
+        for (let k = 0; k < n; k++) pk = Math.max(pk, Math.abs(l[k]));
+        vf.ex.web_want_frames(0);
+      }
+    }
+    return pk;
+  };
+  const bit = async () => (await cl.get(OBJ.SET, info.setSize))[SET_V2] >> 2 & 1;
+  const combo = () => { vf.ex.web_buttons(1 << 11), vf.step(80), vf.ex.web_keys(2), vf.step(80), vf.ex.web_keys(0), vf.step(80); };
+  const was = await bit();
+  combo();
+  const litHeld = vf.ex.web_lit_keys() >>> 1 & 1, on = await bit();
+  vf.ex.web_buttons(0), vf.step(80);
+  const litFree = vf.ex.web_lit_keys() >>> 1 & 1;
+  check(was === 0 && on === 1 && litHeld === 1 && litFree === 0, `click: SEQ + F#3: CLICK on (the setting, bit 2 of the settings' byte 169), F#3 lit while SEQ is held (${litHeld}), dark after (${litFree})`);
+  vf.ex.web_master(760);                                    // (the virtual FM-1 is muted: MASTER up to hear it)
+  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0);
+  const loud = peak(1200);
+  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0);
+  vf.step(300);
+  vf.ex.web_master(0);
+  check(loud > 0.005 && loud < 0.5, `click: PLAY with CLICK on, empty patterns: the click sounds in the browser build (peak ${loud.toFixed(3)})`);
+  const litBefore = vf.ex.web_lit_buttons() >>> BTN_PLAY & 1;
+  combo(); vf.ex.web_buttons(0), vf.step(80);
+  vf.ex.web_master(760);
+  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0);
+  const litNow = vf.ex.web_lit_buttons() >>> BTN_PLAY & 1;
+  const quiet = peak(1200);
+  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0);
+  vf.step(300);
+  vf.ex.web_master(0);
+  check((await bit()) === 0 && quiet < 0.0001, `click: SEQ + F#3 again: CLICK off, PLAY is silent (peak ${quiet.toFixed(5)}, PLAY lit before ${litBefore}, after ${litNow})`);
+}
+
 // STEP RECORD (the SEQUENCER's REC): the record logic of editor_core.js
 {
   const table = chordTable(), want = readFileSync("tests/data/chord_table.sha256", "utf8").trim();
@@ -658,9 +718,9 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
         /choir recordings: VocalSet \(Wilkins et al\., 2018\), CC BY 4\.0/.test(lic) && lic.includes("https://creativecommons.org/licenses/by/4.0/") &&
         ["Press Start 2P", "Terminus", "CC0 1.0", "Emscripten", "Dinghy", "Felucca", "SLOOP"].every((c) => html.includes(c)),
         "editor page and LICENSING.md: the VocalSet credit (CC BY 4.0, its link) added, the old credits still there");
-  check(info.firmware === "3.0-dev" && meta.version === "3.0-dev" && info.factory === 44 && meta.factory.length === 44 && /EDITOR 2\.0/.test(html) &&
+  check(info.firmware === "3.0-dev" && meta.version === "3.0-dev" && info.factory === 44 && meta.factory.length === 44 && /EDITOR 3\.0/.test(html) && !/EDITOR 2\.0/.test(html) &&
         /"FIRMWARE", "GR!MM " \+ i\.firmware/.test(js) && /\["FACTORY SOUNDS", i\.factory\]/.test(js),
-        `editor page: CONNECT shows GR!MM ${info.firmware} and ${info.factory} factory sounds; the header EDITOR 2.0`);
+        `editor page: CONNECT shows GR!MM ${info.firmware} and ${info.factory} factory sounds; the header EDITOR 3.0`);
   const names = meta.factory.map((x) => x.name), choirs = ["GREGORIAN", "PLAINCHANT", "CATHEDRAL CHOIR", "NUNS"];
   const srcs = meta.factory.map((x) => meta.engines[parseSound(Uint8Array.from(x.rec), meta).eng].name);
   check(names.length === 44 && new Set(names).size === 44 && choirs.every((c) => names.some((n) => n.toUpperCase() === c)) &&

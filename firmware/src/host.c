@@ -47,7 +47,11 @@ static uint32_t fm1_ticks(void)                 /* 24 MHz, as the FM-1's TIMER4:
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)ts.tv_sec * 24000000u + (uint32_t)ts.tv_nsec / 1000u * 24u;
 }
-static void fm1_led_key(uint32_t id, int on) { (void)id; (void)on; }
+static uint32_t host_led_keys;                  /* (V3.0, tests/click_test.py: the keys' LEDs lit, bit k = key k, as the browser build's web_led_key) */
+static void fm1_led_key(uint32_t id, int on)
+{
+    if (id >= 14u) host_led_keys = on ? host_led_keys | 1u << (id - 14u) : host_led_keys & ~(1u << (id - 14u));
+}
 static void fm1_led_glow(uint32_t id, int on) { (void)id; (void)on; }
 
 /* the screen: 240 x 240 RGB565, as the ST7789 gets it (gfx.c sends the bytes swapped) */

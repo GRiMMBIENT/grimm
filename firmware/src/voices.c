@@ -305,6 +305,8 @@ static int32_t env_tick(voice_t *v)
 #define VB 256u
 static void ctl_hook(void);                     /* grimm.c: a control block's notes (the main loop's asks, the
                                                  * sequencer), before the voices */
+static uint32_t vr_frame;                    /* audio: the frame of the block the control step being run starts at (click.c: a click starts as a
+                                                 * note does) */
 static uint32_t voices_render(int32_t (*tb)[VB], uint32_t n)
 {
     uint32_t b, i, k, used = 0, envd = 0;
@@ -314,6 +316,7 @@ static uint32_t voices_render(int32_t (*tb)[VB], uint32_t n)
     for (b = 0; b < n; b += CTL, vblock++) {
         wq = (wow_a | wow_b) ? wow_a + (wow_b - wow_a) * (int32_t)b / (int32_t)n : 0;   /* (V2: WOW's bend, a control
                                                  * step's; Q8) */
+        vr_frame = b;
         ctl_hook();
         for (k = 0; k < NV; k++)                /* nothing sounds and nothing is asked for: nothing to do */
             if (vc[k].stage != ST_OFF || vc[k].amp || vc[k].req != vc[k].seen) break;

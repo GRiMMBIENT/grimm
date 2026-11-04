@@ -151,6 +151,7 @@ static int32_t tbuf[NT][VB], dbus[VB], rbus[VB], gbus[VB], vbus[VB];   /* the tr
 static uint32_t xb_used;                        /* audio: bit 0 the DRIVE bus fed this block (a send up, or coming
                                                  * down) */
 #include "master.c"                             /* GR!MM V2: MASTER (a filter on the whole sound), DRIVE (and a limiter) */
+#include "click.c"                              /* GR!MM V3.0: the metronome (SEQ held + F#3), added to the mix before the output stage */
 static volatile uint32_t trk_mute, trk_solo;    /* main loop: GLO held + white keys 1..4, 5..8 (bit t: track t) */
 enum { PF_REV, PF_ECHO, PF_TAPE, PF_BACK, PF_FDOWN, PF_FUP, PF_STUT, NPF };   /* the FX layer's tricks: G3 .. F4 */
 static volatile uint32_t pf_held;               /* main loop: bit PF_: its key held (FX held + it; perform.c) */
@@ -498,6 +499,7 @@ static void app_audio(int32_t *out, uint32_t n)
     master_filter(out, n, MP_END);              /* (V2) MASTER, END: the very last */
     if (lo) q_up(out, 2u * n);
     CS_MARK(CS_MASTER);
+    click_render(out, n);                       /* (V3.0) the metronome, last in the mix: MASTER and the limiter still apply */
     out_stage(out, n);                          /* (V2) the headroom, the MASTER knob, the limiter */
     CS_MARK(CS_MASTER);
 #undef CS_MARK
@@ -1852,7 +1854,7 @@ static void sys_sync(void)
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
     uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
-    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1);   /* (V2: LATCH, VELOCITY) */
+    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1 | (cl_on & 1u) << 2);   /* (V2: LATCH, VELOCITY; V3.0: CLICK) */
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
@@ -1892,11 +1894,11 @@ static void sys_load(void)                      /* the settings at power-on into
     }
     if (set.mch > MCH_MAX) set.mch = 0;
     if (set.clk >= CK_N) set.clk = CK_INT;
-    if (set.latch > 3u) set.latch = 0;
+    if (set.latch > 7u) set.latch = 0;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
     sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
-    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u;
+    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u, cl_on = set.latch >> 2 & 1u;
     sys_sync();
     set_dirty = 0;
     if (!set.ver)                               /* (steps 20..24's; V1.0's are version 1: as they are) */
@@ -2311,6 +2313,13 @@ static void app_main(void)
                     b_used |= 1u << BTN_SEQ;
                     continue;
                 }
+                if (k == BK[0]) {               /* SEQ held + F#3 (V3.0): CLICK on, off (saved: a setting) */
+                    cl_on ^= 1u;
+                    sys_sync();
+                    hd_say(cl_on ? "CLICK ON" : "CLICK OFF");
+                    b_used |= 1u << BTN_SEQ;
+                    continue;
+                }
             }
             if (save_held) {                    /* SAVE held: white keys 1..4 recall A..D, 5..8 save into them */
                 uint32_t w;
@@ -2474,6 +2483,8 @@ static void app_main(void)
         }
         if (b_down >> BTN_SEQ & 1u)             /* (SEQ held: the tools' eight keys lit) */
             for (k = 0; k < 8u; k++) lit |= 1u << WK[k];
+        if (b_down >> BTN_SEQ & 1u)             /* (V3.0: F#3 lit while CLICK is on) */
+            lit |= (cl_on & 1u) << BK[0];
         if (glo_held)                           /* (GLO held: keys 1..4 lit for the tracks muted, 5..8 soloed) */
             for (lit = 0, k = 0; k < 4u; k++) lit |= (trk_mute >> k & 1u) << WK[k] | (trk_solo >> k & 1u) << WK[4u + k];
         if (save_held)                          /* (SAVE held: keys 1..4 lit for the slots used) */

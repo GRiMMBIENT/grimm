@@ -133,4 +133,5 @@ static void host_probe(void)
                                         (unsigned)vc[i].note, voice_latched(i));
     }
     printf("\n");
+    printf("clickstate %u on %u left %u leds %x\n", fm1_ms, cl_on, cl_n, host_led_keys);   /* (V3.0, tests/click_test.py: CLICK on; the frames of a click left; the keys lit) */
 }

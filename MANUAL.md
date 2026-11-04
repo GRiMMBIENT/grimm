@@ -297,6 +297,8 @@ Every track has its own 64-step pattern. All four play together on one tempo.
 |---|---|---|---|---|---|---|---|
 | CLEAR | RANDOM | SHIFT ← | SHIFT → | COPY | PASTE | DOUBLE | MUTATE |
 
+**Metronome: hold SEQ + F#3** switches CLICK on or off (the screen says `CLICK ON` or `CLICK OFF`; F#3 lights while you hold SEQ if CLICK is on). With CLICK on, whenever the sequencer plays (REC on or off) you hear a short click on every beat, and a higher, louder one on beat 1 of the bar. It follows the tempo and an external MIDI clock, and there is no count-in. The click is not a track: it uses none of the six voices, is never recorded into a pattern, and goes to the normal output and the USB audio, under the MASTER knob. CLICK is kept when you switch off.
+
 ---
 
 ## 8. Slots and songs: SAVE, GLO
@@ -470,6 +472,7 @@ Turn **PRESETS** to step through them by category, then your own.
 | SEL | OCT− (sequencer pages) | Clear the step's locks |
 | SEL | OCT+ | The selected track's LATCH on/off |
 | SEQ | white keys F3–F4 | Sequencer tools |
+| SEQ | F#3 | CLICK (metronome) on/off |
 | SEQ | turn SELECT | Pattern length |
 | SAVE | F3–B3 / C4–F4 | Recall / save slots A–D |
 | GLO | F3–B3 / C4–F4 | Mute / solo T1–T4 |

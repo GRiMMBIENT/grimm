@@ -5,6 +5,7 @@
  *   GRIMM_FILL=1          a varied project into RAM (every step's values over their ranges, chord steps, locks, the
  *                         patterns' settings), into slots A..C, and saved (autosave), with two user sounds
  *   GRIMM_SAVE_OUT=file   the save sectors (6 x 4 KiB) into file
+ *   GRIMM_SETTINGS_OUT=file  (V3.0) the settings as last saved (to read in again with GRIMM_SETTINGS_IN)
  *   GRIMM_STATE_OUT=file  what was loaded, as text: each step's values, the packed project, the slots, the settings
  *                         (all but their version, which a newer GR!MM raises; then the bytes it adds) and the sounds
  *                         (hex)
@@ -99,6 +100,9 @@ static void compat_exit(void)                   /* firmware/src/host.c: at the e
     }
     if ((e = getenv("GRIMM_SAVE_OUT")) != 0 && (f = fopen(e, "wb")) != 0)
         fwrite(fake_save, 1, sizeof fake_save, f), fclose(f);
+    if ((e = getenv("GRIMM_SETTINGS_OUT")) != 0 && host_store[0] == 1 && (f = fopen(e, "wb")) != 0)   /* (V3.0, tests/click_test.py:
+                                                 * the settings as last saved, to read in again with GRIMM_SETTINGS_IN) */
+        fwrite(host_store + 4, 1, host_store[1] | (uint32_t)host_store[2] << 8, f), fclose(f);
     if ((e = getenv("GRIMM_STATE_OUT")) != 0 && (f = fopen(e, "w")) != 0) {
         for (t = 0; t < NT; t++) {
             fprintf(f, "track %u steps %d div %d swing %d mode %d\n", t, (int)seq[t].steps, (int)seq[t].div,

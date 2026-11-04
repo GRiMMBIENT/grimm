@@ -164,11 +164,11 @@ def combo():
             return
         for k in tk:
             set_keys(keys & ~(1 << k), rnd.randint(10, 1500))
-    elif b == SEQ:                              # the track's STEPS; the tools (white keys 1..8)
+    elif b == SEQ:                              # the track's STEPS; the tools (white keys 1..8), CLICK (F#3)
         if rnd.random() < 0.4:
             turn(SELECT, rnd.randint(-8, 8), 50)
         for _ in range(rnd.randint(1, 3)):
-            k = rnd.choice(WK)
+            k = rnd.choice(WK + [1])
             set_keys(keys | 1 << k, rnd.randint(20, 120))
             set_keys(keys & ~(1 << k), rnd.randint(20, 120))
     else:                                       # SEL: chord mode; ARP: the arp; HOME: SYSTEM (held 0.7 s); keys

@@ -227,6 +227,7 @@ static int seq_tick(void)                       /* audio: a tick while playing (
 {
     uint32_t t;
     if (song_tick()) return 1;                  /* (a pass's end: the song's next step; the song over: stopped) */
+    click_tick(seq_ticks);                      /* (V3.0: a beat: the metronome, if CLICK is on) */
     if (seq_recall >= 0 && song_rec != 2u && !(seq_ticks % SEQ_BAR)) {   /* a slot recalled: in at the bar, from
                                                  * step 1 (song record: at the pass's end, song.c) */
         uint32_t s = (uint32_t)seq_recall;
