@@ -496,6 +496,19 @@ static void stress_editor(void)                 /* "x_editor" */
         if (st_sxn != 8u || st_sxr[6] != ER_OK || trk[1].drv != 77) stress_fail("x_editor: FX SET not taken (T2 DRIVE)", (uint32_t)trk[1].drv);
         mf_res = was, trk[1].drv = dv;
     }
+    if (!playing) {                             /* (V3.0: the song: a chain written, read back, the old one put back; refused while it plays) */
+        uint8_t was[SONG_PK], now[SONG_PK];
+        pk_song(was);
+        memset(a, 0, SONG_PK);
+        for (i = 0; i < SONG_N; i++) a[i] = (uint8_t)(i % 5u | (i % 16u) << 3);
+        a[16] = 2;
+        if ((rc = st_edput(EO_SONG, a, SONG_PK, st_crc(a, SONG_PK), ED_FMT, 1, 1)) != 0) stress_fail("x_editor: a song not taken (rc)", rc);
+        if (st_get(EO_SONG, now, SONG_PK) || memcmp(now, a, 17u)) stress_fail("x_editor: the song not read back as written", 0);
+        a[16] = 3;
+        if (st_edput(EO_SONG, a, SONG_PK, st_crc(a, SONG_PK), ED_FMT, 1, 1) != ER_BAD) stress_fail("x_editor: a song with MODE 3 taken", 0);
+        if (st_get(EO_SONG, now, SONG_PK) || now[16] != 2u) stress_fail("x_editor: a refused song changed MODE", 0);
+        uk_chain(was), song_mode = was[16];
+    }
     if (st_get(EO_SLOT, a, SLOT_ALL) || memcmp(a, slots[0], SLOT_ALL)) stress_fail("x_editor: slot A not read back", 0);
     if (st_get(EO_SET, a, sizeof set) || memcmp(a, &set, sizeof set)) stress_fail("x_editor: the settings not read back", 0);
     if (st_get(EO_FACT, a, SND_SIZE) || (rc = st_edput(EO_SND + 63u, a, SND_SIZE, st_crc(a, SND_SIZE), ED_FMT, 1, 1)) != 0)
@@ -538,8 +551,8 @@ static uint32_t st_grand(uint32_t n)
 }
 static void stress_garbage(void)                /* "y_garbage" on: a frame of garbage every 47 ms */
 {
-    static const uint32_t OBJ[6] = {EO_SET, EO_SLOT, EO_SLOT + 3u, EO_SND, EO_SND + 63u, EO_FACT};
-    uint32_t k = st_grand(9), o = OBJ[st_grand(6)], i, n;
+    static const uint32_t OBJ[7] = {EO_SET, EO_SLOT, EO_SLOT + 3u, EO_SND, EO_SND + 63u, EO_FACT, EO_SONG};   /* (V3.0: the song) */
+    uint32_t k = st_grand(9), o = OBJ[st_grand(7)], i, n;
     st_fhead(ED_INFO + st_grand(3));
     switch (k) {
     case 0:                                     /* random bytes */

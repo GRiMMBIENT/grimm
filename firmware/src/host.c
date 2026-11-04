@@ -175,10 +175,11 @@ static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)
     for (k = 0; k < n; k++) fake_save[i][off + k] &= s[k];
     return 0;
 }
-#ifdef GRIMM_STRESS                             /* (the stress test: a frame put in host_sx as from USB; the replies) */
-static uint8_t host_sx[640];
+static uint8_t host_sx[640];                    /* a frame put here as from USB (the stress test; V3.0: a script's "sx" line) */
 static uint32_t host_sx_n, host_sx_ready;
+#ifdef GRIMM_STRESS
 static void stress_sysex_out(const uint8_t *p, uint32_t n);
+#endif
 static int sysex_get(const uint8_t **p, uint32_t *n)
 {
     if (!host_sx_ready || !host_sx_n || host_sx[0] != 0x7Du) return 0;
@@ -186,11 +187,17 @@ static int sysex_get(const uint8_t **p, uint32_t *n)
     return 1;
 }
 static void sysex_done(void) { host_sx_ready = 0; }
+#ifdef GRIMM_STRESS
 static int sysex_send(const uint8_t *p, uint32_t n) { stress_sysex_out(p, n); return 0; }
 #else
-static int sysex_get(const uint8_t **p, uint32_t *n) { (void)p; (void)n; return 0; }
-static void sysex_done(void) {}
-static int sysex_send(const uint8_t *p, uint32_t n) { (void)p; (void)n; return 0; }
+static int sysex_send(const uint8_t *p, uint32_t n)   /* (V3.0, tests/song_test.py: a reply as a line of hex bytes) */
+{
+    uint32_t i;
+    printf("%6u ms  sysex out", fm1_ms);
+    for (i = 0; i < n; i++) printf(" %02X", p[i]);
+    printf("\n");
+    return 0;
+}
 #endif
 
 static void app_audio(int32_t *out, uint32_t n);
@@ -209,7 +216,9 @@ static void app_main(void);
  * T for MS ms, each at its exact time; BPMx10 0: none from T), "T probe" (the clock's and the sequencer's state out:
  * firmware/src/probe.c) */
 typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps, kind, src; uint32_t a, b; } host_ev_t;
-enum { HK_PLAIN, HK_CLOCK, HK_PROBE };          /* (kind) */
+enum { HK_PLAIN, HK_CLOCK, HK_PROBE, HK_SX };    /* (kind; V3.0: HK_SX, "T sx BYTE ..": an editor frame in, as from USB; the bytes after F0, in hex) */
+static uint8_t host_sxpool[65536];
+static uint32_t host_sxpool_n;
 static void host_probe(void);                   /* (firmware/src/probe.c) */
 #define CHORD1 (1u << 7 | 1u << 11 | 1u << 14)                  /* C E G (C4 .. G4 at OCTAVE +0) */
 #define CHORD2 (1u << 2 | 1u << 5 | 1u << 9)                   /* G Bb D (G3 .. D4) */
@@ -284,6 +293,15 @@ static void read_script(const char *path)
             sscanf(line, "%*u %*s %7s %u %u", s, &e.a, &e.b);
             e.kind = HK_CLOCK, e.src = s[0] == 't';
         } else if (!strcmp(what, "probe")) e.kind = HK_PROBE;
+        else if (!strcmp(what, "sx")) {
+            const char *q = line;
+            unsigned v;
+            int c = 0;
+            for (int sk = 0; sk < 2; sk++) { while (*q == ' ') q++; while (*q && *q != ' ') q++; }   /* (past T and "sx") */
+            e.kind = HK_SX, e.a = host_sxpool_n;
+            while (sscanf(q, " %x%n", &v, &c) == 1 && host_sxpool_n < sizeof host_sxpool) host_sxpool[host_sxpool_n++] = (uint8_t)v, q += c;
+            e.b = host_sxpool_n - e.a;
+        }
         else continue;
         ev[n++] = e;
     }
@@ -444,6 +462,10 @@ static void platform_poll(void)                 /* one call = one millisecond */
             hg.end = script[step].t + script[step].b, hg.src = (uint32_t)script[step].src;
         } else if (script[step].kind == HK_PROBE)
             host_probe();
+        else if (script[step].kind == HK_SX) {
+            host_sx_n = script[step].b < sizeof host_sx ? script[step].b : (uint32_t)sizeof host_sx;
+            memcpy(host_sx, host_sxpool + script[step].a, host_sx_n), host_sx_ready = 1;
+        }
         else if (script[step].st >= 0xF8u)      /* (realtime: the clock's ring, at its time) */
             rt_in_at(script[step].st, (uint32_t)script[step].src, rt_now());
         else if (script[step].st) {

@@ -13,7 +13,8 @@ import { Client, MidiTransport, VirtualFM1, LiveSender, findFM1, HEAD, CMD, OBJ,
          sameSettings, FX_PAGES, FT_NAMES, checkSamples, restoreSamples, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
          glideText, decayText, pctText, PITCH_TEXT, SEQ, DIV_NAMES, MODE_NAMES, emptyPattern, emptyStep, patternsFromSlot,
          patternsFromWork, slotWithPatterns, slotFromWork, slotTrack, patternFile, parsePatternFile, recallScript, stopScript,
-         BTN_PLAY, b64, recWrite, recRest, recTie, makeGrouper, pcKeyNote } from "./editor_core.js";
+         BTN_PLAY, b64, recWrite, recRest, recTie, makeGrouper, pcKeyNote, SONG, emptySong, readSong, sendSong, songSupported,
+         songLength, songToFile, songFromFile } from "./editor_core.js";
 
 const $ = (id) => document.getElementById(id);
 function el(tag, attrs, parent, text) {
@@ -338,6 +339,10 @@ function refreshButtons() {
   $("b-import").disabled = !u;
   $("b-send").disabled = !c || !u || !dirty[pick.i];
   document.querySelectorAll(".smp button").forEach((b) => { b.disabled = !c; });
+  const old = !!conn && !songSupported(conn.info.firmware);   // (GR!MM 2.x: no song object: the SONG row greyed out, nothing sent)
+  $("sq-song").classList.toggle("off", old), $("sq-song-need").hidden = !old;
+  document.querySelectorAll("#sq-song select").forEach((x) => { x.disabled = old; });
+  $("sq-song-read").disabled = $("sq-song-send").disabled = !c || old;
 }
 async function readSlots() {
   for (let i = 0; i < 64; i++) {
@@ -902,6 +907,7 @@ drawFx();
 // into a slot (only its sequence and lock bytes 212-2403: the sounds and mix stay), kept in a file, or tried in this page's GR!MM.
 const sq = { pats: [0, 1, 2, 3].map(() => emptyPattern(16)), t: 0, s: 0, trk: null, from: "EMPTY", dirty: false, clip: null,
              rec: false, oct: 4, mon: true, pedal: false };   // (REC armed, the computer keys' octave, MONITOR, the sustain pedal)
+sq.song = emptySong(), sq.songFrom = "NOT READ", sq.songDirty = false;   // (GR!MM 3.0: the SONG row)
 const SQ_SLOT_KEY = ["F3", "G3", "A3", "B3"];
 const sqPat = () => sq.pats[sq.t];
 const sqTrk = (t) => (sq.trk ? sq.trk[t] : tracks[t] ? { eng: tracks[t].eng, k: tracks[t].k } : { eng: 0, k: [0, 0, 0, 0] });   // (for the locks' names)
@@ -999,7 +1005,7 @@ function drawSqStep() {                                      // the selected ste
 }
 function drawSeq() {
   if (!meta) return;
-  drawSqTabs(), drawSqTrack(), drawSqGrid(), drawSqStep(), sqStatus(), sqRecStatus();
+  drawSqTabs(), drawSqTrack(), drawSqGrid(), drawSqStep(), drawSong(), sqStatus(), sqRecStatus();
 }
 const sqNeedsV2 = () => {
   if (conn.info.slotSize !== SEQ.SLOT_LEN) throw new EditorError("THIS FM-1'S SLOTS ARE NOT GR!MM 2.0'S: THE SEQUENCER NEEDS GR!MM 2.0", 0);
@@ -1051,7 +1057,7 @@ $("sq-send").onclick = () => {
   });
 };
 $("sq-save").onclick = () => {
-  download(`grimm-patterns-${stamp()}.json`, JSON.stringify(patternFile(sq.pats)));
+  download(`grimm-patterns-${stamp()}.json`, JSON.stringify(patternFile(sq.pats, { song: songToFile(sq.song) })));
   say("PATTERNS SAVED TO A FILE (DOWNLOADED)", "ok");
 };
 $("sq-load").onclick = () => $("sq-file").click();
@@ -1060,14 +1066,52 @@ $("sq-file").onchange = async (e) => {
   e.target.value = "";
   if (!f) return;
   try {
-    setSq(parsePatternFile(JSON.parse(await f.text())), null, `FILE ${f.name.toUpperCase()}`, true);
-    say(`${f.name.toUpperCase()} LOADED: THE FOUR PATTERNS ARE IN THE GRID (SEND TO A SLOT TO KEEP THEM ON THE FM-1)`, "ok");
+    const j = JSON.parse(await f.text()), pats = parsePatternFile(j), song = songFromFile(j.song);   // (nothing taken if either is damaged)
+    setSq(pats, null, `FILE ${f.name.toUpperCase()}`, true);
+    if (song) sq.song = song, sq.songFrom = `FILE ${f.name.toUpperCase()}`, sq.songDirty = true, drawSong();
+    say(`${f.name.toUpperCase()} LOADED: THE FOUR PATTERNS${song ? " AND THE SONG" : ""} ARE IN THE GRID (SEND TO A SLOT TO KEEP THEM ON THE FM-1)`, "ok");
   } catch (err) { say(`LOAD: ${errText(err)}`, "err"); }
 };
 $("sq-clear").onclick = () => {
   if (!confirm("CLEAR ALL FOUR PATTERNS HERE? (THE FM-1 KEEPS WHAT IT HAS UNTIL YOU SEND)")) return;
   setSq([0, 1, 2, 3].map(() => emptyPattern(16)), null, "EMPTY", false);
 };
+
+// ---- the SONG row (GR!MM 3.0): 16 blocks (slot A-D or END, REPEATS), MODE; READ / SEND the FM-1's chain (editor_core.js: readSong, sendSong)
+function songStatus() {
+  $("sq-song-st").textContent = `${sq.songFrom}${sq.songDirty ? " * (NOT SENT)" : ""}`;
+}
+function songEdited() { sq.songDirty = true, drawSong(); }
+function drawSong() {
+  const box = $("sq-song-blocks"), n = songLength(sq.song);
+  box.textContent = "";
+  sq.song.steps.forEach((x, i) => {
+    const b = el("div", { cls: "sgb" + (x.pat >= SONG.END ? " end" : "") + (i > n ? " out" : "") }, box);   // (after the first END: not played)
+    el("small", {}, b, String(i + 1));
+    const p = el("select", { id: `sq-song-p${i}`, "aria-label": `SONG BLOCK ${i + 1}: SLOT` }, b);
+    SONG.PATS.forEach((nm, v) => el("option", { value: String(v) }, p, nm));
+    p.value = String(x.pat);
+    p.onchange = () => { x.pat = +p.value; songEdited(); };
+    const r = el("select", { id: `sq-song-r${i}`, "aria-label": `SONG BLOCK ${i + 1}: REPEATS` }, b);
+    for (let v = 1; v <= 16; v++) el("option", { value: String(v) }, r, `x${v}`);
+    r.value = String(x.rep);
+    r.onchange = () => { x.rep = +r.value; songEdited(); };
+  });
+  $("sq-song-mode").value = String(sq.song.mode);
+  songStatus();
+  refreshButtons();
+}
+$("sq-song-mode").onchange = () => { sq.song.mode = +$("sq-song-mode").value; songEdited(); };
+$("sq-song-read").onclick = () => job("READ SONG", async () => {
+  sq.song = await readSong(conn.client, conn.info), sq.songFrom = `FROM THE ${conn.kind === "virtual" ? "VIRTUAL " : ""}FM-1`, sq.songDirty = false;
+  drawSong();
+  return `SONG READ: ${songLength(sq.song)} ${songLength(sq.song) === 1 ? "BLOCK" : "BLOCKS"}, MODE ${SONG.MODES[sq.song.mode]}`;
+});
+$("sq-song-send").onclick = () => job("SEND SONG", async () => {
+  sq.song = await sendSong(conn.client, conn.info, sq.song), sq.songFrom = `SENT TO THE ${conn.kind === "virtual" ? "VIRTUAL " : ""}FM-1`, sq.songDirty = false;
+  drawSong();
+  return "SONG SENT, READ BACK AND CHECKED: ON THE FM-1 IT IS IN FORCE AT ONCE (SONG PAGE), AND KEPT WITH THE PROJECT";
+});
 
 // the preview: the patterns into this page's own GR!MM (its slot, recalled, played), its sound as the SOUND EDITOR's
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -51,7 +51,7 @@ SDK_SHA256 = {
 PRODUCT = "FM-1_966"                # GR!MM: 966, every release (1.x, 2.x) (FM-1_9NN: the installers resume its loader; the hub's
                                     # other firmwares hold 950, 95x, 961, so not Dinghy's 9 + minor); Dinghy is 99N
 VERSION = None                      # APP_VER for release builds (else DEFAULT_VERSION)
-DEFAULT_VERSION = "2.0"
+DEFAULT_VERSION = "3.0-dev"                # (V3 work in progress: a build without --release; the editor reads "3.0" from it)
 DEFINES = []                        # --define: a test build's -D names for the app
 RAM_FREE_MIN = 4096                 # (V2) RAM after .data + .bss: at least this free
 STACK_FREE_MIN = 4096               # (V2) each stack (firmware/app.ld) its worst case (tools/stack_check.py) at least

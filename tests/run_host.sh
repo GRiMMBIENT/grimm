@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/host
-cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-2.0}\"" -Ifirmware/src -Ifirmware/gen -o build/host/grimm firmware/src/grimm.c
+cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-3.0-dev}\"" -Ifirmware/src -Ifirmware/gen -o build/host/grimm firmware/src/grimm.c
 GRIMM_MASTER=1022 GRIMM_RAW_OUT=build/host/grimm.raw build/host/grimm build/host/grimm   # (V2: MASTER as web/test_web.mjs turns it: 1022, Q12 4080)
 python3 - <<'PY'
 from pathlib import Path
@@ -63,3 +63,6 @@ python3 tests/rc11_test.py build/host/grimm
 # GR!MM V2.0.2: the sample slots after another firmware or a cut upload: any slot that does not play gets its factory
 # sample once the boot checks are done, one that plays is never touched, the header says which (tests/samplefix_test.py)
 python3 tests/samplefix_test.py build/host/grimm
+# GR!MM V3.0: the editor's object "song" (11): read, written (applies at once), refused out of range / wrong CRC / while the
+# sequencer plays, kept by the autosave, MODE followed by PLAY (tests/song_test.py)
+python3 tests/song_test.py build/host/grimm

@@ -586,6 +586,20 @@ static const uint8_t *uk_lock(const uint8_t *q, uint32_t t, uint32_t lk)   /* (l
 /* ---- the working project: tracks, effects, tempo, the slot in use, sequences (WORK_PK) */
 static volatile int32_t *const PK_FX[16] = {&tf_wow, &tf_sat, &tf_tone, &tf_hiss, &ge_size, &ge_dens, &ge_scat, &ge_mix,
                                             &dl_time, &dl_fb, &dl_wear, &dl_mix, &rv_size, &rv_damp, &rv_mix, &rv_pre};
+static void pk_song(uint8_t *q)                 /* the song's SONG_PK bytes: a step a byte (its slot or END, its REPEATS - 1 << 3),
+                                                 * MODE, the mutes and solos, 2 spare (also the editor's object "song") */
+{
+    uint32_t k;
+    for (k = 0; k < SONG_N; k++)
+        q[k] = (uint8_t)(clamp(song_pat[k], 0, SONG_END) | (clamp(song_rep[k], 1, 16) - 1) << 3);
+    q[16] = (uint8_t)clamp(song_mode, 0, NSONGMODE - 1);
+    q[17] = (uint8_t)((trk_mute & 15u) | (trk_solo & 15u) << 4), q[18] = q[19] = 0;
+}
+static void uk_chain(const uint8_t *q)          /* the chain (16 bytes) back */
+{
+    uint32_t k;
+    for (k = 0; k < SONG_N; k++) song_pat[k] = clamp(q[k] & 7u, 0, SONG_END), song_rep[k] = (q[k] >> 3 & 15u) + 1u;
+}
 static void pk_work(uint8_t *q)
 {
     uint32_t t, k;
@@ -597,10 +611,7 @@ static void pk_work(uint8_t *q)
     q += 4;
     for (t = 0; t < NT; t++) q = pk_seq(q, t);
     for (t = 0; t < NT; t++) q = pk_lock(q, t);
-    for (k = 0; k < SONG_N; k++)                /* the song: a step a byte (its slot or END, its REPEATS - 1 << 3), */
-        q[k] = (uint8_t)(clamp(song_pat[k], 0, SONG_END) | (clamp(song_rep[k], 1, 16) - 1) << 3);
-    q[16] = (uint8_t)clamp(song_mode, 0, NSONGMODE - 1);   /* MODE, */
-    q[17] = (uint8_t)((trk_mute & 15u) | (trk_solo & 15u) << 4), q[18] = q[19] = 0;   /* the mutes and solos */
+    pk_song(q);                                 /* the song, the mutes and solos */
     for (t = 0; t < NT; t++) pk_fm(q + SONG_PK + t * FM_PK, t);   /* the FM patches */
     q += SONG_PK + FM_ALL;                      /* (V2) MASTER, DRIVE */
     q[0] = (uint8_t)clamp(mf_cut, 0, 127), q[1] = (uint8_t)clamp(mf_res, 0, 127);
@@ -635,8 +646,7 @@ static void uk_work(const uint8_t *q, uint32_t f, const uint16_t *vs)   /* (f: U
         dr_tone = fx ? clamp(x[6], 0, 127) : 127, dr_mix = fx ? clamp(x[7], 0, 127) : 127;
     }
     if (!sg) return;                            /* (saved before the song: as it is) */
-    if (f & UW_CHAIN)
-        for (k = 0; k < SONG_N; k++) song_pat[k] = clamp(q[k] & 7u, 0, SONG_END), song_rep[k] = (q[k] >> 3 & 15u) + 1u;
+    if (f & UW_CHAIN) uk_chain(q);
     if (globals) {
         song_mode = clamp(q[16], 0, NSONGMODE - 1);
         trk_mute = q[17] & 15u, trk_solo = q[17] >> 4 & 15u;

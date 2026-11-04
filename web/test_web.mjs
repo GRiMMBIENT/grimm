@@ -24,7 +24,8 @@ import { Client, VirtualFM1, LiveSender, MidiTransport, findFM1, OBJ, parseSound
          sameSettings, crc32, checkSamples, restoreSamples, EditorError, VOICE_TYPES, LINE2_WAVES, V2_SOUND_CONTROLS, PHASE_PD0,
          glideText, decayText, pctText, PITCH_TEXT, SEQ, emptyPattern, slotFromWork, slotWithPatterns, patternsFromSlot,
          patternsFromWork, slotTrack, patternFile, parsePatternFile, recallScript, stopScript, BTN_PLAY, chordTable, chordNotes, matchChord,
-         recWrite, recRest, recTie, makeGrouper, pcKeyNote, noteName, emptyStep } from "./editor_core.js";
+         recWrite, recRest, recTie, makeGrouper, pcKeyNote, noteName, emptyStep, SONG, emptySong, packSong, parseSong, readSong, sendSong,
+         songSupported, songLength, songToFile, songFromFile } from "./editor_core.js";
 
 let ex, data, size, started = false, rewinding = false;
 const { instance } = await WebAssembly.instantiate(readFileSync("web/dist/grimm.wasm"), {
@@ -477,6 +478,62 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
     await cl.put(OBJ.SLOT + 1, new Uint8Array(2532), info.fmt);   // (slot B empty again, as at power-on)
   }
 
+// the SONG chain (GR!MM 3.0; the SEQUENCER's SONG row): object 11 on the virtual FM-1 (the firmware's own editor.c), the page's core
+{
+  const A = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const mk = (pat, rep) => ({ pat, rep });
+  check(["2.0", "2.0.2", "1.0", "2.9", "", "x"].every((v) => !songSupported(v)) && ["3.0", "3.0-dev", "3.1", "10.2"].every(songSupported),
+        "song: the version gate: 2.0, 2.0.2, 1.0 greyed out; 3.0, 3.0-dev, 3.1 on");
+  check(songSupported(info.firmware) && info.firmware === "3.0-dev", `song: the virtual FM-1 is GR!MM ${info.firmware}: the SONG row is on`);
+  const b = packSong({ mode: 2, steps: [mk(0, 2), mk(3, 16), mk(4, 1), ...Array.from({ length: 13 }, () => mk(1, 5))] });
+  check(b.length === 20 && b[0] === 0x08 && b[1] === (3 | 15 << 3) && b[2] === 4 && b[3] === (1 | 4 << 3) && b[16] === 2 && b[17] === 0 && b[19] === 0 &&
+        packSong(emptySong()).every((x, i) => x === (i < 16 ? 4 : 0)),
+        "song: packSong is the autosave's layout (a step: slot | (REPEATS - 1) << 3, byte 16 MODE, 17..19 zero); an empty song is 16 x END");
+  let seed = 777, ok = true;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) >>> 0; return (seed >>> 8) % n; };
+  for (let k = 0; k < 300; k++) {
+    const s = { mode: rnd(3), steps: Array.from({ length: 16 }, () => mk(rnd(5), 1 + rnd(16))) };
+    if (!A(parseSong(packSong(s)), s)) ok = false;
+  }
+  check(ok && songLength({ steps: [mk(1, 1), mk(2, 1), mk(4, 1), mk(0, 1)] }) === 2 && songLength(emptySong()) === 0 &&
+        songLength({ steps: Array.from({ length: 16 }, () => mk(0, 1)) }) === 16,
+        "song: 300 random songs pack and parse back the same; the chain's length is the steps before the first END");
+
+  const s0 = await readSong(cl, info);
+  check(A(s0, emptySong()), "song: a new virtual FM-1 reads an empty chain (16 x END, REPEATS 1), MODE OFF");
+  const s1 = { mode: 1, steps: [mk(0, 2), mk(1, 1), mk(2, 4), mk(3, 16), ...Array.from({ length: 12 }, () => mk(4, 1))] };
+  const back = await sendSong(cl, info, s1);
+  check(A(back, s1) && A(await readSong(cl, info), s1), "song: SEND TO FM-1 (PUT, then read back and checked) and READ FROM FM-1 give the same song");
+  const w = await cl.get(OBJ.WORK, SEQ.WORK_LEN), at = SEQ.WORK_LOCK + 4 * SEQ.LOCK;
+  check([...w.subarray(at, at + 17)].every((x, i) => x === packSong(s1)[i]),
+        "song: the working project (object 9, what the autosave keeps) holds it, in the same bytes");
+  const s2 = { mode: 2, steps: [mk(3, 1), mk(0, 16), mk(1, 3), ...Array.from({ length: 13 }, (_, i) => mk(i % 5, 1 + i))] };
+  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0), vf.step(80);   // PLAY
+  let rc = -1, msg = "";
+  try { await sendSong(cl, info, s2); } catch (e) { rc = e.rc, msg = e.message; }
+  check(!!(vf.ex.web_lit_buttons() >>> BTN_PLAY & 1) && rc === 3 && /PLAYING/.test(msg) && A(await readSong(cl, info), s1),
+        `song: while the FM-1 plays, SEND is refused (rc ${rc}: "${msg}"), the song unchanged, READ still works`);
+  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0), vf.step(80);   // STOP
+  check(A(await sendSong(cl, info, s2), s2) && A(await readSong(cl, info), s2), "song: stopped again: SEND is taken, at once");
+  await sendSong(cl, info, emptySong());                     // (as at power-on for what follows)
+
+  const pats = [0, 1, 2, 3].map(() => emptyPattern(16)), file = JSON.parse(JSON.stringify(patternFile(pats, { song: songToFile(s1) })));
+  check(A(songFromFile(file.song), s1) && A(parsePatternFile(file), pats) && songFromFile(JSON.parse(JSON.stringify(patternFile(pats))).song) === null,
+        "song: the pattern file keeps the song (SAVE FILE, LOAD FILE give the same); a file from before 3.0 has none: the song stays as it is");
+  let bad = 0;
+  for (const j of [{ mode: 1, steps: [] }, { mode: 1, steps: Array.from({ length: 16 }, () => [0]) }, null, { mode: 1 }]) { try { songFromFile(j); } catch { bad++; } }
+  const odd = songFromFile({ mode: 9, steps: Array.from({ length: 16 }, () => [9, 99]) });
+  check(bad === 4 && odd.mode === 2 && odd.steps.every((x) => x.pat === 4 && x.rep === 16), "song: a damaged song in a file is refused; odd values are brought within range");
+
+  const sent = [], spy = new Client({ request(f) { sent.push(f); return Promise.reject(new Error("a request went out")); } });
+  const old = { firmware: "2.0.2", fmt: 1 };
+  let m1 = "", m2 = "";
+  try { await readSong(spy, old); } catch (e) { m1 = e.message; }
+  try { await sendSong(spy, old, s1); } catch (e) { m2 = e.message; }
+  check(sent.length === 0 && /NEEDS GR!MM 3\.0/.test(m1) && /NEEDS GR!MM 3\.0/.test(m2),
+        `song: on GR!MM 2.0.2 READ and SEND say "NEEDS GR!MM 3.0" and send nothing (${sent.length} frames sent)`);
+}
+
 // STEP RECORD (the SEQUENCER's REC): the record logic of editor_core.js
 {
   const table = chordTable(), want = readFileSync("tests/data/chord_table.sha256", "utf8").trim();
@@ -574,6 +631,9 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const set = await cl.get(OBJ.SET, 168), s1 = await cl.get(OBJ.SND, 64), f1 = await cl.get(OBJ.FACT, 64);
   const want = (k) => unpack7([...bytes(rec.frames[k].rx)].slice(14, -1));
   check(eq([...set], [...want(1)]) && eq([...s1], [...want(2)]) && recordOk(f1), "editor: the settings, sound 1 and factory sound 1 as the FM-1 sent them");
+  { const sent = [], spy = new Client({ request(f) { sent.push(f); return Promise.reject(new Error("sent")); } }); let m = "";
+    try { await sendSong(spy, info, emptySong()); } catch (e) { m = e.message; }
+    check(!songSupported(info.firmware) && sent.length === 0 && /NEEDS GR!MM 3.0/.test(m), `song: the FM-1 recording (GR!MM ${info.firmware}): the SONG row is greyed out, a SEND sends nothing`); }
   const smp = await cl.smpInfo();
   check(smp.length === 4 && smp[0].state >= 0, `editor: the samples' INFO as the FM-1 sent it (${smp.map((s) => s.state < 0 ? "?" : s.name || "-").join(", ")})`);
   function eq(a, b) { return a.length === b.length && a.every((x, i) => x === b[i]); }
@@ -598,7 +658,7 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
         /choir recordings: VocalSet \(Wilkins et al\., 2018\), CC BY 4\.0/.test(lic) && lic.includes("https://creativecommons.org/licenses/by/4.0/") &&
         ["Press Start 2P", "Terminus", "CC0 1.0", "Emscripten", "Dinghy", "Felucca", "SLOOP"].every((c) => html.includes(c)),
         "editor page and LICENSING.md: the VocalSet credit (CC BY 4.0, its link) added, the old credits still there");
-  check(info.firmware === "2.0" && meta.version === "2.0" && info.factory === 44 && meta.factory.length === 44 && /EDITOR 2\.0/.test(html) &&
+  check(info.firmware === "3.0-dev" && meta.version === "3.0-dev" && info.factory === 44 && meta.factory.length === 44 && /EDITOR 2\.0/.test(html) &&
         /"FIRMWARE", "GR!MM " \+ i\.firmware/.test(js) && /\["FACTORY SOUNDS", i\.factory\]/.test(js),
         `editor page: CONNECT shows GR!MM ${info.firmware} and ${info.factory} factory sounds; the header EDITOR 2.0`);
   const names = meta.factory.map((x) => x.name), choirs = ["GREGORIAN", "PLAINCHANT", "CATHEDRAL CHOIR", "NUNS"];
@@ -618,6 +678,14 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
         /repeat\(8, minmax\(0, 1fr\)\)/.test(html) && /@media \(min-width: 900px\) \{ \.sqgrid/.test(html) && /canWrite\(OBJ\.SLOT \+ k, next/.test(js) &&
         /grimm-slot-\$\{L\}-backup/.test(js) && /slotWithPatterns\(cur, sq\.pats\)/.test(js) && /type: "reply"/.test(readFileSync("web/worklet.js", "utf8")),
         "editor page: the SEQUENCER section (grid 8 wide on a phone, 16 on a computer; IMPORT, SEND with a probe and a backup first, PREVIEW, files)");
+  check(["sq-song", "sq-song-blocks", "sq-song-mode", "sq-song-read", "sq-song-send", "sq-song-need", "sq-song-st"].every((i) => html.includes(`id="${i}"`)) &&
+        html.indexOf('id="sq-song"') > html.indexOf('id="sq-grid"') && html.indexOf('id="sq-song"') < html.indexOf('id="s-samples"') &&
+        /NEEDS GR!MM 3\.0<\/span>/.test(html) && /<option value="0">OFF<\/option><option value="1">SONG<\/option><option value="2">LOOP<\/option>/.test(html) &&
+        /#sq-song\.off \{ opacity/.test(html) && /songSupported\(conn\.info\.firmware\)/.test(js) && /classList\.toggle\("off", old\)/.test(js) &&
+        /\$\("sq-song-read"\)\.disabled = \$\("sq-song-send"\)\.disabled = !c \|\| old/.test(js) && /readSong\(conn\.client, conn\.info\)/.test(js) &&
+        /sendSong\(conn\.client, conn\.info, sq\.song\)/.test(js) && /patternFile\(sq\.pats, \{ song: songToFile\(sq\.song\) \}\)/.test(js) &&
+        /songFromFile\(j\.song\)/.test(js) && !/OBJ\.SONG/.test(js),
+        "editor page: the SONG row under the pattern grid (16 blocks, MODE, READ FROM FM-1, SEND TO FM-1); greyed out with NEEDS GR!MM 3.0 on a 2.x FM-1; kept in the pattern file; the page sends only through readSong / sendSong");
   check(["sq-rec", "sq-rest", "sq-tie", "sq-mon", "sq-octd", "sq-octu", "sq-midi", "sq-midi-scan", "sq-recst", "sq-recmsg"].every((i) => html.includes(`id="${i}"`)) &&
         /min-height: 44px/.test(html) && /\.sqgrid\.rec \.sqs\.sel \{[^}]*outline: 3px solid var\(--f\)/.test(html) &&
         /FM1_PORT = \/felucca\|fm-\?1\|m-\?vave\|gr!\?mm\/i/.test(js) && /localStorage\.getItem\(SQ_MIDI_KEY\)/.test(js) && /try \{ return localStorage/.test(js) && /try \{ localStorage\.setItem/.test(js) &&

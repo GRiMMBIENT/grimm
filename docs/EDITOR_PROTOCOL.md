@@ -60,6 +60,7 @@ Request: none. Reply, in order:
 | 5–8 | sample slots 1–4 (GR!MM V2) | 512 + the data's length | yes | no |
 | 9 | the working project as it is now (GR!MM V2 rc9) | 2576 | yes | no |
 | 10 | the mix's change log (GR!MM V2 rc9) | 772 | yes | no |
+| 11 | the song (GR!MM V3.0) | 20 | yes | yes |
 | 16–79 | user sounds 1–64 (id 16 + slot) | 64 | yes | yes |
 | 80–123 | factory sounds 1–44 (id 80 + index, in the firmware's order; GR!MM 1.0: 80–119) | 64 | yes | no |
 
@@ -84,6 +85,31 @@ the oldest overwritten (entry `n % 64` is the next): u32 the time (ms since powe
 MIDI CC's link, 2 the editor, 3 a load: power-on, a slot, undo, a project), u8 the page (a knob's or link's; 255 a
 load), u8 the value (0 LEVEL, 1 CUTOFF, 2 RESONANCE, 3 FX, 4 DLY, 5 REV, 6 GRAIN, 7 TAPE, 8 DRIVE, 9 PAN), u8 the
 track (0–3), i16 from, i16 to. In RAM only: a power-off clears it.
+
+## The song (object 11, GR!MM V3.0)
+
+The SONG chain of the SEQUENCER (GLO: the SONG page on the FM-1): up to 16 steps, each a slot to play for a number of passes, then
+the next; END stops the chain. 20 bytes, the layout the autosave keeps (firmware/src/store.c `pk_song`; at offset 2420 of
+object 9):
+
+| Byte | |
+| --- | --- |
+| 0–15 | step 1–16: bits 0–2 the slot (0–3 = A–D, 4 = END; the chain stops at the first END), bits 3–6 REPEATS − 1 (0–15 = 1–16 passes of the slot's longest pattern), bit 7 0 |
+| 16 | MODE: 0 OFF (PLAY plays the slot in use, as ever), 1 SONG (PLAY runs the chain once, then stops), 2 SONG LOOP |
+| 17 | the mutes (bits 0–3) and solos (bits 4–7) of T1–T4: the FM-1's own. GET reads them as they are; a PUT leaves them alone, whatever it holds |
+| 18–19 | 0 (reserved; a PUT ignores them) |
+
+GET (obj 11, off 0, count 20) reads the song as it is now, also while the sequencer plays. PUT (BEGIN, DATA, COMMIT as for any
+object, length 20, format 1) applies it at once: the chain and MODE, in RAM, no flash write; the FM-1's autosave keeps it with the
+project like a change made on the SONG page. Differences from the slots:
+
+- It is refused (rc 3) only while the sequencer plays, not for sounds still ringing. BEGIN and COMMIT both check: a COMMIT
+  refused with 3 leaves the PUT open, stop, then COMMIT again.
+- COMMIT refuses (rc 2) a step whose slot is above 4 or whose bit 7 is set, and a MODE above 2. Nothing changes.
+- Not in a backup (the backup file's objects are the settings, slots and sounds); the working project (object 9) holds it.
+
+A GR!MM before 3.0 has no object 11 (GET and PUT answer rc 1). The editor page reads INFO's firmware version first: on 2.x its SONG row
+is greyed out ("needs GR!MM 3.0") and nothing is sent. The protocol version stays 2.
 
 ## 21 GET
 

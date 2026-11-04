@@ -25,7 +25,9 @@
  * saved; at any time, also while playing (the editor page's sliders, SLOOP's live SET). The page sends one at a time.
  * Objects: 0 the settings; 1..4 slots A..D; (V2) 5..8 the sample slots 1..4 as the flash holds them, a ready one's
  * header, data and all (GET only: a backup's; a restore writes them as an upload, 11..13); 16..79 the user's sounds
- * 1..64; 80.. the factory sounds (GET only; up to 127: an object is one 7-bit byte).
+ * 1..64; 80.. the factory sounds (GET only; up to 127: an object is one 7-bit byte). (V3.0) 11 the song: the chain's 16
+ * steps, MODE, as the autosave packs them (store.c pk_song, SONG_PK bytes); a PUT of it applies at once (no flash: the
+ * autosave keeps it) and is refused (ER_STOP) only while the sequencer plays.
  * A PUT's bytes gather in store.c's sector image (st_img: free between saves; a reply is made in its last KiB); it
  * commits only when the sequencer stands and nothing sounds, its CRC, size, format and contents checked, through
  * store.c's saves (each written sector read back); refused, nothing changes. While a PUT is open (15 s after its last
@@ -37,7 +39,7 @@
 enum { ED_INFO = 20, ED_GET = 21, ED_PUT = 22, ED_TRACK = 23, ED_CPU = 24, ED_EFFECTS = 25 };
 static const uint8_t ED_FXPG[6] = {PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_MASTER, PG_DRIVE};   /* (FX's i / 4) */
 #define ED_SND7 74u                             /* a sound (64 B) in pack7 */
-enum { EO_SET = 0, EO_SLOT = 1, EO_SMP = 5, EO_WORK = 9, EO_LOG = 10, EO_SND = 16, EO_FACT = 80 };
+enum { EO_SET = 0, EO_SLOT = 1, EO_SMP = 5, EO_WORK = 9, EO_LOG = 10, EO_SONG = 11, EO_SND = 16, EO_FACT = 80 };
 _Static_assert(EO_SMP + SMP_SLOTS <= EO_SND && EO_FACT + SND_NFACT <= 128u, "the editor's objects: one 7-bit byte each");
 enum { ER_OK, ER_ARGS, ER_BAD, ER_STOP, ER_FLASH, ER_NOBEGIN };   /* rc: arguments, the object (CRC, size, format,
                                                  * contents), stop / silence first, the flash, no BEGIN (or 15 s old) */
@@ -58,7 +60,8 @@ static uint32_t ed_size(uint32_t o)             /* object o's size (0: none) */
     if (o >= EO_SMP && o < EO_SMP + SMP_SLOTS && smp[o - EO_SMP].ready) return SMP_DATA_OFF + smp[o - EO_SMP].len;
     if (o == EO_WORK) return ed_open() ? 0u : WORK_PK;   /* (rc9: GET only; not while a PUT's bytes are in st_img) */
     if (o == EO_LOG) return sizeof clog + 4u;
-    return 0;                                   /* (V2: a sample slot: its header, data; not ready: none) */
+    if (o == EO_SONG) return SONG_PK;
+    return 0;                                  /* (V2: a sample slot: its header, data; not ready: none) */
 }
 static const uint8_t *ed_bytes(uint32_t o)      /* object o as it is now (0: no flash) */
 {
@@ -68,6 +71,11 @@ static const uint8_t *ed_bytes(uint32_t o)      /* object o as it is now (0: no 
                                                  * packed again for each GET) */
         pk_work(st_img);
         return st_img;
+    }
+    if (o == EO_SONG) {                         /* (V3.0) the song as it is now (its own bytes: a PUT's may be in st_img) */
+        static uint8_t song_b[SONG_PK];
+        pk_song(song_b);
+        return song_b;
     }
     if (o == EO_LOG) {                          /* (rc9) the mix's change log: entries made (u32), then clog[] */
         uint32_t n = clog_n;
@@ -140,6 +148,17 @@ static uint32_t ed_commit(uint32_t o)
         set_dirty = 0;
         if (settings_save(&set, sizeof set)) return ER_FLASH;
         hd_say("EDITOR: SETTINGS SAVED");
+        return ER_OK;
+    }
+    if (o == EO_SONG) {                         /* (V3.0) the song: each step's slot A..D or END and REPEATS, MODE (bytes 17..19, the
+                                                 * mutes and solos, are the FM-1's own: left as they are); applies at once */
+        uint32_t k;
+        for (k = 0; k < SONG_N; k++)
+            if ((ED_RX[k] & 7u) > (uint32_t)SONG_END || ED_RX[k] > 0x7Fu) return ER_BAD;
+        if (ED_RX[16] >= NSONGMODE) return ER_BAD;
+        if (playing) return ER_STOP;
+        uk_chain(ED_RX), song_mode = ED_RX[16];
+        hd_say("EDITOR: SONG SET");
         return ER_OK;
     }
     if (o < EO_SND) {                           /* a slot: used or not, then into the stream (its sectors read back) */
@@ -282,10 +301,10 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
         r[0] = (uint8_t)op, r[1] = (uint8_t)o;
         if (op == 0u) {                         /* BEGIN: fmt, len (5), crc (5) */
             uint32_t len = n >= 13u ? ed_rd35(f + 3) : 0u;
-            if (n < 13u || !ed_size(o) || o >= EO_FACT || (o >= EO_SMP && o < EO_SND) || f[2] != ED_FMT ||
+            if (n < 13u || !ed_size(o) || o >= EO_FACT || (o >= EO_SMP && o < EO_SND && o != EO_SONG) || f[2] != ED_FMT ||
                 (len != ed_size(o) && !(o == EO_SET && len + 2u >= sizeof set && len < sizeof set))) rc = ER_ARGS;
                                                 /* (the settings: V1.0's, V2's version 2 too, a backup of then) */
-            else if (!silent) rc = ER_STOP;
+            else if (o == EO_SONG ? playing : !silent) rc = ER_STOP;   /* (the song: no flash, so only the playing) */
             else ed_obj = (int32_t)o, ed_len = len, ed_crc = ed_rd35(f + 8), ed_got = 0, ed_t = fm1_ms;
         } else if (op == 1u) {                  /* DATA: off (5), pack7, where the last ended */
             uint32_t off = n >= 7u ? ed_rd35(f + 2) : 0u, d;
@@ -297,7 +316,7 @@ static int ed_frame(const uint8_t *f, uint32_t n, int silent)
             else ed_got += d, ed_t = fm1_ms;
         } else if (op == 2u) {                  /* COMMIT */
             if (!ed_open() || (int32_t)o != ed_obj) rc = ER_NOBEGIN;
-            else if (!silent) rc = ER_STOP;     /* (the PUT stays open: stop, then COMMIT again) */
+            else if (o == EO_SONG ? playing : !silent) rc = ER_STOP;   /* (the PUT stays open: stop, then COMMIT again) */
             else {
                 if (ed_got != ed_len || st_crc(ED_RX, ed_len) != ed_crc) rc = ER_BAD;
                 else rc = ed_commit(o);

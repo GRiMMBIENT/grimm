@@ -111,6 +111,17 @@ canvas#alg { display: block; width: 100%; max-width: 432px; image-rendering: pix
 .lock .ctl { flex: 1; min-width: 0; margin: 0 0 10px; }
 .lock input[type=checkbox] { margin-top: 2px; width: 18px; height: 18px; flex: none; }
 @media (min-width: 900px) { .sqgrid { grid-template-columns: repeat(16, minmax(0, 1fr)); } }
+.songrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin-bottom: 6px; }
+.sgb { background: var(--k); padding: 4px; border-top: 4px solid var(--l); min-width: 0; }
+.sgb small { display: block; font-size: 8px; color: var(--m); margin-bottom: 3px; }
+.sgb select { width: 100%; min-width: 0; padding: 4px 2px; margin-bottom: 3px; }
+.sgb.end { border-top-color: var(--m); }
+.sgb.out { opacity: .35; }
+#sq-song .need { color: var(--a); margin-left: 8px; }
+#sq-song.off { opacity: .4; }
+#sq-song.off .need { color: var(--w); }
+#sq-song-st { color: var(--w); }
+@media (min-width: 600px) { .songrow { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
 #sq-from { color: var(--w); }
 .recrow button { min-height: 44px; min-width: 64px; }
 .toggle.on#sq-rec { background: var(--a); color: var(--w); border-color: var(--a); }
@@ -282,6 +293,22 @@ input[type=range]:focus-visible { outline: 3px solid var(--f); outline-offset: 2
       <div class="grp" id="sq-trk"></div>
       <div class="sqgrid" id="sq-grid"></div>
       <div class="grid" id="sq-step" style="margin-top:6px"></div>
+      <div class="grp" id="sq-song" style="margin-top:6px">
+        <h3>SONG <span class="px need" id="sq-song-need" hidden>NEEDS GR!MM 3.0</span></h3>
+        <div class="songrow" id="sq-song-blocks"></div>
+        <div class="row">
+          <label class="px" for="sq-song-mode">MODE</label>
+          <select id="sq-song-mode"><option value="0">OFF</option><option value="1">SONG</option><option value="2">LOOP</option></select>
+          <button id="sq-song-read" class="go">READ FROM FM-1</button>
+          <button id="sq-song-send" class="go">SEND TO FM-1</button>
+          <span class="px" id="sq-song-st"></span>
+        </div>
+        <p class="note">A chain of up to 16 blocks: each plays a slot (A&ndash;D) for its number of repeats (one pass is the
+          longest pattern once), then the next block; END stops the chain (blocks after it are not played). MODE OFF: PLAY
+          plays the slot in use as ever; SONG: PLAY runs the chain once and stops; LOOP: round and round. SEND applies it at
+          once and is refused while the FM-1 plays; the FM-1 keeps it with the project (its autosave). SAVE FILE keeps the
+          song with the patterns. The slots themselves are written with SEND TO SLOT above.</p>
+      </div>
       <p class="note">The four tracks' patterns, as the FM-1's SEQ pages: pick a step, then set its NOTE (0 is OFF), CHANCE,
         RATCHET, LENGTH, a chord step, and its locks (a lock replaces one of the track's four knobs on that step; move
         a slider to lock it, untick to free it). In the grid, C marks a chord step, L a step with locks; dim steps are

@@ -10,7 +10,7 @@ export const HEAD = [0x7d, 0x47, 0x52];
 export const CMD = { SMP_BEGIN: 11, SMP_WRITE: 12, SMP_END: 13, SMP_ERASE: 14, SMP_INFO: 15, SMP_FACTORY: 16, INFO: 20, GET: 21, PUT: 22,
                      TRACK: 23, FX: 25 };
 export const PROTOS = [1, 2];                              // the editor protocols this page knows (2: TRACK)
-export const OBJ = { SET: 0, SLOT: 1, SMP: 5, WORK: 9, SND: 16, FACT: 80 };   // (SMP: GR!MM V2, the sample slots 5..8, GET only)
+export const OBJ = { SET: 0, SLOT: 1, SMP: 5, WORK: 9, SONG: 11, SND: 16, FACT: 80 };   // (SMP: GR!MM V2, the sample slots 5..8, GET only; SONG: GR!MM 3.0)
 const BEGIN = 0, DATA = 1, COMMIT = 2, ABORT = 3;
 export const RC = {
   1: "the FM-1 did not accept the request (arguments)",
@@ -782,6 +782,49 @@ export function parsePatternFile(j) {                        // a file -> four p
                                     chord: clampi(s[4], 0, 255) & 0x80 ? clampi(s[4], 0, 255) : 0, lmask: clampi(s[5], 0, 15),
                                     lv: [s[6], s[7], s[8], s[9]].map((x) => clampi(x, 0, 127)) })) };
   });
+}
+
+// ------------------------------------------------------------------ the SONG chain (GR!MM 3.0; docs/EDITOR_PROTOCOL.md, object 11)
+// 16 steps, each a slot (0..3 = A..D, 4 = END: the chain stops there) and REPEATS 1..16, then MODE (0 OFF, 1 SONG, 2 SONG LOOP):
+// the autosave's song bytes (store.c pk_song): step i is byte i = slot | (REPEATS - 1) << 3, byte 16 MODE, bytes 17..19 are the
+// FM-1's own (mutes and solos: read, never written). A GR!MM before 3.0 has no such object: nothing is sent to it.
+export const SONG = { N: 16, LEN: 20, END: 4, PATS: ["A", "B", "C", "D", "END"], MODES: ["OFF", "SONG", "LOOP"] };
+export const emptySong = () => ({ mode: 0, steps: Array.from({ length: SONG.N }, () => ({ pat: SONG.END, rep: 1 })) });
+export function packSong(s) {                                // a song -> its 20 bytes
+  const b = new Uint8Array(SONG.LEN);
+  s.steps.forEach((x, i) => { b[i] = clampi(x.pat, 0, SONG.END) | (clampi(x.rep, 1, 16) - 1) << 3; });
+  b[16] = clampi(s.mode, 0, 2);
+  return b;
+}
+export function parseSong(b) {                               // the 20 bytes -> a song (as store.c uk_chain, MODE within its range)
+  if (!b || b.length !== SONG.LEN) throw new EditorError(`the FM-1 gave ${b ? b.length : 0} song bytes, not ${SONG.LEN}`, 99);
+  return { mode: clampi(b[16], 0, 2), steps: Array.from({ length: SONG.N }, (_, i) => ({ pat: clampi(b[i] & 7, 0, SONG.END), rep: (b[i] >> 3 & 15) + 1 })) };
+}
+export const sameSong = (a, b) => packSong(a).every((x, i) => x === packSong(b)[i]);
+export const songLength = (s) => { const i = s.steps.findIndex((x) => x.pat >= SONG.END); return i < 0 ? SONG.N : i; };   // steps before the END
+export const songSupported = (fw) => { const m = /^(\d+)\.(\d+)/.exec(String(fw)); return !!m && +m[1] >= 3; };   // "3.0", "3.0-dev"; not "2.0", "2.0.2"
+const songNeeds = (info) => {
+  if (!songSupported(info.firmware)) throw new EditorError(`NEEDS GR!MM 3.0 (THIS FM-1 HAS GR!MM ${info.firmware}): THE SONG WAS NOT TOUCHED`, 0);
+};
+export async function readSong(client, info) {              // -> a song; a GR!MM before 3.0: throws before asking anything
+  songNeeds(info);
+  return parseSong(await client.get(OBJ.SONG, SONG.LEN));
+}
+export async function sendSong(client, info, song) {        // writes it (the FM-1 applies it at once), reads it back, checks; -> what it holds
+  songNeeds(info);
+  try { await client.put(OBJ.SONG, packSong(song), info.fmt); } catch (e) {
+    if (e.rc === 3) throw new EditorError("THE FM-1 IS PLAYING: STOP THE SEQUENCER, THEN SEND THE SONG AGAIN", 3);
+    throw e;
+  }
+  const back = parseSong(await client.get(OBJ.SONG, SONG.LEN));
+  if (!sameSong(back, song)) throw new EditorError("THE SONG DID NOT READ BACK AS SENT", 0);
+  return back;
+}
+export const songToFile = (s) => ({ mode: s.mode, steps: s.steps.map((x) => [x.pat, x.rep]) });   // the pattern file's "song"
+export function songFromFile(j) {                            // a file's "song" -> a song; undefined (a file before 3.0): null; damaged: throws
+  if (j === undefined) return null;
+  if (!j || !Array.isArray(j.steps) || j.steps.length !== SONG.N || j.steps.some((x) => !Array.isArray(x) || x.length !== 2)) throw new Error("the song in the file is damaged");
+  return { mode: clampi(j.mode, 0, 2), steps: j.steps.map(([p, r]) => ({ pat: clampi(p, 0, SONG.END), rep: clampi(r, 1, 16) })) };
 }
 // the page's preview: recall slot k (hold SAVE, tap key F3 / G3 / A3 / B3 = bits 0, 2, 4, 6) and PLAY, as messages for
 // the panel (platform.c: BTN_SAVE 9, BTN_PLAY 12); ms to wait after each. The tests run the same on the virtual FM-1.
