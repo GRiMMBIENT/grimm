@@ -257,7 +257,8 @@ so a backup of then restores; and version 2's 169 bytes (LATCH FROM SOUND).
 
 Pages (a link's page): 0 SOUND, 1 SOURCE, 2 ENV, 3 LFO, 4 SCALE, 5 CHORD, 6 SONG, 7 HOME, 8 MIXER 1, 9 MIXER 2,
 14 ARP, 15 GRID, 16 PATTERN SETTINGS, 17 TAPE, 18 GRAIN, 19 DELAY, 20 SPACE, 23 FM ALGO, 24 FM OP, 25 MASTER, 26 DRIVE
-(the others can't be learned; 27 is SYSTEM 3).
+(the others can't be learned; 27 is SYSTEM 3; 30 is LEVELS, V3.0: its KNOB 1–4 are T1–T4's LEVEL, and MIDI LEARN on one makes the
+link to MIXER 1's LEVEL of that track, page 8 knob 0, so no link names page 30).
 
 ## 24 CPU (GR!MM V2, a diagnostic)
 

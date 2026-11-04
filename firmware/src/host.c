@@ -258,7 +258,8 @@ static const host_ev_t SCRIPT0[] = {
     {800, CHORD2, -1, 0, 0, 0, 0, 0},                           /* T2: G3 Bb3 D4 (SAMPLE) */
     {900, 0, -1, 0, 0, 0, 0, 0},
     {2000, 0, BTN_HOME, 0, 0, 0, 0, 0},                         /* HOME: MIXER 2 */
-    {2010, 0, BTN_HOME, 0, 0, 0, 0, 0},                         /* HOME: HOME */
+    {2010, 0, BTN_HOME, 0, 0, 0, 0, 0},                         /* HOME: LEVELS (V3.0) */
+    {2020, 0, BTN_HOME, 0, 0, 0, 0, 0},                         /* HOME: HOME */
     {3000, 0, BTN_FX, 0, 0, 0, 0, 0},                           /* FX: TAPE */
     {4000, 0, BTN_FX, 0, 0, 0, 0, 0},                           /* FX: GRAIN */
     {5000, 0, DOWN | BTN_FX, 0, 0, 0, 0, 0},                    /* FX held .. */

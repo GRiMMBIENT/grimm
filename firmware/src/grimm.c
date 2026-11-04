@@ -1133,7 +1133,7 @@ static char *put_ms(char *s, uint32_t q16)      /* a time, ms in Q16: "5 ms", "1
  * tap opens its first page, again the next (round); SYSTEM is HOME's, held */
 enum { PG_SOUND, PG_SOURCE, PG_ENV, PG_LFO, PG_SCALE, PG_CHORD, PG_SONG, PG_HOME, PG_MIX1, PG_MIX2, PG_SYSTEM,
        PG_SYS2, PG_SOUNDS, PG_PROJECTS, PG_ARP, PG_GRID, PG_PATTERN, PG_TAPE, PG_GRAIN, PG_DELAY, PG_SPACE, PG_PERFORM,
-       PG_TRACK, PG_FMALGO, PG_FMOP, PG_MASTER, PG_DRIVE, PG_SYS3, PG_PDLINE, PG_PDENV, NPAGE };   /* (the newer last: MIDI LEARN's links keep the pages' numbers they
+       PG_TRACK, PG_FMALGO, PG_FMOP, PG_MASTER, PG_DRIVE, PG_SYS3, PG_PDLINE, PG_PDENV, PG_LEVELS, NPAGE };   /* (the newer last: MIDI LEARN's links keep the pages' numbers they
                                                  * have; in their button's round by pg_key. TRACK: gone in step 25, its
                                                  * number kept: sys_load moves its links onto HOME) */
 typedef struct {
@@ -1180,12 +1180,14 @@ static const page_t PAGES[NPAGE] = {
     {"LINE 2", BTN_EDIT, 1, 1, 1, {"WAVE", "DCW", "RING", "NOISE"}},   /* (V2: a PHASE track's, after SOURCE: phase.c) */
     {"PHASE ENV", BTN_EDIT, 1, 1, 1, {"DCW ENV", "DCW DECAY", "PITCH ENV", "PITCH DECAY"}},   /* (V2: a PHASE track's, after
                                                  * LINE 2) */
+    {"LEVELS", BTN_HOME, 1, 0, 1, {"T1", "T2", "T3", "T4"}},   /* (V3.0: HOME's 4th page, after MIXER 2: KNOB 1..4 are T1..T4's LEVEL, the
+                                                 * same value as HOME's VOLUME and MIXER 1's LEVEL; no selected track) */
 };
 static uint32_t pg_key(uint32_t p)              /* its place in its button's round */
 {
     return p == PG_FMALGO ? PG_SOUND * 4u + 1u : p == PG_FMOP ? PG_SOUND * 4u + 2u :
-           p == PG_PDLINE ? PG_SOURCE * 4u + 1u : p == PG_PDENV ? PG_SOURCE * 4u + 2u : p * 4u;   /* (V2: PHASE's pages
-                                                 * after SOURCE) */
+           p == PG_PDLINE ? PG_SOURCE * 4u + 1u : p == PG_PDENV ? PG_SOURCE * 4u + 2u :
+           p == PG_LEVELS ? PG_MIX2 * 4u + 1u : p * 4u;   /* (V2: PHASE's pages after SOURCE; V3.0: LEVELS after MIXER 2) */
 }
 static int pg_on(uint32_t p)                    /* in its button's round now (FM ALGO, FM OP: an FM track's only) */
 {
@@ -1274,6 +1276,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_HOME: return k == 0u ? &trk[sel].level : k == 1u ? &trk[sel].cut : k == 2u ? &trk[sel].res : &trk[sel].fx;
     case PG_MIX1: return k == 0u ? mx_tile(sel, (uint32_t)clamp(mx_sq, 0, MX_N - 1)) : 0;
     case PG_MIX2: return k == 0u ? &trk[sel].pan : k == 1u ? &trk[sel].ftype : k == 2u ? &trk[sel].fpos : 0;
+    case PG_LEVELS: return &trk[k & 3u].level;   /* (V3.0: KNOB k + 1 is track k's LEVEL) */
     case PG_FMALGO: return k == 0u ? &trk[sel].fm_alg : k == 1u ? &trk[sel].fm_fb : k == 2u ? &fm_op :
                            &trk[sel].fmo[clamp(fm_op, 0, 5)][FO_FINE];
     case PG_FMOP: return &trk[sel].fmo[clamp(fm_op, 0, 5)][k == 0u ? FO_RATIO : k == 1u ? FO_LEVEL : k == 2u ? FO_ATK : FO_DEC];
@@ -1415,7 +1418,7 @@ static void knob_text(uint32_t pg, uint32_t k, char *s)   /* knob k's value on p
         else if (k == 1u) put_s(s, ARP_RATE_NAME[clamp(v, 0, NARPRATE - 1)]);
         else put_s(put_u(s, (uint32_t)v), k == 3u ? " %" : "");
         return;
-    case PG_HOME: case PG_MIX1: put_pc(s, v); return;
+    case PG_HOME: case PG_MIX1: case PG_LEVELS: put_pc(s, v); return;
     case PG_MIX2:
         if (k == 1u) { put_s(s, FT_NAME[clamp(v, 0, NFTYPE - 1)]); return; }
         if (k == 2u) { put_s(s, v ? "POST" : "PRE"); return; }
@@ -1726,10 +1729,11 @@ static void learn_knob(uint32_t pg, uint32_t k) /* a knob turned while LEARN wai
     if (!learn_st || pg == PG_SYSTEM || pg == PG_SYS2 || pg == PG_SYS3 || PAGES[pg].btn == BTN_SAVE || pg == PG_PERFORM ||
         !knob_param(pg, k))
         return;
-    if (pg == PG_MIX1 || (pg == PG_HOME && k == 0u)) {   /* (V2: linked as 1.0 linked them, MX_LK; HOME's VOLUME:
-                                                 * the track's LEVEL, as MIXER 1's) */
-        uint32_t i = pg == PG_HOME ? (uint32_t)MX_LEVEL : (uint32_t)clamp(mx_sq, 0, MX_N - 1);
-        learn_to[0] = PG_MIX1, learn_to[1] = MX_LK[i][0], learn_to[2] = (uint8_t)sel, learn_to[3] = MX_LK[i][1];
+    if (pg == PG_MIX1 || (pg == PG_HOME && k == 0u) || pg == PG_LEVELS) {   /* (V2: linked as 1.0 linked them, MX_LK; HOME's VOLUME:
+                                                 * the track's LEVEL, as MIXER 1's; V3.0: LEVELS' KNOB k + 1: track k's LEVEL, the
+                                                 * same link) */
+        uint32_t i = pg == PG_HOME || pg == PG_LEVELS ? (uint32_t)MX_LEVEL : (uint32_t)clamp(mx_sq, 0, MX_N - 1);
+        learn_to[0] = PG_MIX1, learn_to[1] = MX_LK[i][0], learn_to[2] = (uint8_t)(pg == PG_LEVELS ? k : sel), learn_to[3] = MX_LK[i][1];
         learn_st = 2;
         return;
     }
@@ -1913,6 +1917,14 @@ static void sys_load(void)                      /* the settings at power-on into
 }
 /* HOME's KNOB k + 1 turned: what it changed in the header ~1.5 s ("T2 VOL 090", "T2 CUTOFF 824", "T2 CUTOFF 2.4K",
  * "T2 RES 040", "T2 FX 140%"; then the track and its sound again): its slabs show the four tracks */
+/* (V3.0) LEVELS' KNOB k + 1 turned: track k's LEVEL in the header ~1.5 s, as HOME's VOLUME says it ("T3 VOL 079") */
+static void levels_say(uint32_t k)
+{
+    char *e = put_s(put_u(put_s(hd_msg, "T"), (k & 3u) + 1u), " VOL ");
+    uint32_t v = ((uint32_t)clamp(trk[k & 3u].level, 0, 127) * 100u + 63u) / 127u;
+    e[0] = (char)('0' + v / 100u), e[1] = (char)('0' + v / 10u % 10u), e[2] = (char)('0' + v % 10u), e[3] = 0;
+    hd_until = fm1_ms + 1500u;
+}
 static void home_say(uint32_t k)
 {
     static const char *const W[4] = {" VOL ", " CUTOFF ", " RES ", " FX "};
@@ -2387,6 +2399,7 @@ static void app_main(void)
                 if ((b_down >> BTN_SEL & 1u) && PAGES[page].btn == BTN_SEQ) lock_turn(k, d);
                 else knob_turn(page, k, d), learn_knob(page, k);   /* (LEARN: this one's parameter) */
                 if (page == PG_HOME) home_say(k);   /* (HOME: what it changed, in the header a moment) */
+                if (page == PG_LEVELS) levels_say(k);   /* (V3.0: LEVELS: track k's, in the header) */
                 if (b_down >> BTN_SEL & 1u) b_used |= 1u << BTN_SEL;
                 t_touch = fm1_ms;
             }

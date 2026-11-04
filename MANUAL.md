@@ -71,16 +71,18 @@ The main screen: the eye, two spider webs in the top corners (dew glints on them
 - **FX:** turns all five of the track's effect sends (MIXER 1's DELAY, REVERB, TAPE, GRAIN, DRIVE) up or down together. 0 = dry, 100 % = as set on MIXER 1, 200 % = twice as wet.
 - **CUT and DRY:** a small red **CUT** under a track's name on HOME means its filter is closed (nothing gets through); a red **DRY** means its FX is at 0, so it gets no effects although a send is up. On MIXER 1 such a track's send tiles are dimmed and show **FX0**.
 
-Press **HOME** again for the mixer pages:
+Press **HOME** again for the mixer pages (and **HOME** once more after LEVELS to come back to HOME):
 
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 |---|---|---|---|---|
 | MIXER 1 | the tile SELECT picks | | | |
 | MIXER 2 | PAN | TYPE | POS | |
+| LEVELS | T1's LEVEL | T2's LEVEL | T3's LEVEL | T4's LEVEL |
 
 ![MIXER 1](docs/screens/mixer1.png)
 
 - **MIXER 1** is six tiles for the selected track: **LEVEL**, **DELAY**, **REVERB** on top, **TAPE**, **GRAIN**, **DRIVE** below. Turn **SELECT** to move the red outline from tile to tile; **KNOB 1** sets the outlined tile (its bar and number turn red). **ALGORITHM** picks the track, as everywhere. The other knobs do nothing here.
+- **LEVELS** (the fourth page, after MIXER 2): the four knobs are the four tracks' **LEVEL**, **KNOB 1** T1's to **KNOB 4** T4's, so you can balance all four at once without picking a track. The slabs are HOME's (T1..T4 and their level in %); the header says what you turned (`T3 VOL 079`). It is the same value as HOME's VOLUME and MIXER 1's LEVEL, saved with the project; a MIDI CC linked to a level, MIDI LEARN (turn a LEVELS knob, then the CC) and the editor move it and the page follows.
 - **LEVEL:** the bar is a live meter: it moves with the track's sound, and its top two segments turn red at the peak. The meter's colour shows the LEVEL (dim grey when low, white when full). The small notch under it marks where LEVEL is set; the number is the LEVEL setting.
 - **DELAY, REVERB, GRAIN:** how much of the track goes to DELAY, SPACE and GRAIN.
 - **DRIVE send:** sends the track to a drive of its own, which joins the dry mix in the middle (not panned); the driven sound isn't sent on to GRAIN, DELAY or SPACE, but MASTER and the DRIVE page still act on it. It uses the DRIVE page's **TYPE** and **TONE**; the send is how hard the track hits it. It works even when the DRIVE page's AMOUNT is 0, so you can drive one track and leave the others clean. All DRIVE sends at 0 = off completely.

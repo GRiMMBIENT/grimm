@@ -61,7 +61,7 @@ const SCRIPT = [[100, "btn", BTN_HOME], [105, "enc", ENC_SELECT, 4], [110, "enc"
                 [710, "btn", BTN_EDIT], [720, "btn", BTN_EDIT], [730, "enc", ENC_KNOB1, 2], [740, "btn", BTN_EDIT],
                 [750, "btn", BTN_HOME], [760, "btn", BTN_HOME],
                 [765, "enc", ENC_SELECT, -3], [770, "enc", ENC_KNOB1, 80], [800, "keys", CHORD2],
-                [900, "keys", 0], [2000, "btn", BTN_HOME], [2010, "btn", BTN_HOME], [3000, "btn", BTN_FX],
+                [900, "keys", 0], [2000, "btn", BTN_HOME], [2010, "btn", BTN_HOME], [2020, "btn", BTN_HOME], [3000, "btn", BTN_FX],
                 [4000, "btn", BTN_FX], [5000, "down", BTN_FX], [5010, "keys", 1], [5020, "keys", 0], [5030, "up", BTN_FX],
                 [7000, "keys", CHORD2], [7100, "keys", 0], [7200, "enc", ENC_ALGORITHM, -1], [7300, "keys", CHORD1],
                 [7400, "keys", 0]];
@@ -595,6 +595,26 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   vf.step(300);
   vf.ex.web_master(0);
   check((await bit()) === 0 && quiet < 0.0001, `click: SEQ + F#3 again: CLICK off, PLAY is silent (peak ${quiet.toFixed(5)}, PLAY lit before ${litBefore}, after ${litNow})`);
+}
+
+// the LEVELS page (GR!MM 3.0, HOME's 4th): on the virtual FM-1 (the firmware's own code), through the project (object 9): each knob its own track's LEVEL
+{
+  const vf = await VirtualFM1.create(readFileSync("web/dist/grimm.wasm")), cl = new Client(vf);
+  vf.warmUp();
+  const lv = async () => { const w = await cl.get(OBJ.WORK, SEQ.WORK_LEN); return [0, 1, 2, 3].map((t) => w[t * 52 + 38]); };   // (a track: LEVEL at byte 38)
+  const tapHome = () => { vf.ex.web_buttons(1 << 8), vf.step(60), vf.ex.web_buttons(0), vf.step(60); };
+  const l0 = await lv();
+  tapHome(), tapHome(), tapHome();                          // MIXER 1, MIXER 2, LEVELS
+  vf.ex.web_enc(2 + 2, -15), vf.step(80);                   // KNOB 3 (encoder 4)
+  const l1 = await lv();
+  vf.ex.web_enc(2, -30), vf.ex.web_enc(2 + 3, -8), vf.step(80);   // KNOB 1, KNOB 4
+  const l2 = await lv();
+  tapHome();                                                // back to HOME
+  vf.ex.web_enc(2, 10), vf.step(80);                        // HOME's KNOB 1 (VOLUME): the selected track (T1) again: the same value
+  const l3 = await lv();
+  check(l0.every((v) => v === 100) && l1[2] < 100 && [0, 1, 3].every((t) => l1[t] === 100) && l2[0] < 100 && l2[3] < 100 && l2[2] === l1[2] && l2[1] === 100 &&
+        l3[0] > l2[0] && l3[0] <= 100 + 27 && l3.slice(1).every((v, i) => v === l2[i + 1]),
+        `levels: LEVELS on the virtual FM-1: KNOB 3 moves T3's level only (${l0} -> ${l1}), KNOB 1 and 4 theirs (${l2}); HOME is back after it and its VOLUME moves T1's, the same value (${l3})`);
 }
 
 // STEP RECORD (the SEQUENCER's REC): the record logic of editor_core.js

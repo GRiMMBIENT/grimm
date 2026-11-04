@@ -133,5 +133,25 @@ static void host_probe(void)
                                         (unsigned)vc[i].note, voice_latched(i));
     }
     printf("\n");
+    printf("slabvals %u", fm1_ms);              /* (V3.0, tests/levels_test.py: the four slabs as drawn: label:value:accent:fill) */
+    for (i = 0; i < 4u; i++) {
+        const char *l = ui_sl[i].lab, *v = ui_sl[i].val;
+        putchar(' ');
+        for (; *l; l++) putchar(*l == ' ' ? '_' : *l);
+        putchar(':');
+        for (; *v; v++) putchar(*v == ' ' ? '_' : *v);
+        printf(":%u:%u", ui_sl[i].acc, ui_sl[i].fill);
+    }
+    {                                           /* (and the header as drawn: button | left | right) */
+        const char *h[3] = {ui_hb, ui_hl, ui_hr};
+        uint32_t j;
+        printf(" head");
+        for (j = 0; j < 3u; j++) {
+            const char *c = h[j];
+            putchar(j ? '|' : ' ');
+            for (; *c; c++) putchar(*c == ' ' ? '_' : *c);
+        }
+    }
+    printf("\n");
     printf("clickstate %u on %u left %u leds %x\n", fm1_ms, cl_on, cl_n, host_led_keys);   /* (V3.0, tests/click_test.py: CLICK on; the frames of a click left; the keys lit) */
 }

@@ -414,7 +414,8 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         if (k == 0u) fm_ratio_text(S->val, (uint32_t)clamp(fm_op, 0, 5));
         else ui_3(S->val, (uint32_t)clamp(v, 0, 99));
         return;
-    case PG_HOME:                               /* the four tracks (the knobs are the selected one's: VOLUME, CUTOFF,
+    case PG_HOME: case PG_LEVELS:               /* (V3.0: LEVELS: the same four slabs, the knobs T1..T4's LEVEL, no track in the
+                                                 * accent) the four tracks (the knobs are the selected one's: VOLUME, CUTOFF,
                                                  * RESONANCE, FX; the header says what they change): "T2 FM", its LEVEL;
                                                  * the selected track in the accent; MUTE */
         put_s(put_s(put_u(put_s(S->lab, "T"), k + 1u), " "), SRC_CODE[clamp(trk[k].eng, 0, NENG - 1)]);
@@ -423,7 +424,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         S->fill = (uint8_t)((clamp(trk[k].level, 0, 127) * 8 + 63) / 127);
         ui_3(S->val, ui_pc(trk[k].level));
         if (trk_quiet >> k & 1u) { put_s(S->val, "MUTE"); S->dim = 1; }
-        S->acc = k == sel;
+        S->acc = page == PG_HOME && k == sel;
         return;
     case PG_MIX2:                               /* PAN; (V2) the track filter's TYPE, POS */
         if (k == 1u) put_s(S->val, FT_NAME[clamp(v, 0, NFTYPE - 1)]);
@@ -1256,6 +1257,18 @@ static void pic_mix1(void)
         ui_text(x + 6, y + 76, s, 2, dry ? ui_acc : fc);
     }
 }
+static void pic_levels(void)                   /* (V3.0) LEVELS: the four tracks' LEVEL as columns (a muted track's dim) */
+{
+    int32_t t, j;
+    ui_caption("LEVELS", 0);
+    for (t = 0; t < (int32_t)NT; t++) {
+        int32_t x0 = PX0 + t * 54 + 4, f = (clamp(trk[t].level, 0, 127) * 8 + 63) / 127;
+        char lab[3] = {'T', (char)('1' + t), 0};
+        for (j = 0; j < 8; j++)
+            ui_rect(x0 + 6, 132 - j * 9, 36, 7, j >= f ? UI_D : trk_quiet >> t & 1u ? UI_M : UI_L);
+        ui_text(x0 + 14, 145, lab, 1, UI_L);
+    }
+}
 static void pic_mix(void)                       /* FxTrack: the four tracks' columns, PAN, the filter's TYPE and POS */
 {
     int32_t t, j;
@@ -1861,6 +1874,7 @@ static void ui_pic_draw(void)
     case PG_SOURCE: pic_source(); return;
     case PG_ENV: pic_env(); return;
     case PG_MIX1: case PG_MIX2: pic_mix(); return;
+    case PG_LEVELS: pic_levels(); return;
     case PG_TAPE: pic_tape(); return;
     case PG_GRAIN: pic_grain(); return;
     case PG_DELAY: pic_delay(); return;

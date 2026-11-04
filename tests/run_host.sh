@@ -69,3 +69,6 @@ python3 tests/song_test.py build/host/grimm
 # GR!MM V3.0: the metronome (SEQ held + F#3): on / off, the header, the key lit, a click on every beat of the FM-1's tempo
 # and of a MIDI clock, an accent on beat 1, no voice used, nothing recorded, saved with the settings (tests/click_test.py)
 python3 tests/click_test.py build/host/grimm
+# GR!MM V3.0: the LEVELS page (HOME's 4th, after MIXER 2): KNOB 1-4 the tracks' LEVEL, the header, the same value as HOME's and
+# MIXER 1's, MIDI LEARN and CCs, saved with the project (tests/levels_test.py)
+python3 tests/levels_test.py build/host/grimm
