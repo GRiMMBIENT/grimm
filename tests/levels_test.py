@@ -57,7 +57,15 @@ def hd(pl):
 
 
 def slabs(sl):                                   # [(label, value, accent, fill)]
-    return [tuple(x.split(":")) for x in sl.split(" head")[0].split()[2:]]
+    return [tuple(x.split(":")) for x in sl.split(" meter ")[0].split()[2:]]
+
+
+def meter(sl):                                   # the four meters' cells lit (0..8)
+    return [int(x) for x in sl.split(" meter ")[1].split()[0].split(",")]
+
+
+def lcdpx(sl):                                   # the pixels sent to the screen so far
+    return int(sl.split(" lcdpx ")[1].split()[0])
 
 
 def head(sl):
@@ -165,6 +173,96 @@ lv = levels(pr[1200])
 pr2, sl2, _ = run("load", [(1000, "probe")], 1200, env={"GRIMM_SAVE_IN": str(OUT / "saves.bin")})
 check("the levels set on LEVELS are saved with the project (the autosave) and come back after a restart",
       "flash sector" in out and levels(pr2[1000]) == lv and lv[0] < l0[0] and lv[3] < l0[3] and lv[1:3] == l0[1:3], f"{lv} -> {levels(pr2[1000])}")
+
+
+# ---- the live meter (right half of each column): rises with a playing track, falls back smoothly when it stops
+ev = base[:3] + [(1400, "probe"), (1500, "keys 1"), (1900, "probe"), (2900, "probe"), (3000, "keys 0")]
+ev += [(t, "probe") for t in (3100, 3200, 3300, 3400, 3600, 3900, 4500, 6000, 9000)]
+pr, sl, _ = run("meter", ev, 9200)
+m0, mup, mpk = meter(sl[1400]), meter(sl[1900]), meter(sl[2900])
+fall = [meter(sl[t])[0] for t in (3100, 3200, 3300, 3400, 3600, 3900, 4500, 6000, 9000)]
+check("the meter is empty with nothing playing, rises with a playing track (T1 only: the others stay at 0)",
+      m0 == [0, 0, 0, 0] and mup[0] > 0 and mup[1:] == [0, 0, 0] and mpk[0] >= mup[0] and mpk[1:] == [0, 0, 0], f"{m0} {mup} {mpk}")
+check("... and falls back when the sound stops: never up again, down to 0, by steps (not from the top to nothing in one)",
+      all(a >= b for a, b in zip(fall, fall[1:])) and fall[-1] == 0 and fall[0] <= mpk[0] and any(0 < v < mpk[0] for v in fall) and
+      len({v for v in fall}) >= 3, f"peak {mpk[0]} then {fall}")
+check("the setting half does not follow the sound: LEVEL as set while the meter moves", levels(pr[1400]) == levels(pr[2900]) == levels(pr[3900]))
+
+# ---- the picture itself: both halves, the three colours (read from ui.c's one place), a muted track
+import re
+ui = open("firmware/src/ui.c", encoding="utf-8").read()
+
+
+def col(name):
+    m = re.search(r"#define %s RGB\(0x(..), 0x(..), 0x(..)\)" % name, ui)
+    r, g, b = (int(x, 16) for x in m.groups())
+    return ((r >> 3) * 255 // 31, (g >> 2) * 255 // 63, (b >> 3) * 255 // 31)       # (as host mode writes a pixel)
+
+
+C = {n: col(n) for n in ("UI_D", "UI_M", "UI_L", "UI_METER_NORMAL", "UI_METER_LOUD", "UI_METER_HOT")}
+LOUD_FROM, HOT_FROM = (int(re.search(r"#define %s (\d+)" % n, ui).group(1)) for n in ("UI_METER_LOUD_FROM", "UI_METER_HOT_FROM"))
+check("the three meter colours are named once (green / yellow / red) and chosen by height in one function", all(
+      len(re.findall(r"\b%s\b" % n, ui)) == 2 for n in ("UI_METER_NORMAL", "UI_METER_LOUD", "UI_METER_HOT")) and
+      len(re.findall(r"\bui_meter_col\(", ui)) == 2 and len({C["UI_METER_NORMAL"], C["UI_METER_LOUD"], C["UI_METER_HOT"]}) == 3 and
+      0 < LOUD_FROM < HOT_FROM < 8)
+
+
+def ppm(path):
+    d = open(path, "rb").read()
+    i = d.index(b"\n") + 1
+    return d[i:]
+
+
+def pix(img, x, y):
+    o = (y * 240 + x) * 3
+    return tuple(img[o:o + 3])
+
+
+def near(a, b):
+    return all(abs(p - q) <= 3 for p, q in zip(a, b))
+
+
+# T1: four notes on a LEVEL raised to the top (loud), T2: one note, T3: one note but muted (GLO + key), T4: nothing
+mid = [(0, "midi 0x92 60 100"), (0, "midi 0x91 59 100"), (0, "midi 0x90 36 100"), (0, "midi 0x90 48 100"), (0, "midi 0x90 55 100"), (0, "midi 0x90 60 100")]
+ev = base[:3] + [(1100, f"enc {KNOB1} 40")] + [(1200, "down 7"), (1300, "keys 16"), (1400, "keys 0"), (1500, "up 7")]
+ev += [(2000 + k, e) for k, (_, e) in enumerate(mid)] + [(9500, "probe")]
+pr, sl, _ = run("shot", ev, 10800)           # (host mode writes the screen at 15500 ms: 9500 on, the notes held)
+img = ppm(str(OUT / "shot-15500.ppm"))
+lvl, mt = levels(pr[9500]), meter(sl[9500])
+muted = int(pr[9500].split(" mute ")[1].split()[0])
+bad_px, seen = [], set()
+for t in range(4):
+    f = (lvl[t] * 8 + 63) // 127
+    for j in range(8):
+        y = 132 - 9 * j + 3
+        left = pix(img, 12 + 54 * t + 7 + 10, y)
+        want_l = C["UI_D"] if j >= f else C["UI_M"] if muted >> t & 1 else C["UI_L"]
+        right = pix(img, 12 + 54 * t + 7 + 24 + 10, y)
+        name = "UI_D" if j >= mt[t] else "UI_METER_HOT" if j >= HOT_FROM else "UI_METER_LOUD" if j >= LOUD_FROM else "UI_METER_NORMAL"
+        if j < mt[t]:
+            seen.add(name)
+        if not near(left, want_l):
+            bad_px.append(("L", t, j, left, want_l))
+        if not near(right, C[name]):
+            bad_px.append(("R", t, j, right, C[name]))
+check("the screen: each track's column has the LEVEL set on the left (white, dim if muted) and the meter on the right, green / yellow / red by height",
+      not bad_px and muted == 4 and mt[2] == 0 and mt[0] > mt[1] > 0, f"levels {lvl} meter {mt} muted {muted}; wrong: {bad_px[:3]}")
+check("... every colour showed (green, yellow, red) in this picture", seen == {"UI_METER_NORMAL", "UI_METER_LOUD", "UI_METER_HOT"}, f"seen {sorted(seen)} meter {mt}")
+
+# ---- the screen stays light: what the meter sends (only the meters that moved), against HOME and MIXER 1 with the same four sounds
+def traffic(name, taps):
+    ev = [x for k in range(taps) for x in tap(600 + 200 * k)]
+    ev += [(2000, "midi 0x90 48 100"), (2000, "midi 0x91 52 100"), (2000, "midi 0x92 55 100"), (2000, "midi 0x93 60 100")]
+    ev += [(3000, "probe"), (9000, "probe")]
+    pr, sl, _ = run(name, ev, 9200)
+    return (lcdpx(sl[9000]) - lcdpx(sl[3000])) / 6.0, sl[9000]
+
+
+px_home, _ = traffic("tr_home", 0)
+px_mix1, _ = traffic("tr_mix1", 1)
+px_lev, sl_lev = traffic("tr_levels", 3)
+check("four tracks sounding: LEVELS sends the screen under 60k pixels a second (a whole screen is 57.6k) and no more than HOME's moving picture does",
+      px_lev < 60000 and px_lev <= px_home * 1.5 + 1000, f"LEVELS {px_lev:.0f} px/s, HOME {px_home:.0f}, MIXER 1 {px_mix1:.0f}")
 
 print(f"levels test: {'FAILED' if bad else 'passed'}")
 sys.exit(1 if bad else 0)

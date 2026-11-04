@@ -61,10 +61,12 @@ static void fm1_led_glow(uint32_t id, int on) { (void)id; (void)on; }
 static uint16_t fb[240 * 240];
 static void lcd_sync(void) {}
 static uint32_t host_dark;                      /* (SCREEN OFF: the backlight off) */
+static uint32_t host_lcd_px;                    /* (V3.0, tests/levels_test.py: the pixels sent to the screen so far) */
 static void lcd_light(int on) { host_dark = !on; }
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
+    host_lcd_px += w * h;
     for (j = y; j < y + h && j < 240u; j++)
         for (i = x; i < x + w && i < 240u; i++)
             fb[j * 240u + i] = c;
@@ -72,6 +74,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px)
 {
     uint32_t i, j;
+    host_lcd_px += w * h;
     for (j = 0; j < h; j++)
         for (i = 0; i < w; i++)
             if (x + i < 240u && y + j < 240u) {

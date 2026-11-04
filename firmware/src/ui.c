@@ -23,6 +23,16 @@
 static const uint16_t UI_ACCENTS[4] = {RGB(0xc8, 0x32, 0x1e), RGB(0xd0, 0x8a, 0x1c), RGB(0x2f, 0x8f, 0x8a),
                                        RGB(0x7a, 0x4f, 0xb0)};   /* red (the default), amber, teal, violet (SYSTEM) */
 static uint16_t ui_acc = RGB(0xc8, 0x32, 0x1e); /* the accent */
+/* the live meters (LEVELS; the V3.0 themes set their own): a segment's colour by its height, segments 0 .. 7 from the bottom */
+#define UI_METER_NORMAL RGB(0x3c, 0xa8, 0x4a)   /* green: a normal level */
+#define UI_METER_LOUD RGB(0xd8, 0xc0, 0x2a)     /* yellow: loud */
+#define UI_METER_HOT RGB(0xd8, 0x32, 0x28)      /* red: near the top */
+#define UI_METER_LOUD_FROM 5                    /* the first loud segment (~-11 dB of full), */
+#define UI_METER_HOT_FROM 7                     /* .. the first near the top (~-5 dB) */
+static uint16_t ui_meter_col(int32_t seg)
+{
+    return seg >= UI_METER_HOT_FROM ? UI_METER_HOT : seg >= UI_METER_LOUD_FROM ? UI_METER_LOUD : UI_METER_NORMAL;
+}
 #define UI_PIC_MS 40u                           /* the picture redrawn at most this often */
 #define UI_BAT_W 16                             /* the header's battery (and its tip) */
 #define UI_BOOT_MS 5600u                        /* the boot screen this long (V2: 3 s before; its pictures at half
@@ -1214,22 +1224,38 @@ static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W 
     return RGB(0x5e + (0xe8 - 0x5e) * a / 127, 0x5b + (0xe4 - 0x5b) * a / 127, 0x54 + (0xd8 - 0x54) * a / 127);
 }
 static void ui_pic_draw(void);
-static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
+static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its peak since the last, up at once, down over ~0.3 s;
+                                                 * 1 if the cells lit moved (shared by MIXER 1's LEVEL and LEVELS) */
 {
     static const uint8_t CELL[8] = {3, 8, 16, 32, 48, 72, 104, 150};   /* (a cell lit from: ~-38 .. -4 dB of full) */
-    uint32_t t, e, h;
-    for (t = 0; t < NT; t++) {
-        e = vis_pk[t] / 96u, vis_pk[t] = 0;
-        e = e > 256u ? 256u : e;
-        e = trk_quiet >> t & 1u ? 0u : e * (uint32_t)clamp(trk[t].level, 0, 127) / 127u;
-        mx_e[t] = e >= mx_e[t] ? e : mx_e[t] - (mx_e[t] + 5u) / 6u;
-        for (h = 0; h < 8u && mx_e[t] >= CELL[h]; h++)
-            ;
-        if (h != mx_h[t]) {
-            mx_h[t] = (uint8_t)h;
-            if (draw && t == sel) ui_region(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_pic_draw);
-        }
-    }
+    uint32_t e, h;
+    e = vis_pk[t] / 96u, vis_pk[t] = 0;
+    e = e > 256u ? 256u : e;
+    e = trk_quiet >> t & 1u ? 0u : e * (uint32_t)clamp(trk[t].level, 0, 127) / 127u;
+    mx_e[t] = e >= mx_e[t] ? e : mx_e[t] - (mx_e[t] + 5u) / 6u;
+    for (h = 0; h < 8u && mx_e[t] >= CELL[h]; h++)
+        ;
+    if (h == mx_h[t]) return 0;
+    mx_h[t] = (uint8_t)h;
+    return 1;
+}
+static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
+{
+    uint32_t t;
+    for (t = 0; t < NT; t++)
+        if (ui_meter_step(t) && draw && t == sel) ui_region(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_pic_draw);
+}
+/* (V3.0) LEVELS: a track's column is two halves side by side, the LEVEL set on the left, the sound now on the right (this
+ * meter); a frame every UI_ANIM_MS redraws only the meters that moved */
+#define LV_X(t) (PX0 + (int32_t)(t) * 54 + 7)   /* the left half; the meter is LV_DX on, each LV_W wide */
+#define LV_DX 24
+#define LV_W 20
+#define LV_Y(j) (132 - (int32_t)(j) * 9)        /* segment j's top; 7 high */
+static void ui_levels_frame(int draw)
+{
+    uint32_t t;
+    for (t = 0; t < NT; t++)
+        if (ui_meter_step(t) && draw) ui_region(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_pic_draw);
 }
 /* (V2) MIXER 1: the whole page six tiles as the knobs' slabs (no slabs under them), LEVEL DELAY REVERB over TAPE
  * GRAIN DRIVE, the selected track's: the name, 8 segments, the value; the one SELECT picks outlined in the accent, its
@@ -1257,16 +1283,19 @@ static void pic_mix1(void)
         ui_text(x + 6, y + 76, s, 2, dry ? ui_acc : fc);
     }
 }
-static void pic_levels(void)                   /* (V3.0) LEVELS: the four tracks' LEVEL as columns (a muted track's dim) */
+static void pic_levels(void)                   /* (V3.0) LEVELS: each track's column in two halves: the LEVEL set (white, a muted
+                                                 * track's dim) and the sound now (the live meter, coloured by height) */
 {
     int32_t t, j;
     ui_caption("LEVELS", 0);
     for (t = 0; t < (int32_t)NT; t++) {
-        int32_t x0 = PX0 + t * 54 + 4, f = (clamp(trk[t].level, 0, 127) * 8 + 63) / 127;
+        int32_t f = (clamp(trk[t].level, 0, 127) * 8 + 63) / 127;
         char lab[3] = {'T', (char)('1' + t), 0};
-        for (j = 0; j < 8; j++)
-            ui_rect(x0 + 6, 132 - j * 9, 36, 7, j >= f ? UI_D : trk_quiet >> t & 1u ? UI_M : UI_L);
-        ui_text(x0 + 14, 145, lab, 1, UI_L);
+        for (j = 0; j < 8; j++) {
+            ui_rect(LV_X(t), LV_Y(j), LV_W, 7, j >= f ? UI_D : trk_quiet >> t & 1u ? UI_M : UI_L);
+            ui_rect(LV_X(t) + LV_DX, LV_Y(j), LV_W, 7, j >= mx_h[t] ? UI_D : ui_meter_col(j));
+        }
+        ui_text(LV_X(t) + 14, 145, lab, 1, UI_L);
     }
 }
 static void pic_mix(void)                       /* FxTrack: the four tracks' columns, PAN, the filter's TYPE and POS */
@@ -2144,6 +2173,10 @@ static void ui_update(int32_t oct)
     if (page == PG_MIX1 && fm1_ms - an_t >= UI_ANIM_MS) {   /* (V2) MIXER 1: its LEVEL meter, the sound now */
         an_t = fm1_ms;
         ui_mix_frame(!all);
+    }
+    if (page == PG_LEVELS && fm1_ms - an_t >= UI_ANIM_MS) {   /* (V3.0) LEVELS: the four meters, the sounds now */
+        an_t = fm1_ms;
+        ui_levels_frame(!all);
     }
     key = ui_pic_key();
     if (key != pic_key && (all || fm1_ms - pic_t >= UI_PIC_MS)) {

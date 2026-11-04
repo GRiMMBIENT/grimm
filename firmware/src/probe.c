@@ -142,6 +142,7 @@ static void host_probe(void)
         for (; *v; v++) putchar(*v == ' ' ? '_' : *v);
         printf(":%u:%u", ui_sl[i].acc, ui_sl[i].fill);
     }
+    printf(" meter %u,%u,%u,%u lcdpx %u", mx_h[0], mx_h[1], mx_h[2], mx_h[3], host_lcd_px);   /* (the meters' cells lit, 0 .. 8: LEVELS, MIXER 1) */
     {                                           /* (and the header as drawn: button | left | right) */
         const char *h[3] = {ui_hb, ui_hl, ui_hr};
         uint32_t j;
