@@ -4,8 +4,9 @@
 """GR!MM V3.0's metronome in host mode (tests/run_host.sh): SEQ held + F#3 turns CLICK on and off (the header says so, F#3
 is lit while SEQ is held and CLICK is on, no note plays, no page changes); with it on, while the sequencer plays (REC on
 or off) a click lands on every beat of the FM-1's tempo and of a MIDI clock (USB), a higher and louder one on beat 1 of
-the bar, with no count-in and nothing when stopped; no voice is used, no pattern is touched; CLICK is saved with the
-settings. The clicks are found in the sound the host run writes (build/host/click/NAME.wav).
+the bar, with no count-in and nothing when stopped; no voice is used, no pattern is touched; CLICK is not saved (off at power-on);
+F#3 flashes with the clicks while CLICK is on and the sequencer plays (longer on beat 1).
+The clicks are found in the sound the host run writes (build/host/click/NAME.wav).
   python3 tests/click_test.py [build/host/grimm]"""
 import os
 import re
@@ -154,16 +155,74 @@ for bpm10 in (1200, 2400, 600):
     check(f"... beat 1 (the clock's START) is the accent, then every fourth", len(c) >= 8 and all(
         (c[k][1] > 1.3 * c[1][1]) == (k % 4 == 0) for k in range(len(c))), str([c[k][1] for k in range(min(len(c), 8))]))
 
-# ---- saved: the setting survives a restart (settings saved, loaded again), off stays off
+# ---- not saved: CLICK is no setting (no settings save follows the switch); it starts off at every power-on, also after settings that
+# a V3.0 test build wrote with CLICK on in bit 2 (that bit goes, LATCH and VELOCITY stay)
 st = OUT / "settings.bin"
-pr, cs, x, out = run("save_on", toggle(500), 6000, env={"GRIMM_SETTINGS_OUT": str(st)})
-check("CLICK on is saved with the settings (the settings save after the change)", "settings saved" in out and st.exists() and (st.read_bytes()[169] & 4) == 4,
-      f"byte 169 = {st.read_bytes()[169] if st.exists() else None}")
-pr, cs, x, _ = run("restart", [(1000, "probe"), (1500, f"btn {PLAY}")], 6000, env={"GRIMM_SETTINGS_IN": str(st)})
-check("... after a restart CLICK is still on, and clicks", cs[1000][0] == 1 and len(clicks(x)) >= 4)
-pr, cs, x, out = run("save_off", toggle(500) + toggle(1500), 7000, env={"GRIMM_SETTINGS_OUT": str(OUT / "settings2.bin")})
-check("CLICK off again is saved: after a restart it is off", (OUT / "settings2.bin").read_bytes()[169] & 4 == 0 and
-      run("restart2", [(1000, "probe")], 2000, env={"GRIMM_SETTINGS_IN": str(OUT / "settings2.bin")})[1][1000][0] == 0)
+st.unlink(missing_ok=True)
+pr, cs, x, out = run("save_on", toggle(500) + [(3000, "probe")], 6000, env={"GRIMM_SETTINGS_OUT": str(st)})
+check("CLICK on: the settings are not saved because of it (nothing to save)", cs[3000][0] == 1 and "settings saved" not in out and not st.exists())
+pr, cs, x, _ = run("restart", [(1000, "probe"), (1500, f"btn {PLAY}")], 6000)
+check("a restart: CLICK is off (starts off at power-on): no click", cs[1000][0] == 0 and not clicks(x))
+old = bytearray(170)                            # settings as a V3.0 test build saved them: version 3, LATCH ALWAYS OFF (bit 0), CLICK (bit 2)
+old[167], old[169] = 3, 5
+(OUT / "old.bin").write_bytes(bytes(old))
+pr, cs, x, _ = run("restart_old", [(1000, "probe"), (1500, f"btn {PLAY}")], 6000, env={"GRIMM_SETTINGS_IN": str(OUT / "old.bin")})
+check("settings with the old CLICK bit: CLICK starts off, no click, LATCH ALWAYS OFF kept", cs[1000][0] == 0 and not clicks(x) and
+      field(pr[1000], "new") == "1", f"{cs[1000]} new {field(pr[1000], 'new')}")
+
+# ---- the F#3 light flashes with the clicks while CLICK is on and the sequencer plays (no SEQ held): ~60 ms a beat, ~160 ms on beat 1
+def led(out):
+    """F#3's light: [(ms, 0 / 1)] each change"""
+    return [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"^\s*(\d+) ms  led F#3 (\d)$", out, re.M)]
+
+
+def flashes(ch, lo, hi):
+    """[(on ms, off ms)] of the light's on-periods starting in lo..hi"""
+    res, on = [], None
+    for t, v in ch:
+        if v and on is None:
+            on = t
+        elif not v and on is not None:
+            if lo <= on <= hi:
+                res.append((on, t))
+            on = None
+    return res
+
+
+ev = toggle(500) + [(2000, f"btn {PLAY}"), (6000, f"btn {PLAY}")]
+pr, cs, x, out = run("flash", ev, 8000, env={"GRIMM_LED_LOG": "1"})
+ch, c = led(out), clicks(x)
+fl = flashes(ch, 1900, 6100)
+check("CLICK on, playing: F#3 flashes with every click: 8 flashes in 4 s, each starting with its click (within 8 ms)",
+      len(fl) == 8 and len(c) >= 8 and all(abs(fl[k][0] - c[k][0]) <= 8 for k in range(8)),
+      f"flashes {fl} clicks {[round(t) for t, _, _ in c][:8]}")
+check("... 60 ms on a beat, 160 ms on beat 1 of the bar (+-12 ms)",
+      len(fl) == 8 and all(abs((o - n) - (160 if k % 4 == 0 else 60)) <= 12 for k, (n, o) in enumerate(fl)), str([o - n for n, o in fl]))
+check("... and dark between them, and after STOP (none past 6.2 s)", not flashes(ch, 6200, 8000) and ch[-1][1] == 0, str(ch[-3:]))
+pr, cs, x, out = run("flash_off", [(2000, f"btn {PLAY}"), (5000, f"btn {PLAY}")], 6000, env={"GRIMM_LED_LOG": "1"})
+check("CLICK off, playing: F#3 does not flash", not led(out), str(led(out)[:4]))
+pr, cs, x, out = run("flash_stop", toggle(500) + [(3000, "probe")], 5000, env={"GRIMM_LED_LOG": "1"})
+check("CLICK on, stopped: F#3 does not flash (lit only while SEQ is held: 0.1 s .. 0.8 s)", [t for t, v in led(out) if t > 900] == [] and cs[3000][2] >> 1 & 1 == 0,
+      str(led(out)))
+
+# ---- who wins on F#3: a note's light (the key held, the sequencer's or the arp's note on the selected track) keeps it on
+# steadily, the flash is only seen where nothing else lights it; SEQ held: lit as before; GLO / SAVE / FX held: no flash
+def steady(name, ev2, lo, hi, what):
+    pr, cs, x, out = run(name, toggle(500) + [(2000, f"btn {PLAY}")] + ev2 + [(6000, f"btn {PLAY}")], 8000, env={"GRIMM_LED_LOG": "1"})
+    ch = led(out)
+    before = [v for t, v in ch if t <= lo][-1:]      # (the light at lo, and any change after it)
+    check(what, before == [1] and not [1 for t, v in ch if lo < t < hi], str(ch))
+    return ch
+
+
+steady("note_held", [(3000, f"keys {F_SHARP3}"), (5000, "keys 0")], 3100, 4950,
+       "F#3 held as a note (CLICK on, playing): its light stays on, the beats do not blink it")
+steady("seq_held", [(3000, f"down {SEQ}"), (5000, f"up {SEQ}")], 3100, 4950,
+       "SEQ held (CLICK on, playing): F#3 lit steadily, as before")
+for nm, b in (("glo", 7), ("save", 9)):
+    pr, cs, x, out = run(f"hold_{nm}", toggle(500) + [(2000, f"btn {PLAY}"), (3000, f"down {b}"), (5000, f"up {b}")], 7000, env={"GRIMM_LED_LOG": "1"})
+    check(f"{nm.upper()} held (CLICK on, playing): F#3 does not flash (the keys mean something else)", not [1 for t, v in led(out) if 3100 < t < 5000],
+          str([(t, v) for t, v in led(out) if 3000 < t < 5100]))
 
 print(f"click test: {'FAILED' if bad else 'passed'}")
 sys.exit(1 if bad else 0)

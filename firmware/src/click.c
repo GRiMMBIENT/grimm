@@ -7,7 +7,7 @@
  * It is not a track: no voice (none of the 6 is taken), nothing in any pattern, no sound of the project's. It is added to
  * the mix when every track and effect is in, just before the output stage: the MASTER knob and the limiter apply to it
  * as to the rest, and USB audio carries it. Audio ISR only (seq_tick sets the click, app_audio plays it, one ISR); the
- * main loop sets cl_on (the setting: bit 2 of set.latch, saved). A click starts on the control step the tick came in
+ * main loop sets cl_on (not saved: off at every power-on) and lights F#3 with the clicks (click_flash). A click starts on the control step the tick came in
  * (voices_render's vr_frame), as a note does. */
 
 #define CL_BEAT 96u                             /* ticks a beat (seq.c: SEQ_BAR is 4 of them) */
@@ -21,17 +21,31 @@
 #define CL_INC ((uint32_t)(((uint64_t)CL_HZ << 32) / FS))        /* a frame's phase step: a cycle is 2^32 (folded at compile time) */
 #define CL_INC_ACC ((uint32_t)(((uint64_t)CL_HZ_ACC << 32) / FS))
 #define CL_NONE 0xFFFFu
-static volatile uint32_t cl_on;                 /* main loop: CLICK on (the setting) */
+static volatile uint32_t cl_on;                 /* main loop: CLICK on (not a setting: off at power-on) */
 static uint32_t cl_at = CL_NONE;                /* audio: a click due in this block, at this frame (CL_NONE: none) */
 static uint32_t cl_acc;                         /* audio: .. it is beat 1's */
 static uint32_t cl_n, cl_ph, cl_inc;            /* audio: frames of the click left (0: silent), its phase, its step */
 static int32_t cl_env, cl_amp;                  /* audio: its envelope (Q15), its level */
+
+#define CL_FLASH 60u                            /* the F#3 light's flash on a beat (ms), */
+#define CL_FLASH_ACC 160u                       /* .. on beat 1 (the key's LED has no brightness between off and on: a longer one) */
+static volatile uint32_t cl_beats, cl_beat1;    /* audio: the clicks started so far; the last one was beat 1's (main loop: the light) */
+static uint32_t cl_seen, cl_until;              /* main loop: the clicks seen; the flash lasts until (fm1_ms) */
 
 static void click_tick(uint32_t ticks)          /* audio, a tick while playing (seq_tick; ticks: seq_ticks before it) */
 {
     if (!cl_on || ticks % CL_BEAT) return;
     cl_at = vr_frame;
     cl_acc = !(ticks % (4u * CL_BEAT));
+    cl_beat1 = cl_acc, cl_beats++;
+}
+static int click_flash(void)                    /* main loop: 1 while F#3 flashes with a click (CLICK on, a beat just came in) */
+{
+    if (cl_beats != cl_seen) {
+        cl_seen = cl_beats;
+        cl_until = fm1_ms + (cl_beat1 ? CL_FLASH_ACC : CL_FLASH);
+    }
+    return cl_on && (int32_t)(cl_until - fm1_ms) > 0;
 }
 static void click_render(int32_t *out, uint32_t n)   /* audio: n frames (Q15 << PB, left and right) of the click into out */
 {

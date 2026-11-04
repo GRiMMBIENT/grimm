@@ -50,7 +50,10 @@ static uint32_t fm1_ticks(void)                 /* 24 MHz, as the FM-1's TIMER4:
 static uint32_t host_led_keys;                  /* (V3.0, tests/click_test.py: the keys' LEDs lit, bit k = key k, as the browser build's web_led_key) */
 static void fm1_led_key(uint32_t id, int on)
 {
+    uint32_t was = host_led_keys;
     if (id >= 14u) host_led_keys = on ? host_led_keys | 1u << (id - 14u) : host_led_keys & ~(1u << (id - 14u));
+    if (id == 15u && (was ^ host_led_keys) & 2u && getenv("GRIMM_LED_LOG"))   /* (tests/click_test.py: F#3's light, each change) */
+        printf("%6u ms  led F#3 %u\n", fm1_ms, host_led_keys >> 1 & 1u);
 }
 static void fm1_led_glow(uint32_t id, int on) { (void)id; (void)on; }
 

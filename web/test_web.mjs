@@ -226,21 +226,15 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
       check(sameSettings(sv, s5) && v5.velocity === 1 && v5.latch === 1 && settingsOf(s4).velocity === 0,
             "editor: SETTINGS: VELOCITY ON written beside LATCH, read back");
     }
-    {                                                        // (V3.0: CLICK, bit 2 of the same byte: kept, and the editor's own LATCH / VELOCITY writes leave it)
-      const sc = Uint8Array.from(s4);
-      sc[SET_V2] |= 4;
-      await cl.put(OBJ.SET, sc, info.fmt);
-      const s6 = await cl.get(OBJ.SET, info.setSize);
-      const sw = withSettings(s6, { mch: 0, clk: 0, latch: 0, velocity: 1 });
-      await cl.put(OBJ.SET, sw, info.fmt);
-      const s7 = await cl.get(OBJ.SET, info.setSize), bad = Uint8Array.from(s4);
-      bad[SET_V2] |= 8;
+    {                                                        // (V3.0: CLICK is not a setting: a byte with a bit past VELOCITY's is refused, as before V3.0)
+      const cur = await cl.get(OBJ.SET, info.setSize), bad = Uint8Array.from(cur);
+      bad[SET_V2] |= 4;
       let rc = -1;
       try { await cl.put(OBJ.SET, bad, info.fmt); } catch (e) { rc = e.rc; }
-      check(s6[SET_V2] === 5 && s7[SET_V2] === 6 && rc === 2 && (await cl.get(OBJ.SET, info.setSize))[SET_V2] === 6,
-            `editor: SETTINGS: CLICK ON (bit 2) written and read back; the editor's LATCH / VELOCITY write leaves it on; a byte past bit 2 is refused (rc ${rc})`);
+      check(rc === 2 && (await cl.get(OBJ.SET, info.setSize))[SET_V2] === cur[SET_V2],
+            `editor: SETTINGS: a bit past LATCH and VELOCITY (3.0's test build kept CLICK there) is refused (rc ${rc}), the settings unchanged`);
     }
-    await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0, velocity: 0 }), info.fmt);   // (all off: CLICK too, as before)
+    await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0, velocity: 0 }), info.fmt);
   }
   {                                                          // GR!MM V2: FX (25): read, set live (MASTER, DRIVE, T2's filter)
     const f0 = await cl.fx();
@@ -553,10 +547,11 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
   const vf = await VirtualFM1.create(readFileSync("web/dist/grimm.wasm")), cl = new Client(vf);   // (a fresh one: the patterns empty, as at power-on)
   vf.warmUp();
   const info = await cl.info();
-  const peak = (ms) => {
+  const peak = (ms, each) => {
     let pk = 0;
     for (let i = 0; i < ms; i++) {
       vf.run();
+      if (each) each();
       const n = vf.ex.web_avail();
       if (n) {
         vf.ex.web_want_frames(n), vf.ex.web_take();
@@ -567,21 +562,29 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
     }
     return pk;
   };
-  const bit = async () => (await cl.get(OBJ.SET, info.setSize))[SET_V2] >> 2 & 1;
+  const set0 = await cl.get(OBJ.SET, info.setSize), eqBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const bit = async () => (await cl.get(OBJ.SET, info.setSize))[SET_V2] >> 2 & 1;   // (CLICK is no setting: this stays 0)
   const combo = () => { vf.ex.web_buttons(1 << 11), vf.step(80), vf.ex.web_keys(2), vf.step(80), vf.ex.web_keys(0), vf.step(80); };
   const was = await bit();
   combo();
   const litHeld = vf.ex.web_lit_keys() >>> 1 & 1, on = await bit();
   vf.ex.web_buttons(0), vf.step(80);
   const litFree = vf.ex.web_lit_keys() >>> 1 & 1;
-  check(was === 0 && on === 1 && litHeld === 1 && litFree === 0, `click: SEQ + F#3: CLICK on (the setting, bit 2 of the settings' byte 169), F#3 lit while SEQ is held (${litHeld}), dark after (${litFree})`);
+  check(was === 0 && on === 0 && litHeld === 1 && litFree === 0 && eqBytes(await cl.get(OBJ.SET, info.setSize), set0),
+        `click: SEQ + F#3: CLICK on and F#3 lit while SEQ is held (${litHeld}), dark after (${litFree}); the settings are not touched (not saved)`);
   vf.ex.web_master(760);                                    // (the virtual FM-1 is muted: MASTER up to hear it)
-  vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0);
-  const loud = peak(1200);
+  const lit = [], sample = () => lit.push(vf.ex.web_lit_keys() >>> 1 & 1);   // F#3's light, each millisecond from PLAY on (SEQ not held)
+  vf.ex.web_buttons(1 << BTN_PLAY);
+  for (let i = 0; i < 80; i++) vf.step(1), sample();
+  vf.ex.web_buttons(0);
+  const loud = peak(1200, sample);
+  const on1 = lit.filter((v, i) => v && !lit[i - 1]).length, runs = [];
+  for (let i = 0, n = 0; i <= lit.length; i++) { if (lit[i]) n++; else if (n) { runs.push(n); n = 0; } }
   vf.ex.web_buttons(1 << BTN_PLAY), vf.step(80), vf.ex.web_buttons(0);
   vf.step(300);
   vf.ex.web_master(0);
   check(loud > 0.005 && loud < 0.5, `click: PLAY with CLICK on, empty patterns: the click sounds in the browser build (peak ${loud.toFixed(3)})`);
+  check(on1 >= 2 && on1 <= 3 && runs.slice(0, 2).every((n, k) => (k === 0 ? n >= 130 && n <= 190 : n >= 45 && n <= 80)), `click: the F#3 light flashes with the clicks in the browser build (${on1} flashes in 1.2 s, the first ${runs[0]} ms long, the next ${runs[1]} ms)`);
   const litBefore = vf.ex.web_lit_buttons() >>> BTN_PLAY & 1;
   combo(); vf.ex.web_buttons(0), vf.step(80);
   vf.ex.web_master(760);

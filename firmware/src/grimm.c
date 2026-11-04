@@ -1854,7 +1854,7 @@ static void sys_sync(void)
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
     uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
-    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1 | (cl_on & 1u) << 2);   /* (V2: LATCH, VELOCITY; V3.0: CLICK) */
+    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1);   /* (V2: LATCH, VELOCITY) */
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
@@ -1894,11 +1894,13 @@ static void sys_load(void)                      /* the settings at power-on into
     }
     if (set.mch > MCH_MAX) set.mch = 0;
     if (set.clk >= CK_N) set.clk = CK_INT;
-    if (set.latch > 7u) set.latch = 0;
+    set.latch &= 3u;                            /* (V3.0: CLICK is not a setting. A V3.0 test build saved it in bit 2: gone, LATCH and
+                                                 * VELOCITY kept) */
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
     sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
-    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u, cl_on = set.latch >> 2 & 1u;
+    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u;
+    cl_on = 0;                                  /* (V3.0: CLICK always starts off) */
     sys_sync();
     set_dirty = 0;
     if (!set.ver)                               /* (steps 20..24's; V1.0's are version 1: as they are) */
@@ -2313,9 +2315,8 @@ static void app_main(void)
                     b_used |= 1u << BTN_SEQ;
                     continue;
                 }
-                if (k == BK[0]) {               /* SEQ held + F#3 (V3.0): CLICK on, off (saved: a setting) */
+                if (k == BK[0]) {               /* SEQ held + F#3 (V3.0): CLICK on, off (not saved: off at power-on) */
                     cl_on ^= 1u;
-                    sys_sync();
                     hd_say(cl_on ? "CLICK ON" : "CLICK OFF");
                     b_used |= 1u << BTN_SEQ;
                     continue;
@@ -2494,6 +2495,10 @@ static void app_main(void)
             for (k = 0; k < 8u; k++) lit |= (k ? pf_held >> (k - 1u) & 1u : ge_freeze & 1u) << WK[k];
             for (k = 0; k < 4u; k++) lit |= (gen_on >> k & 1u) << BK[k];
         }
+        if (click_flash() && playing && !(b_down >> BTN_SEQ & 1u) && !glo_held && !save_held && !(b_down >> BTN_FX & 1u))
+            lit |= 1u << BK[0];                 /* (V3.0: CLICK on, playing: F#3 flashes with every click, longer on beat 1; a
+                                                 * note's light on it is on anyway, the note wins; no flash where the key
+                                                 * means something else: SEQ / GLO / SAVE / FX held) */
         for (k = 0; k < 27u; k++) {
             uint32_t wk, bk;
             for (wk = 0; wk < 8u && WK[wk] != k; wk++)

@@ -297,7 +297,7 @@ Every track has its own 64-step pattern. All four play together on one tempo.
 |---|---|---|---|---|---|---|---|
 | CLEAR | RANDOM | SHIFT ← | SHIFT → | COPY | PASTE | DOUBLE | MUTATE |
 
-**Metronome: hold SEQ + F#3** switches CLICK on or off (the screen says `CLICK ON` or `CLICK OFF`; F#3 lights while you hold SEQ if CLICK is on). With CLICK on, whenever the sequencer plays (REC on or off) you hear a short click on every beat, and a higher, louder one on beat 1 of the bar. It follows the tempo and an external MIDI clock, and there is no count-in. The click is not a track: it uses none of the six voices, is never recorded into a pattern, and goes to the normal output and the USB audio, under the MASTER knob. CLICK is kept when you switch off.
+**Metronome: hold SEQ + F#3** switches CLICK on or off (the screen says `CLICK ON` or `CLICK OFF`; F#3 lights while you hold SEQ if CLICK is on). While CLICK is on and the sequencer plays, the F#3 key also flashes with every click (a short flash a beat, a longer one on beat 1); if a note is lighting F#3 (held, latched, or played by the sequencer or arpeggiator on the selected track), its steady light wins and the flash is not shown. With CLICK on, whenever the sequencer plays (REC on or off) you hear a short click on every beat, and a higher, louder one on beat 1 of the bar. It follows the tempo and an external MIDI clock, and there is no count-in. The click is not a track: it uses none of the six voices, is never recorded into a pattern, and goes to the normal output and the USB audio, under the MASTER knob. CLICK is not saved: it is always off when you switch the FM-1 on.
 
 ---
 
