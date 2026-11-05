@@ -80,6 +80,9 @@ python3 tests/voices_test.py build/host/grimm
 # GR!MM V3.0 item 6: the key lights after an octave change: a lit key struck again switches its own note off; a latched note whose key plays another
 # pitch now blinks, one at the current octave is steady; MIDI, the sequencer, the arp (tests/keylights_test.py)
 python3 tests/keylights_test.py build/host/grimm
+# GR!MM V3.0 item 7: chords stay whole while the other tracks play: a chord's 2nd and further notes may take another track's release tail (never a
+# sounding note): 9 release combinations, the drift case, stop / play series (tests/chordvoice_test.py)
+python3 tests/chordvoice_test.py build/host/grimm
 # GR!MM V3.0: the VA source's filter leaves no DC offset at a low cutoff (dsp.c tsvf_lp rounds): at every cutoff, through each DRIVE
 # type, and with an LFO sweeping the VA's CUTOFF the bass no longer crumbles (tests/va_dc_test.py)
 python3 tests/va_dc_test.py build/host/grimm

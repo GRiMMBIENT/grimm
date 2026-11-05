@@ -729,7 +729,8 @@ static uint32_t phys_count(void)                /* PHYS voices sounding: its not
 /* (V2) a voice for a new note of track t: a track never takes another track's voice (1.0: the quietest release of any
  * track, all six on: the oldest note of any, a latched drone too). Its own release of this note, else an idle voice,
  * else its own quietest release; else none: the note not played. A track with no voice at all takes one from the track
- * holding the most (its quietest release, else its oldest note), so none is shut out. PHYS past PHYS_MAX: its own PHYS
+ * holding the most (its quietest release, else its oldest note), so none is shut out. (V3.0) A chord's 2nd and further notes
+ * (more): else the quietest release tail of any other track, never a sounding note: chords stay whole. PHYS past PHYS_MAX: its own PHYS
  * release, else its oldest PHYS note; with none, from the track holding the most PHYS voices */
 static uint32_t trk_voices(uint32_t t, int phys)   /* track t's voices sounding (phys: its PHYS ones): its notes on (the
                                                  * list: a voice just started is its at once, vc[] only a block on),
@@ -766,7 +767,18 @@ static int take_from(uint32_t t, int phys, int rel, uint32_t *v)   /* track t's 
         if (lat_trk[i] == t && (!phys || trk[t].eng == ENG_PHYS)) { *v = drop_at(i); return 1; }
     return 0;
 }
-static int pick_voice(uint32_t t, uint32_t note, uint32_t *v)
+static int take_tail(uint32_t t, uint32_t *v)   /* (V3.0) the quietest release tail (a fading note) of any other track: its voice; none: 0. Never a
+                                                 * note that is sounding (held, latched, playing) */
+{
+    uint32_t w, best = NV;
+    int32_t lv = 0x7FFFFFFF;
+    for (w = 0; w < NV; w++)
+        if (vc[w].stage == ST_REL && vc[w].trk != t && !voice_latched(w) && voice_level(w) < lv) lv = voice_level(w), best = w;
+    if (best < NV) { *v = best; return 1; }
+    return 0;
+}
+static int pick_voice(uint32_t t, uint32_t note, uint32_t *v, int more)   /* (V3.0 more: a chord's 2nd and further notes: so they
+                                                 * are whole, they may take another track's release tail, never its sounding note) */
 {
     uint32_t w, u, most = 0, from = NT;
     int phys = trk[t].eng == ENG_PHYS && phys_count() >= PHYS_MAX;
@@ -776,8 +788,10 @@ static int pick_voice(uint32_t t, uint32_t note, uint32_t *v)
         for (w = 0; w < NV; w++)
             if (!voice_latched(w) && voice_idle(w)) { *v = w; return 1; }
     }
-    if (trk_voices(t, phys)) return take_from(t, phys, !phys, v);   /* (its own release; PHYS: else its oldest PHYS
-                                                 * note; none: not played) */
+    if (trk_voices(t, phys))                    /* (its own release; PHYS: else its oldest PHYS note; V3.0: a chord's 2nd and
+                                                 * further notes (not PHYS): else the quietest release tail of another track;
+                                                 * none: not played) */
+        return take_from(t, phys, !phys, v) || (more && !phys && take_tail(t, v));
     for (u = 0; u < NT; u++)                    /* (none at all: from the track holding the most) */
         if (u != t && trk_voices(u, phys) > most) most = trk_voices(u, phys), from = u;
     if (from < NT && take_from(from, phys, 0, v)) {
@@ -872,7 +886,7 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
     for (i = 0; i < n; i++) {
         if (i < no)                             /* its own voice again */
             v = own[i];
-        else if (!(gs ? gen_pick(t, ns[i], &v) : pick_voice(t, ns[i], &v))) {   /* (V2: no voice of its own for it: not
+        else if (!(gs ? gen_pick(t, ns[i], &v) : pick_voice(t, ns[i], &v, i > 0u))) {   /* (V2: no voice of its own for it: not
                                                  * played) */
             gen_short += src == SRC_GEN;
             vo_full_n++;                        /* (V3.0: no voice for it: dropped) */
