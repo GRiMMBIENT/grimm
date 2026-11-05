@@ -77,11 +77,14 @@ static inline void tsvf_coef(tsvf_t *c, int32_t cut, int32_t reso)   /* reso 0..
                                                  * filter unstable) */
 }
 
+/* the products are rounded (+ 4096 before the >> 13), not floored: a floor takes half a step off every sample, which the integrator
+ * of a low cutoff piles up into a DC offset (up to -658 of 16 bits at the VA's lowest cutoff, more than the sound itself), and a
+ * DRIVE then multiplies it into a lopsided, wandering clip (as rc9 rounded the tracks' and MASTER's filters, tsvf_r) */
 static inline int32_t tsvf_lp(const tsvf_t *c, int32_t in, int32_t *ic1, int32_t *ic2)
 {
     int32_t v3 = in - *ic2;
-    int32_t v1 = (c->a1 * *ic1 + c->a2 * v3) >> 13;
-    int32_t v2 = *ic2 + ((c->a2 * *ic1 + c->a3 * v3) >> 13);
+    int32_t v1 = (c->a1 * *ic1 + c->a2 * v3 + 4096) >> 13;
+    int32_t v2 = *ic2 + ((c->a2 * *ic1 + c->a3 * v3 + 4096) >> 13);
     *ic1 = clamp(2 * v1 - *ic1, -150000, 150000);
     *ic2 = clamp(2 * v2 - *ic2, -150000, 150000);
     return v2;

@@ -226,10 +226,12 @@ static void app_main(void);
  * T for MS ms, each at its exact time; BPMx10 0: none from T), "T probe" (the clock's and the sequencer's state out:
  * firmware/src/probe.c) */
 typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps, kind, src; uint32_t a, b; } host_ev_t;
-enum { HK_PLAIN, HK_CLOCK, HK_PROBE, HK_SX };    /* (kind; V3.0: HK_SX, "T sx BYTE ..": an editor frame in, as from USB; the bytes after F0, in hex) */
+enum { HK_PLAIN, HK_CLOCK, HK_PROBE, HK_SX, HK_WORK };    /* (kind; V3.0: HK_SX, "T sx BYTE ..": an editor frame in, as from USB; the bytes after F0, in hex; HK_WORK, "T work FILE": a working
+                                                 * project (the editor protocol's object 9) loaded as the autosave loads it) */
 static uint8_t host_sxpool[65536];
 static uint32_t host_sxpool_n;
 static void host_probe(void);                   /* (firmware/src/probe.c) */
+static void host_work_in(const uint8_t *p, uint32_t n);   /* (firmware/src/compat.c) */
 #define CHORD1 (1u << 7 | 1u << 11 | 1u << 14)                  /* C E G (C4 .. G4 at OCTAVE +0) */
 #define CHORD2 (1u << 2 | 1u << 5 | 1u << 9)                   /* G Bb D (G3 .. D4) */
 #define DOWN 0x100                                              /* btn: held from now (a btn alone: a tap, 1 ms) */
@@ -304,6 +306,12 @@ static void read_script(const char *path)
             sscanf(line, "%*u %*s %7s %u %u", s, &e.a, &e.b);
             e.kind = HK_CLOCK, e.src = s[0] == 't';
         } else if (!strcmp(what, "probe")) e.kind = HK_PROBE;
+        else if (!strcmp(what, "work")) {
+            char path[200] = "";
+            sscanf(line, "%*u %*s %199s", path);
+            e.kind = HK_WORK, e.a = host_sxpool_n, e.b = (uint32_t)strlen(path);
+            if (host_sxpool_n + e.b < sizeof host_sxpool) memcpy(host_sxpool + host_sxpool_n, path, e.b), host_sxpool_n += e.b;
+        }
         else if (!strcmp(what, "sx")) {
             const char *q = line;
             unsigned v;
@@ -473,6 +481,16 @@ static void platform_poll(void)                 /* one call = one millisecond */
             hg.end = script[step].t + script[step].b, hg.src = (uint32_t)script[step].src;
         } else if (script[step].kind == HK_PROBE)
             host_probe();
+        else if (script[step].kind == HK_WORK) {
+            char path[200] = "";
+            uint8_t buf[4096];
+            size_t n = 0;
+            FILE *wf;
+            memcpy(path, host_sxpool + script[step].a, script[step].b < 199u ? script[step].b : 199u);
+            if ((wf = fopen(path, "rb")) != 0) n = fread(buf, 1, sizeof buf, wf), fclose(wf);
+            else perror(path);
+            host_work_in(buf, (uint32_t)n);
+        }
         else if (script[step].kind == HK_SX) {
             host_sx_n = script[step].b < sizeof host_sx ? script[step].b : (uint32_t)sizeof host_sx;
             memcpy(host_sx, host_sxpool + script[step].a, host_sx_n), host_sx_ready = 1;

@@ -127,3 +127,11 @@ static void compat_exit(void)                   /* firmware/src/host.c: at the e
         fclose(f);
     }
 }
+
+/* (V3.0, host.c "T work FILE") a working project as the editor protocol's object 9 gives it (WORK_PK bytes), loaded as the power-on load does:
+ * the tracks, the effects, the tempo, the slot in use, the song, MASTER and DRIVE (tests/levels_test.py: a device's project replayed) */
+static void host_work_in(const uint8_t *p, uint32_t n)
+{
+    if (n != WORK_PK) { printf("work: %u bytes, not %u\n", n, (unsigned)WORK_PK); return; }
+    uk_work(p, UW_GLOBALS | UW_CHAIN, OBJ_VERS[0]);
+}
