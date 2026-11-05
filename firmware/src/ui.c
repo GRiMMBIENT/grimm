@@ -15,18 +15,25 @@
 
 #include "grimm_pixfont.h"
 
-#define UI_K RGB(0x0b, 0x0b, 0x0a)              /* the palette: black (the background), */
-#define UI_D RGB(0x26, 0x25, 0x1f)              /* dark */
-#define UI_M RGB(0x5e, 0x5b, 0x54)              /* mid */
-#define UI_L RGB(0xb8, 0xb4, 0xa9)              /* light */
-#define UI_W RGB(0xe8, 0xe4, 0xd8)              /* white */
-static const uint16_t UI_ACCENTS[4] = {RGB(0xc8, 0x32, 0x1e), RGB(0xd0, 0x8a, 0x1c), RGB(0x2f, 0x8f, 0x8a),
-                                       RGB(0x7a, 0x4f, 0xb0)};   /* red (the default), amber, teal, violet (SYSTEM) */
+/* (V3.0) the palette is the theme's: black (the background), dark, mid, light, white, the four accents (SYSTEM's COLOUR) and the three live-meter
+ * colours; the screens' code says UI_K .. UI_W, ui_acc and UI_METER_*, whichever theme is on */
+typedef struct { uint16_t k, d, m, l, w, acc[4], meter[3]; } ui_pal_t;
+static const ui_pal_t UI_PAL_EYE = {RGB(0x0b, 0x0b, 0x0a), RGB(0x26, 0x25, 0x1f), RGB(0x5e, 0x5b, 0x54), RGB(0xb8, 0xb4, 0xa9), RGB(0xe8, 0xe4, 0xd8),
+                                    {RGB(0xc8, 0x32, 0x1e), RGB(0xd0, 0x8a, 0x1c), RGB(0x2f, 0x8f, 0x8a), RGB(0x7a, 0x4f, 0xb0)},   /* red (the default),
+                                                 * amber, teal, violet (SYSTEM) */
+                                    {RGB(0x3c, 0xa8, 0x4a), RGB(0xd8, 0xc0, 0x2a), RGB(0xd8, 0x32, 0x28)}};   /* the live meters (LEVELS): green: a normal
+                                                 * level; yellow: loud; red: near the top */
+static const ui_pal_t *ui_pal = &UI_PAL_EYE;    /* the theme's now */
+#define UI_K (ui_pal->k)                        /* black (the background), */
+#define UI_D (ui_pal->d)                        /* dark */
+#define UI_M (ui_pal->m)                        /* mid */
+#define UI_L (ui_pal->l)                        /* light */
+#define UI_W (ui_pal->w)                        /* white */
+#define UI_ACCENTS (ui_pal->acc)                /* the accents */
 static uint16_t ui_acc = RGB(0xc8, 0x32, 0x1e); /* the accent */
-/* the live meters (LEVELS; the V3.0 themes set their own): a segment's colour by its height, segments 0 .. 7 from the bottom */
-#define UI_METER_NORMAL RGB(0x3c, 0xa8, 0x4a)   /* green: a normal level */
-#define UI_METER_LOUD RGB(0xd8, 0xc0, 0x2a)     /* yellow: loud */
-#define UI_METER_HOT RGB(0xd8, 0x32, 0x28)      /* red: near the top */
+#define UI_METER_NORMAL (ui_pal->meter[0])
+#define UI_METER_LOUD (ui_pal->meter[1])
+#define UI_METER_HOT (ui_pal->meter[2])
 #define UI_METER_LOUD_FROM 4                    /* the first loud segment (-12 dBFS of the mix), */
 #define UI_METER_HOT_FROM 6                     /* .. the first near the top (-6 dBFS). The colours are the output's headroom shared among
                                                  * the four tracks: green, all four could play at this level and never reach the output
@@ -41,6 +48,24 @@ static uint16_t ui_meter_col(int32_t seg)
 {
     return seg >= UI_METER_HOT_FROM ? UI_METER_HOT : seg >= UI_METER_LOUD_FROM ? UI_METER_LOUD : UI_METER_NORMAL;
 }
+/* (V3.0) THEME: what a theme brings is its palette, the places of the header, the picture and the knob blocks, and how they are drawn; the pages'
+ * logic is one (what is shown, when it changes). EYE is GR!MM's own look (the pixel art), BRUTAL the black, red and concrete one (firmware/src/brutal.c).
+ * A page's picture in the theme's own (native: screen coordinates) or borrowed from EYE (drawn at EYE's coordinates, moved by dx, dy) */
+typedef struct {
+    const ui_pal_t *pal;
+    int16_t hh;                                 /* the header: the top hh rows */
+    int16_t px, pw, py, ph, phf;                /* the picture's region: x, width, y, height (phf: MIXER 1's, the whole page) */
+    int16_t sy, sh;                             /* the knob blocks: their top and height (x: 3 + 59 k, 56 wide) */
+    int16_t dx, dy, dyf;                        /* a borrowed picture moved this far (MIXER 1's: dyf) */
+    uint8_t anim;                               /* HOME's own moving picture (the eye, the candles) */
+    uint8_t fit8;                               /* the header's text cut to fit in 8 px characters (ui_head_text) */
+    uint8_t bfin;                               /* the boot screen's finish: 0 EYE's, 1 BRUTAL's (hard edges, no glow, its font) */
+    void (*head)(void);
+    void (*slab)(void);
+    void (*pic)(void);
+    int (*native)(void);                        /* this page's picture is the theme's own */
+} ui_theme_t;
+static const ui_theme_t *ui_th;                 /* the theme now (ui_theme_set) */
 #define UI_PIC_MS 40u                           /* the picture redrawn at most this often */
 #define UI_BAT_W 16                             /* the header's battery (and its tip) */
 #define UI_BOOT_MS 5600u                        /* the boot screen this long (V2: 3 s before; its pictures at half
@@ -52,7 +77,8 @@ static uint16_t ui_meter_col(int32_t seg)
 /* ---- drawing in screen coordinates into a strip of a region */
 static int32_t ui_ox;                           /* the region's left edge (cv_oy: its strip's top) */
 static uint32_t ui_k;                           /* (the slab being drawn) */
-static void ui_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) { cv_rect(x - ui_ox, y, w, h, c); }
+static int32_t ui_dx, ui_dy;                    /* (V3.0) a picture of another theme's frame: where its (0, 0) is, moved */
+static void ui_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) { cv_rect(x + ui_dx - ui_ox, y + ui_dy, w, h, c); }
 static void ui_cell(int32_t x, int32_t y, uint16_t c) { ui_rect(PX0 + x * 4, PY0 + y * 4, 4, 4, c); }
 static int32_t ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c)   /* pixfont x sc; the end */
 {
@@ -67,7 +93,7 @@ static int32_t ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t
     return x;
 }
 static int32_t ui_len(const char *s) { int32_t n = 0; while (s[n]) n++; return n; }
-static void ui_region(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t bg, void (*f)(void))
+static void ui_region(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t bg, void (*f)(void))   /* (screen coordinates) */
 {
     int32_t rows = (int32_t)(CV_MAX / (uint32_t)w), y0, hh;
     for (y0 = y; y0 < y + h; y0 += rows) {
@@ -79,6 +105,11 @@ static void ui_region(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t bg, v
         cv_oy = 0;
         cv_blit((uint32_t)x, (uint32_t)y0);
     }
+}
+static void ui_regionp(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t bg, void (*f)(void))   /* (V3.0) the same for a picture's own coordinates:
+                                                 * moved as ui_rect moves them */
+{
+    ui_region(x + ui_dx, y + ui_dy, w, h, bg, f);
 }
 static uint32_t ui_rnd_s;                       /* the concepts' random: (s 9301 + 49297) mod 233280 */
 static uint32_t ui_rnd(uint32_t n) { ui_rnd_s = (ui_rnd_s * 9301u + 49297u) % 233280u; return ui_rnd_s * n / 233280u; }
@@ -98,8 +129,10 @@ static const char *const SRC_CODE[NENG] = {"VA", "FM", "SA", "VO", "WH", "PH", "
 
 /* ---- the header */
 static char ui_hb[12], ui_hl[24], ui_hr[12];    /* the button, the left, the right */
+static uint32_t ui_hmsg;                        /* (V3.0) the left is a message (a moment: SAVED, a sound's name, MIDI LEARN, ..) */
 static int32_t ui_bat;                          /* the battery as the header shows it (beside the tempo): bat_lvl x 2 +
                                                  * its blink (lowest: on, off), -1 none */
+static const char *const THEME_NAME[] = {"EYE", "BRUTAL"};   /* (V3.0) SYSTEM 3's THEME */
 static void ui_head_text(void)
 {
     const page_t *P = &PAGES[page];
@@ -170,10 +203,11 @@ static void ui_head_text(void)
                                                  * fit) */
         int32_t room = (232 - 8 * (int32_t)ui_len(SONG_MODE_NAME[song_mode]) - 8 - 21 - 8 * ui_len(ui_hb)) / 8;
         put_s(ui_hr, SONG_MODE_NAME[clamp(song_mode, 0, NSONGMODE - 1)]);
-        if (room >= 0 && ui_len(ui_hl) > room) ui_hl[room] = 0;
+        if (ui_th->fit8 && room >= 0 && ui_len(ui_hl) > room) ui_hl[room] = 0;
         ui_bat = -1;                            /* (no tempo: no battery) */
     }
-    {                                           /* the left fits beside the right (the battery, the tempo); a message
+    ui_hmsg = fm1_ms < hd_until || (sv_wait && fm1_ms - sv_said < SV_SAY_MS) || as_err || learn_st || save_held;   /* (a message in the left) */
+    if (ui_th->fit8) {                          /* the left fits beside the right (the battery, the tempo); a message
                                                  * that does not: the right side gives way while it shows; then cut */
         int32_t x0 = 3 + 10 + 8 * ui_len(ui_hb) + 3 + 5, rw = 8 * ui_len(ui_hr) + (ui_bat >= 0 ? UI_BAT_W + 4 : 0), room;
         int msg = fm1_ms < hd_until || (sv_wait && fm1_ms - sv_said < SV_SAY_MS) || as_err || learn_st || save_held;
@@ -374,8 +408,10 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         }
         else ui_time(S->val, 10u * pow2_q16(clamp(v, 0, 127) * 15));
         return;
-    case PG_SYS3: put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND"); return;   /* (V2) LATCH: FROM SOUND,
-                                                 * ALWAYS OFF; VELOCITY: OFF, ON */
+    case PG_SYS3:                               /* (V2) LATCH: FROM SOUND, ALWAYS OFF; VELOCITY: OFF, ON; (V3.0) THEME: its name */
+        if (k == 2u) { put_s(S->val, THEME_NAME[clamp(v, 0, (int32_t)THEME_N - 1)]); return; }
+        put_s(S->val, k ? (v ? "ON" : "OFF") : v ? "OFF" : "SOUND");
+        return;
     case PG_SOUNDS:
         if (k == 0u) { ui_3(S->val, (uint32_t)v + 1u); return; }
         if (k == 1u) { ui_squeeze(S->val, CAT_NAME[clamp(v, 0, NCAT - 1)]); return; }
@@ -525,6 +561,7 @@ static void ui_sprite(int32_t x, int32_t y, int32_t s, const char *const *rows, 
 }
 static int ui_in(int32_t x, int32_t y, int32_t w, int32_t h)   /* does (x, y, w, h) reach into the region being drawn */
 {
+    x += ui_dx, y += ui_dy;
     return x < ui_ox + (int32_t)cv_w && x + w > ui_ox && y < -cv_oy + (int32_t)cv_h && y + h > -cv_oy;
 }
 /* the eye at (x, y), 5 px a cell: its lids k open (4: wide, 0: shut; the lid's edge a light row), the iris dx, dy cells
@@ -676,7 +713,7 @@ static void pic_home(void)                      /* Main: the webs, the stars, th
     }
 }
 static void ui_pic_draw(void);
-static void ui_home_part(int32_t x, int32_t y, int32_t w, int32_t h) { ui_region(x, y, w, h, UI_K, ui_pic_draw); }
+static void ui_home_part(int32_t x, int32_t y, int32_t w, int32_t h) { ui_regionp(x, y, w, h, UI_K, ui_th->pic); }
 static void ui_home_frame(int draw)             /* a frame of HOME's picture (draw: what changed, drawn) */
 {
     static const int8_t BLINK[6] = {4, 2, 0, 0, 2, 3};   /* (a blink's lids, a frame each) */
@@ -1252,7 +1289,7 @@ static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL co
 {
     uint32_t t;
     for (t = 0; t < NT; t++)
-        if (ui_meter_step(t) && draw && t == sel) ui_region(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_pic_draw);
+        if (ui_meter_step(t) && draw && t == sel) ui_regionp(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_th->pic);
 }
 /* (V3.0) LEVELS: a track's column is two halves side by side, the LEVEL set on the left, the sound now on the right (this
  * meter); a frame every UI_ANIM_MS redraws only the meters that moved */
@@ -1264,7 +1301,7 @@ static void ui_levels_frame(int draw)
 {
     uint32_t t;
     for (t = 0; t < NT; t++)
-        if (ui_meter_step(t) && draw) ui_region(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_pic_draw);
+        if (ui_meter_step(t) && draw) ui_regionp(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_th->pic);
 }
 /* (V2) MIXER 1: the whole page six tiles as the knobs' slabs (no slabs under them), LEVEL DELAY REVERB over TAPE
  * GRAIN DRIVE, the selected track's: the name, 8 segments, the value; the one SELECT picks outlined in the accent, its
@@ -1907,9 +1944,10 @@ static void pic_sys3(void)                      /* (V2) SYSTEM 3: LATCH, VELOCIT
     ui_caption("SOUNDS AND MIDI", 0);
     sys_row(0, "LATCH", set.latch & 1u ? "ALWAYS OFF" : "FROM SOUND");
     sys_row(1, "VELOCITY", set.latch & 2u ? "ON" : "OFF");
-    ui_text(PX0 + 6, 116, set.latch & 1u ? "A SOUND LOADED: LATCH OFF" : "A SOUND BRINGS ITS LATCH", 1, UI_M);
-    ui_text(PX0 + 6, 132, set.latch & 2u ? "MIDI NOTES: AS HARD AS" : "MIDI NOTES: ALL AT FULL", 1, UI_M);
-    ui_text(PX0 + 6, 144, set.latch & 2u ? "PLAYED (THE KEYS: FULL)" : "VOLUME (AS GR!MM 1.0)", 1, UI_M);
+    sys_row(2, "THEME", THEME_NAME[(set.latch >> 4 & 3u) % THEME_N]);   /* (V3.0) */
+    ui_text(PX0 + 6, 132, set.latch & 1u ? "A SOUND LOADED: LATCH OFF" : "A SOUND BRINGS ITS LATCH", 1, UI_M);
+    ui_text(PX0 + 6, 144, set.latch & 2u ? "MIDI NOTES: AS HARD AS" : "MIDI NOTES: ALL AT FULL", 1, UI_M);
+    ui_text(PX0 + 6, 156, set.latch & 2u ? "PLAYED (THE KEYS: FULL)" : "VOLUME (AS GR!MM 1.0)", 1, UI_M);
 }
 
 static void pic_notbuilt(void) { ui_text(120 - 4 * 13, 96, "NOT BUILT YET", 1, UI_M); }
@@ -2170,34 +2208,49 @@ static void ui_boot_frame(void)
     if (now != was) ui_region(60, 132, 120, 36, UI_K, ui_boot_draw);   /* (a drip a cell longer) */
 }
 
+static int ui_native_all(void) { return 1; }   /* (EYE: every picture is its own) */
+static const ui_theme_t UI_THEMES[] = {         /* (THEME 0, 1 ..: SYSTEM 3's knob; firmware/src/grimm.c sys_sync) */
+    {&UI_PAL_EYE, 24, 0, 240, 24, 141, 216, 165, 72, 0, 0, 0, 1, 1, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
+};
+#define NTHEME (sizeof UI_THEMES / sizeof UI_THEMES[0])
+static void ui_theme_set(uint32_t i)            /* the theme i on (its palette; the accent: sys_sync, after it) */
+{
+    ui_th = &UI_THEMES[i < NTHEME ? i : 0];
+    ui_pal = ui_th->pal;
+}
 static void ui_update(int32_t oct)
 {
     static uint32_t shown_page = 0xFFFFFFFFu, pic_key, pic_t, stat_key, dot_shown, shown_acc;
+    static const ui_theme_t *shown_th;
     static int32_t shown_bat = -2;
     static char hb[12], hl[24], hr[12];
     uint32_t k, key, st;
     static uint32_t an_t;
-    int all = page != shown_page || ui_acc != shown_acc;   /* (a new COLOUR: everything again) */
+    int all, nat;
+    if (!ui_th) ui_theme_set(0);
+    all = page != shown_page || ui_acc != shown_acc || ui_th != shown_th;   /* (a new COLOUR, THEME: everything again) */
     if (fm1_ms - ui_boot_t < UI_BOOT_MS) {      /* (the boot screen still) */
         ui_boot_frame();
         return;
     }
     if (all) {
-        if (shown_page == 0xFFFFFFFFu)
-            lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen: all of it cleared once) */
+        if (shown_page == 0xFFFFFFFFu || ui_th != shown_th)
+            lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen, or a new theme: all of it cleared once) */
         else if (shown_page == PG_MIX1 && page != PG_MIX1)
-            lcd_fill(0, 165, 240, 75, UI_K);    /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
-        shown_page = page, shown_acc = ui_acc;
-        for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '\x01';
+            lcd_fill(0, ui_th->sy, 240, (int32_t)(240 - ui_th->sy), UI_K);   /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
+        shown_page = page, shown_acc = ui_acc, shown_th = ui_th;
+        for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '';
         pic_key = ~ui_pic_key();
     }
     ui_head_text();
     if (all || !same(hb, ui_hb) || !same(hl, ui_hl) || !same(hr, ui_hr) || ui_bat != shown_bat) {
         put_s(hb, ui_hb), put_s(hl, ui_hl), put_s(hr, ui_hr), shown_bat = ui_bat;
-        ui_region(0, 0, 240, 24, UI_K, ui_head_draw);
+        ui_region(0, 0, 240, ui_th->hh, UI_K, ui_th->head);
     }
     ui_oct = oct;
-    if (page == PG_HOME && fm1_ms - an_t >= UI_ANIM_MS) {   /* HOME: a frame of its moving picture (what moved drawn,
+    nat = ui_th->native();                      /* (a picture the theme draws itself: at the screen's coordinates; EYE's in another's frame: moved) */
+    ui_dx = nat ? 0 : ui_th->dx, ui_dy = nat ? 0 : page == PG_MIX1 ? ui_th->dyf : ui_th->dy;
+    if (page == PG_HOME && ui_th->anim && fm1_ms - an_t >= UI_ANIM_MS) {   /* HOME: a frame of its moving picture (what moved drawn,
                                                  * unless all of it is about to be) */
         an_t = fm1_ms;
         ui_home_frame(!all);
@@ -2216,13 +2269,13 @@ static void ui_update(int32_t oct)
         pic_t = fm1_ms;
         stat_key = 0xFFFFFFFFu;
         dot_shown = page == PG_LFO ? lfo_dot() : 0xFFFFFFFFu;
-        ui_region(0, 24, 240, page == PG_MIX1 ? 216 : 141, UI_K, ui_pic_draw);   /* (V2: MIXER 1, the whole page) */
+        ui_region(ui_th->px, ui_th->py, ui_th->pw, page == PG_MIX1 ? ui_th->phf : ui_th->ph, UI_K, ui_th->pic);   /* (V2: MIXER 1, the whole page) */
     }
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
-        if (dot_shown < 54u) ui_region(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_pic_draw);
+        if (dot_shown < 54u) ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
         dot_shown = lfo_dot();
-        ui_region(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_pic_draw);
+        ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
         st = pct10(cpu_now) << 16 ^ pct10(cpu_peak) ^ sys2_drops() * 2654435761u ^ voices_used() * 40503u;   /* (rc9: and USB's drops; V3.0: and the voices) */
@@ -2231,9 +2284,10 @@ static void ui_update(int32_t oct)
 #endif
         if (st != stat_key) {
             stat_key = st;
-            ui_region(PX0, 110, 216, 49, UI_K, ui_pic_draw);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
+            ui_regionp(PX0, 110, 216, 49, UI_K, ui_th->pic);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
         }
     }
+    ui_dx = ui_dy = 0;                          /* (the knob blocks, the header: the theme's own) */
     for (k = 0; k < 4u && page != PG_MIX1; k++) {   /* (V2: MIXER 1 none: its tiles) */
         ui_slab_make(k, &ui_sl[k]);
         if (!same(ui_sl[k].lab, ui_slab_shown[k].lab) || !same(ui_sl[k].val, ui_slab_shown[k].val) ||
@@ -2241,7 +2295,7 @@ static void ui_update(int32_t oct)
             ui_sl[k].warn != ui_slab_shown[k].warn) {
             ui_slab_shown[k] = ui_sl[k];
             ui_k = k;
-            ui_region(3 + (int32_t)k * 59, 165, 56, 72, UI_K, ui_slab_draw);
+            ui_region(3 + (int32_t)k * 59, ui_th->sy, 56, ui_th->sh, UI_K, ui_th->slab);
         }
     }
 }

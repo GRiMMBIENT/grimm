@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>GR!MM BRUTAL all pages</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0b0a;font-family:'IBM Plex Mono',monospace}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,480px);gap:40px;padding:40px;justify-content:center}
+.lab{height:26px;font-size:14px;letter-spacing:1px;color:#9a968f;display:flex;align-items:flex-end;margin-bottom:10px}
+.scr{width:480px;height:480px;background:#141312;color:#141312;display:flex;flex-direction:column;gap:6px;padding:6px;box-sizing:border-box;overflow:hidden}
+.hdr{height:52px;display:flex;gap:6px;flex-shrink:0}
+.tag{width:112px;background:#b8261a;display:flex;flex-direction:column;justify-content:center;padding:0 12px;color:#f2efe8;box-sizing:border-box}
+.knobs{height:84px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;flex-shrink:0}
+.knobs>div{box-sizing:border-box}
+</style></head><body><div id="grid"></div>
+<script>
+function build(){
+const K = '#141312', R = '#b8261a', W = '#f2efe8', C1 = '#b8b4ab', C2 = '#a7a39b', C3 = '#c9c5bc', D = '#6e6b66', S = 'rgba(20,19,18,0.18)';
+const H = 'Archivo Black, sans-serif', M = 'IBM Plex Mono, monospace';
+let seed = 5;
+const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+const mk = (dark) => {
+const g = { r: [], p: [], q: [] };
+g.rect = (x, y, w, h, f) => g.r.push({ x, y, w, h, f });
+g.path = (d, w, c) => g.p.push({ d, w: w || 10, c: c || K });
+g.text = (x, y, t, s, c, f, a) => g.q.push({ x, y, t, s, c: c || K, f: f || H, a: a || 'start', ls: f === M ? 1 : 0 });
+g.box = (x, y, w, h, f, sel) => { if (sel) { g.rect(x, y, w, h, K); g.rect(x, y, w, 4, R); g.rect(x, y + h - 4, w, 4, R); g.rect(x, y, 4, h, R); g.rect(x + w - 4, y, 4, h, R); } else g.rect(x, y, w, h, f); };
+if (dark) g.rect(0, 0, 468, 320, K);
+else { g.rect(0, 0, 468, 320, C1); for (let y = 21; y < 320; y += 22) g.rect(0, y, 468, 1, 'rgba(20,19,18,0.10)'); }
+return g;
+};
+const fn = (f, a, b, yc, amp) => { let d = ''; for (let i = 0; i <= 107; i++) { const t = i / 107, x = (a || 24) + t * ((b || 444) - (a || 24)); d += (i ? ' L' : 'M') + x.toFixed(1) + ' ' + ((yc || 160) - f(t) * (amp || 110)).toFixed(1); } return d; };
+const keys = (marks, label) => {
+const g = mk(false);
+g.text(20, 42, label, 28);
+const wx = (i) => 20 + i * 61;
+for (let i = 0; i < 7; i++) g.rect(wx(i), 60, 57, 244, i % 2 ? C2 : C3);
+[0, 1, 3, 4, 5].forEach((i) => g.rect(wx(i) + 38, 60, 38, 150, K));
+const WN = [0, 2, 4, 5, 7, 9, 11], BN = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+marks.forEach(([n, c]) => { const wi = WN.indexOf(n); if (wi >= 0) g.rect(wx(wi) + 12, 254, 33, 33, c); else g.rect(wx(BN[n]) + 45, 170, 24, 24, c === K ? W : c); });
+return g;
+};
+const P = {};
+P.home = () => { const g = mk(true); [['01', 'VA', 80], ['02', 'FM', 45], ['03', 'VOICE', 100], ['04', 'SAMPLE', 0]].forEach(([n, s, lv], i) => { const x = (i % 2) * 237, y = Math.floor(i / 2) * 163, w = 231, h = 157, sel = i === 2; g.box(x, y, w, h, i % 2 ? C2 : C1, sel); g.text(x + 14, y + 56, n, 48, sel ? R : K); g.text(x + w - 14, y + 26, s, 12, sel ? W : K, M, 'end'); g.rect(x + 14, y + h - 30, w - 28, 14, sel ? '#3a3835' : S); g.rect(x + 14, y + h - 30, (w - 28) * lv / 100, 14, sel ? W : K); }); return g; };
+P.va = () => { const g = mk(false); g.text(20, 46, 'SAW', 34); g.text(448, 40, 'WAVE 2 / 6', 11, K, M, 'end'); g.rect(20, 190, 428, 2, S); g.path('M24 290 L130 90 L130 290 L236 90 L236 290 L342 90 L342 290 L444 90'); return g; };
+const algo = (selOp) => { const g = mk(false); const pos = { 6: [60, 24], 5: [60, 98], 4: [60, 172], 3: [60, 246], 2: [300, 172], 1: [300, 246] }; g.path('M100 72 L100 98 M100 146 L100 172 M100 220 L100 246 M340 220 L340 246', 10); g.path('M100 294 L100 306 L340 306 L340 294', 10, R); Object.entries(pos).forEach(([n, [x, y]]) => { g.box(x, y, 80, 48, C3, +n === selOp); g.text(x + 40, y + 36, n, 26, +n === selOp ? R : K, H, 'middle'); }); g.text(448, 46, 'ALGO 05', 22, K, H, 'end'); g.text(448, 70, 'FEEDBACK 40', 11, K, M, 'end'); return g; };
+P.fm = () => algo(0);
+P.fmalgo = () => algo(3);
+P.sample = () => { const g = mk(false); g.text(20, 46, 'SLOT 1 · URCHIN', 22); for (let i = 0; i < 54; i++) { const a = 8 + Math.abs(Math.sin(i * 0.7) * 60 + Math.sin(i * 0.23) * 50) * (1 - i / 80), x = 24 + i * 7.9; g.rect(x, 190 - a, 5, a * 2, i >= 9 && i < 41 ? K : D); } g.rect(92, 70, 6, 240, R); g.rect(344, 70, 6, 240, R); g.text(98, 86, 'START', 11, R, M); g.text(344, 86, 'END', 11, R, M, 'end'); return g; };
+P.voice = () => { const g = mk(false); g.text(36, 270, 'A', 230); ['A', 'E', 'I', 'O', 'U'].forEach((v, i) => { g.box(330, 18 + i * 58, 118, 50, i % 2 ? C2 : C3, i === 0); g.text(389, 54 + i * 58, v, 26, i === 0 ? R : K, H, 'middle'); }); return g; };
+P.wheel = () => { const g = mk(false); const L = [8, 8, 6, 0, 4, 0, 2, 0, 0], F = [D, D, W, W, K, W, K, K, W]; L.forEach((l, i) => { const x = 24 + i * 48; g.rect(x, 16, 40, 30 + l * 30, F[i]); g.rect(x, 16 + l * 30, 40, 30, K); g.text(x + 20, 304, String(l), 18, K, H, 'middle'); }); return g; };
+P.phys = () => { const g = mk(false); g.text(20, 46, 'STRING', 34); g.rect(24, 120, 26, 110, K); g.rect(418, 120, 26, 110, K); g.path('M50 175 L418 175', 10); g.path('M50 150 L418 150 M50 200 L418 200', 4, D); g.rect(290, 120, 44, 110, R); g.text(312, 260, 'BOW', 12, K, M, 'middle'); return g; };
+P.phase = () => { const g = mk(false); g.text(20, 46, 'RESO', 34); g.rect(20, 190, 428, 2, S); g.path(fn((t) => { const u = (t * 3) % 1; return Math.cos(2 * Math.PI * Math.pow(u, 0.35)); }, 24, 444, 190, 100)); return g; };
+P.source = () => { const g = mk(true); ['VA', 'FM', 'SA', 'VO', 'WH', 'PH', 'PD'].forEach((s, i) => { const x = (i % 4) * 118, y = Math.floor(i / 4) * 109, sel = i === 3; g.box(x, y, 114, 103, i % 2 ? C2 : C1, sel); g.text(x + 57, y + 64, s, 30, sel ? R : K, H, 'middle'); }); g.rect(354, 109, 114, 103, R); g.text(411, 150, 'LATCH', 12, W, M, 'middle'); g.text(411, 188, 'ON', 30, W, H, 'middle'); g.rect(0, 218, 468, 102, C3); g.text(20, 262, 'TYPE', 12, K, M); g.text(20, 302, 'GREGORIAN', 30); g.text(448, 302, 'GLIDE OFF', 12, K, M, 'end'); return g; };
+P.fmop = () => { const g = mk(false); g.text(20, 46, 'OP 3', 34); g.text(448, 46, 'RATIO 2.00', 22, K, H, 'end'); g.path('M24 290 L90 80 L270 220 L444 290'); g.rect(84, 74, 14, 14, R); return g; };
+P.line2 = () => { const g = mk(false); g.text(20, 46, 'LINE 2', 34); g.text(448, 40, 'RING ON', 12, R, M, 'end'); g.path(fn((t) => Math.sin(t * 6 * Math.PI), 24, 444, 180, 90), 5, D); g.path(fn((t) => Math.sin(t * 6 * Math.PI) * Math.sin(t * 13 * Math.PI), 24, 444, 180, 100)); return g; };
+P.penv = () => { const g = mk(false); g.text(20, 46, 'DCW', 22); g.text(448, 46, 'PITCH', 22, D, H, 'end'); g.path(fn((t) => Math.exp(-t * 4), 24, 444, 300, 230)); g.path(fn((t) => Math.exp(-t * 9), 24, 444, 300, 170), 6, D); return g; };
+P.env = () => { const g = mk(false); g.path('M24 300 L110 40 L200 150 L350 150 L444 300'); [['A', 67], ['D', 155], ['S', 275], ['R', 397]].forEach(([l, x]) => g.text(x, 40, l, 22, D, H, 'middle')); return g; };
+P.lfo = () => { const g = mk(false); g.text(20, 46, 'SINE', 34); g.rect(20, 180, 428, 2, S); g.path(fn((t) => Math.sin(t * 4 * Math.PI), 24, 444, 180, 100)); g.rect(150, 74, 22, 22, R); return g; };
+P.tape = () => { const g = mk(false); [70, 278].forEach((x) => { g.rect(x, 40, 120, 120, K); g.rect(x + 40, 80, 40, 40, C1); }); g.rect(70, 200, 328, 12, K); g.rect(130, 160, 8, 40, K); g.rect(338, 160, 8, 40, K); g.text(24, 290, 'ON: T1 T3', 30); return g; };
+P.grain = () => { const g = mk(false); seed = 9; for (let i = 0; i < 46; i++) { const s = 8 + Math.floor(rnd() * 34); g.rect(24 + rnd() * 400, 30 + rnd() * 250, s, s, rnd() < 0.12 ? R : rnd() < 0.5 ? K : D); } return g; };
+P.delay = () => { const g = mk(false); for (let i = 0; i < 6; i++) { const h = 250 * Math.pow(0.72, i); g.rect(24 + i * 72, 300 - h, 52, h, i ? D : K); } g.text(448, 46, '3/16', 30, K, H, 'end'); return g; };
+P.space = () => { const g = mk(false); for (let i = 0; i < 26; i++) { const h = 260 * Math.exp(-i / 9); g.rect(24 + i * 16.4, 300 - h, 12, h, i < 3 ? K : D); } g.text(448, 46, 'SIZE 90', 22, K, H, 'end'); return g; };
+P.master = () => { const g = mk(false); g.text(20, 46, 'LP · PRE', 30); g.path('M24 120 L250 120 L285 90 L320 200 L360 300', 10); g.rect(282, 60, 6, 250, R); return g; };
+P.drive = () => { const g = mk(false); g.text(20, 46, 'FUZZ', 34); g.path(fn((t) => Math.sin(t * 4 * Math.PI), 24, 444, 190, 110), 4, D); g.path(fn((t) => Math.max(-0.6, Math.min(0.6, Math.sin(t * 4 * Math.PI) * 2)), 24, 444, 190, 110)); return g; };
+P.perform = () => { const g = mk(true); const N = [['F3', 'FREEZE'], ['G3', 'REV THROW'], ['A3', 'ECHO THROW'], ['B3', 'TAPE STOP'], ['C4', ''], ['D4', ''], ['E4', ''], ['F4', '']]; N.forEach(([k, n], i) => { const x = (i % 4) * 118, y = Math.floor(i / 4) * 106, sel = i === 1; g.box(x, y, 114, 100, i % 2 ? C2 : C1, sel); g.text(x + 12, y + 34, k, 22, sel ? R : K); g.text(x + 12, y + 80, n, 10, sel ? W : K, M); }); g.rect(0, 218, 468, 102, C3); g.text(20, 252, 'GENERATE', 12, K, M); ['T1', 'T2', 'T3', 'T4'].forEach((t, i) => { g.rect(20 + i * 108, 266, 96, 40, i === 2 ? R : C2); g.text(68 + i * 108, 294, t, 18, i === 2 ? W : K, H, 'middle'); }); return g; };
+P.mix1 = () => { const g = mk(true); [['LEVEL', 100], ['DELAY', 40], ['REVERB', 72], ['TAPE', 0], ['GRAIN', 15], ['DRIVE', 0]].forEach(([l, v], i) => { const x = (i % 3) * 158, y = Math.floor(i / 3) * 163, w = 152, h = 157, sel = i === 2; g.box(x, y, w, h, i % 2 ? C2 : C1, sel); g.text(x + 12, y + 26, l, 11, sel ? '#e0705f' : K, M); g.text(x + 12, y + 96, String(v), 44, sel ? W : v ? K : 'rgba(20,19,18,0.35)'); g.rect(x + 12, y + h - 26, w - 24, 12, sel ? '#3a3835' : S); g.rect(x + 12, y + h - 26, (w - 24) * v / 100, 12, sel ? W : K); }); return g; };
+P.mix2 = () => { const g = mk(true); [[-20, 'LP', 'PRE'], [0, 'LP', 'PRE'], [35, 'HP', 'POST'], [-50, 'BP', 'PRE']].forEach(([pan, t, pos], i) => { const x = i * 118, sel = i === 2; g.box(x, 0, 114, 320, i % 2 ? C2 : C1, sel); g.text(x + 12, 46, '0' + (i + 1), 34, sel ? R : K); g.rect(x + 12, 80, 90, 12, sel ? '#3a3835' : S); g.rect(x + 51 + pan * 0.4, 74, 12, 24, sel ? W : K); g.text(x + 12, 210, t, 40, sel ? W : K); g.text(x + 12, 250, pos, 14, sel ? W : K, M); }); return g; };
+P.scale = () => keys([[0, R], [2, K], [3, K], [5, K], [7, K], [8, K], [10, K]], 'C  MINOR');
+P.chord = () => keys([[0, R], [3, R], [7, R], [10, R]], 'MIN7 · CLOSE');
+P.arp = () => { const g = mk(false); g.text(20, 46, 'UP', 34); const hs = [60, 110, 160, 210, 60, 110, 160, 210, 60, 110, 160, 210, 60]; hs.forEach((h, i) => g.rect(24 + i * 32.6, 300 - h, 26, h, i === 5 ? R : K)); return g; };
+P.grid = () => { const g = mk(true); const pat = 'n...c...n.x.....n...c...n...x...n...c...n.x.....n...c.n.n...x...'; pat.split('').forEach((ch, i) => { const x = (i % 8) * 59, y = Math.floor(i / 8) * 40.5, cur = i === 13; g.rect(x, y, 55, 36.5, cur ? W : ch === 'n' ? K : ch === 'c' ? R : ch === 'x' ? D : (Math.floor(i / 8) + i) % 2 ? C2 : C1); if (cur) { g.rect(x, y, 55, 4, K); g.rect(x, y + 32.5, 55, 4, K); g.rect(x, y, 4, 36.5, K); g.rect(x + 51, y, 4, 36.5, K); } }); return g; };
+P.pattern = () => { const g = mk(true); ['A', 'B', 'C', 'D'].forEach((p, i) => { g.box(i * 118, 0, 114, 100, i % 2 ? C2 : C1, i === 0); g.text(i * 118 + 57, 70, p, 44, i === 0 ? R : K, H, 'middle'); }); g.rect(0, 106, 468, 214, C3); g.text(20, 250, '64', 120); g.text(448, 160, 'STEPS', 14, K, M, 'end'); g.text(448, 250, '1/16', 30, K, H, 'end'); return g; };
+P.song = () => { const g = mk(true); [['A', 'x2'], ['B', 'x4'], ['A', 'x2'], ['C', 'x1'], ['END', '']].forEach(([p, r], i) => { const x = i * 94, sel = i === 1; g.box(x, 0, 90, 200, i % 2 ? C2 : C1, sel); g.text(x + 45, 110, p, p.length > 1 ? 24 : 54, sel ? R : K, H, 'middle'); g.text(x + 45, 170, r, 18, sel ? W : K, M, 'middle'); g.text(x + 10, 24, String(i + 1), 11, sel ? W : K, M); }); g.rect(0, 206, 468, 114, C3); g.text(20, 290, 'SONG LOOP', 36); return g; };
+P.sounds = () => { const g = mk(true); ['01', '02', '03', '04', '05'].forEach((n, i) => { const y = i * 64.8, sel = i === 2; g.box(0, y, 468, 60, i % 2 ? C2 : C1, sel); g.text(16, y + 42, n, 26, sel ? R : K); g.text(90, y + 38, i < 4 ? 'USED' : 'EMPTY', 12, sel ? W : i < 4 ? K : D, M); }); return g; };
+P.projects = () => { const g = mk(true); ['A', 'B', 'C', 'D'].forEach((p, i) => { const x = (i % 2) * 237, y = Math.floor(i / 2) * 163, sel = i === 0; g.box(x, y, 231, 157, i < 2 ? C1 : C2, sel); g.text(x + 20, y + 90, p, 64, sel ? R : i < 2 ? K : D); g.text(x + 211, y + 134, sel ? 'IN USE' : i < 2 ? 'SAVED' : 'EMPTY', 12, sel ? W : i < 2 ? K : D, M, 'end'); }); return g; };
+P.system = () => { const g = mk(false); g.text(20, 46, 'COLOUR', 14, K, M); [R, '#d08a1c', '#2f8f8a', D].forEach((c, i) => { g.rect(20 + i * 108, 70, 96, 96, c); if (!i) { g.rect(20, 166, 96, 8, K); } }); g.text(20, 230, 'MIDI', 14, K, M); g.text(20, 292, 'CH 1-4', 48); return g; };
+P.sys2 = () => { const g = mk(false); [['CPU NOW', 42, 60], ['CPU PEAK', 67, 160]].forEach(([l, v, y]) => { g.text(20, y, l, 12, K, M); g.text(448, y, v + '%', 26, K, H, 'end'); g.rect(20, y + 14, 428, 30, S); g.rect(20, y + 14, 428 * v / 100, 30, v > 60 ? R : K); }); g.text(20, 270, 'USB REC DROPS', 12, K, M); g.text(448, 280, '0', 44, K, H, 'end'); return g; };
+P.sys3 = () => { const g = mk(true); [['LATCH', 'FROM SOUND'], ['VELOCITY', 'ON']].forEach(([l, v], i) => { const y = i * 163, sel = i === 0; g.box(0, y, 468, 157, i ? C2 : C1, sel); g.text(20, y + 40, l, 12, sel ? '#e0705f' : K, M); g.text(20, y + 120, v, 48, sel ? W : K); }); return g; };
+const T = (n) => ['TRACK', n || '03'], B = ['BPM', '120'];
+const pages = [
+['HOME', 'HOME', B, [['VOLUME', '100'], ['CUTOFF', '80'], ['RESONANCE', '20'], ['FX', '100%']], 0, P.home],
+['EDIT · SOUND: VA', 'VA', T(), [['WAVE', 'SAW'], ['DETUNE', '24'], ['CUTOFF', '80'], ['RESONANCE', '30']], 0, P.va],
+['EDIT · SOUND: FM', 'FM', T(), [['PATCH', '05'], ['BRIGHT', '60'], ['DECAY', '72'], ['DETUNE', '10']], 0, P.fm],
+['EDIT · SOUND: SAMPLE', 'SAMPLE', T(), [['SLOT', '1'], ['START', '18'], ['LENGTH', '60'], ['REVERSE', 'OFF']], 1, P.sample],
+['EDIT · SOUND: VOICE', 'VOICE', T(), [['VOWEL', 'A'], ['SHIFT', '0'], ['BUZZ', '40'], ['BREATH', '25']], 0, P.voice],
+['EDIT · SOUND: WHEEL', 'WHEEL', T(), [['DRAWBARS', '886'], ['PERC', 'ON'], ['CLICK', '30'], ['DRIVE', '15']], 0, P.wheel],
+['EDIT · SOUND: PHYS', 'PHYS', T(), [['MODEL', 'STRING'], ['STRUCTURE', '50'], ['DAMP', '35'], ['BOW', '70']], 3, P.phys],
+['EDIT · SOUND: PHASE', 'PHASE', T(), [['WAVE', 'RESO'], ['WAVE2', 'SAW'], ['DCW', '65'], ['DETUNE', '8']], 2, P.phase],
+['EDIT · SOURCE', 'SOURCE', T(), [['SOURCE', 'VOICE'], ['LATCH', 'ON'], ['TYPE', 'GREG.'], ['GLIDE', 'OFF']], 0, P.source],
+['EDIT · FM ALGO', 'FM ALGO', T(), [['ALGO', '05'], ['FEEDBACK', '40'], ['OP', '3'], ['FINE', '0']], 2, P.fmalgo],
+['EDIT · FM OP', 'FM OP 3', T(), [['RATIO', '2.00'], ['LEVEL', '90'], ['ATTACK', '12'], ['DECAY', '55']], 0, P.fmop],
+['EDIT · LINE 2', 'LINE 2', T(), [['WAVE', 'SAME'], ['DCW', 'OWN'], ['RING', 'ON'], ['NOISE', 'OFF']], 2, P.line2],
+['EDIT · PHASE ENV', 'PHASE ENV', T(), [['DCW ENV', '70'], ['DCW DECAY', '40'], ['PITCH ENV', '+5'], ['PITCH DEC', '20']], 0, P.penv],
+['ENV', 'ENV', T(), [['ATTACK', '30'], ['DECAY', '50'], ['SUSTAIN', '60'], ['RELEASE', '90']], 3, P.env],
+['LFO', 'LFO', T(), [['RATE', '1/4'], ['DEPTH', '40'], ['DEST', 'CUTOFF'], ['SHAPE', 'SINE']], 2, P.lfo],
+['FX · TAPE', 'TAPE', B, [['WOW', '30'], ['SATURATION', '45'], ['TONE', '60'], ['HISS', '10']], 1, P.tape],
+['FX · GRAIN', 'GRAIN', B, [['SIZE', '40'], ['DENSITY', '70'], ['SCATTER', '55'], ['MIX', '35']], 2, P.grain],
+['FX · DELAY', 'DELAY', B, [['TIME', '3/16'], ['FEEDBACK', '72'], ['WEAR', '30'], ['MIX', '40']], 1, P.delay],
+['FX · SPACE', 'SPACE', B, [['SIZE', '90'], ['DAMP', '40'], ['MIX', '50'], ['PRE-DELAY', '20']], 0, P.space],
+['FX · MASTER', 'MASTER', B, [['CUTOFF', '62'], ['RESONANCE', '30'], ['TYPE', 'LP'], ['POSITION', 'PRE']], 0, P.master],
+['FX · DRIVE', 'DRIVE', B, [['AMOUNT', '60'], ['TYPE', 'FUZZ'], ['TONE', '45'], ['MIX', '70']], 1, P.drive],
+['FX (hold) · PERFORM', 'PERFORM', B, [['FILT', '50'], ['REV', '0'], ['ECHO', '0'], ['PITCH', '0']], -1, P.perform],
+['HOME · MIXER 1', 'MIXER 1', T(), [['REVERB', '72'], ['', ''], ['', ''], ['', '']], 0, P.mix1],
+['HOME · MIXER 2', 'MIXER 2', T(), [['PAN', 'R35'], ['TYPE', 'HP'], ['POS', 'POST'], ['', '']], 0, P.mix2],
+['SEL · SCALE', 'SCALE', T(), [['ROOT', 'C'], ['SCALE', 'MINOR'], ['', ''], ['', '']], 1, P.scale],
+['SEL · CHORD', 'CHORD', T(), [['CHORD', 'MIN7'], ['VOICING', 'CLOSE'], ['', ''], ['', '']], 0, P.chord],
+['ARP', 'ARP', T(), [['MODE', 'UP'], ['RATE', '1/16'], ['OCTAVES', '2'], ['GATE', '60']], 0, P.arp],
+['SEQ · GRID', 'SEQ', T(), [['NOTE', 'C4'], ['CHANCE', '100'], ['RATCHET', '1'], ['LENGTH', '1']], 0, P.grid],
+['SEQ · PATTERN SETTINGS', 'PATTERN', T(), [['STEPS', '64'], ['DIVISION', '1/16'], ['SWING', '0'], ['PLAY MODE', 'FWD']], 0, P.pattern],
+['GLO · SONG', 'SONG', B, [['SECTION', '2'], ['PATTERN', 'B'], ['REPEATS', '4'], ['MODE', 'LOOP']], 0, P.song],
+['SAVE · SOUNDS', 'SOUNDS', T(), [['SLOT', '03'], ['CATEGORY', 'ALL'], ['TYPE', 'VO'], ['ACTION', 'LOAD']], 3, P.sounds],
+['SAVE · PROJECTS', 'PROJECTS', B, [['SLOT', 'A'], ['', ''], ['', ''], ['ACTION', 'LOAD']], 3, P.projects],
+['HOME (hold) · SYSTEM', 'SYSTEM', ['VER', '2.0'], [['COLOUR', 'RED'], ['MIDI CH', '1-4'], ['TUNE', '0'], ['SCREEN OFF', '5 MIN']], 0, P.system],
+['HOME (hold x2) · SYSTEM 2', 'SYSTEM 2', ['VER', '2.0'], [['MIDI LEARN', 'OFF'], ['SEQ OUT', 'OFF'], ['SAMPLES', 'KEEP'], ['CLOCK', 'INT']], 3, P.sys2],
+['HOME (hold x3) · SYSTEM 3', 'SYSTEM 3', ['VER', '2.0'], [['LATCH', 'SOUND'], ['VELOCITY', 'ON'], ['', ''], ['', '']], 0, P.sys3]
+].map(([label, title, tag, kn, sel, pic]) => {
+const g = pic();
+return {
+label, title, tagL: tag[0], tagV: tag[1], r: g.r, p: g.p, q: g.q,
+titleSt: "flex:1;background:#9a968f;display:flex;align-items:center;padding:0 14px;font-family:'Archivo Black',sans-serif;letter-spacing:1px;font-size:" + (title.length > 7 ? 24 : 30) + 'px',
+knobs: kn.map(([l, v], i) => {
+const on = i === sel, empty = !l;
+return {
+l, v,
+boxSt: on ? 'background:#141312;border:4px solid #b8261a;padding:6px;display:flex;flex-direction:column;justify-content:space-between;color:#f2efe8' : 'background:' + (empty ? '#2a2826' : '#c9c5bc') + ';padding:10px;display:flex;flex-direction:column;justify-content:space-between',
+labSt: 'font-size:10px;letter-spacing:1px;color:' + (on ? '#e0705f' : '#141312'),
+valSt: "font-family:'Archivo Black',sans-serif;line-height:1;font-size:" + (v.length > 5 ? 16 : v.length > 3 ? 20 : 26) + 'px'
+};
+})
+};
+});
+return pages;}
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const out=build().map(pg=>{
+ const svg=pg.r.map(r=>`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${r.f}"/>`).join('')
+  +pg.p.map(p=>`<path d="${p.d}" fill="none" stroke="${p.c}" stroke-width="${p.w}" stroke-linejoin="miter" stroke-linecap="square"/>`).join('')
+  +pg.q.map(q=>`<text x="${q.x}" y="${q.y}" font-size="${q.s}" fill="${q.c}" font-family="${q.f}" text-anchor="${q.a}" letter-spacing="${q.ls}">${esc(q.t)}</text>`).join('');
+ const kn=pg.knobs.map(k=>`<div style="${k.boxSt}"><div style="${k.labSt}">${esc(k.l)}</div><div style="${k.valSt}">${esc(k.v)}</div></div>`).join('');
+ return `<div><div class="lab">${esc(pg.label)}</div><div class="scr"><div class="hdr"><div style="${pg.titleSt}">${esc(pg.title)}</div><div class="tag"><div style="font-size:10px;letter-spacing:1px">${esc(pg.tagL)}</div><div style="font-family:'Archivo Black',sans-serif;font-size:24px;line-height:1">${esc(pg.tagV)}</div></div></div><svg width="468" height="320" viewBox="0 0 468 320" style="display:block;flex-shrink:0">${svg}</svg><div class="knobs">${kn}</div></div></div>`;
+}).join('');
+document.getElementById('grid').innerHTML=out;
+</script></body></html>

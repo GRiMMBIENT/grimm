@@ -426,7 +426,7 @@ A track can play by itself: random notes of the **SCALE** (with chord mode on: r
 |---|---|---|---|---|
 | SYSTEM | COLOUR (red, amber, teal, violet) | MIDI CHANNEL | TUNE (±50 cents) | SCREEN OFF |
 | SYSTEM 2 | MIDI LEARN | SEQ MIDI OUT | SAMPLES | CLOCK |
-| SYSTEM 3 | LATCH | VELOCITY | – | – |
+| SYSTEM 3 | LATCH | VELOCITY | THEME | – |
 
 - **MIDI CHANNEL:** `1-4` puts T1–T4 on channels 1–4 (or start higher, up to `13-16`); `ALL > SEL` sends every channel to the selected track; `CH 1 > SEL` … `CH 16 > SEL` sends only that channel to the selected track and ignores the others (notes and CCs). The same for USB and the TRS jack.
 - **SCREEN OFF:** the screen goes dark after the chosen time; the music keeps going. Your first touch only wakes it.
@@ -443,6 +443,7 @@ A track can play by itself: random notes of the **SCALE** (with chord mode on: r
   - `ALWAYS OFF` (`OFF` on the knob): loading a sound sets the track's LATCH off (latched notes stop), so every sound starts unlatched, whatever was saved in it. You can still latch it by hand any time, with EDIT's LATCH or **SEL + OCT+**.
   - Projects and slots A–D keep the LATCH they were saved with, and a NEW project's tracks start unlatched.
 - **VELOCITY** (SYSTEM 3): `OFF` (as GR!MM 1.0): every note at full volume. `ON`: a MIDI note (USB or the TRS jack) plays as loud as it was played (soft notes much quieter). The FM-1's own keys, the sequencer and GENERATE stay at full volume either way, and so do notes the arpeggiator plays.
+- **THEME** (SYSTEM 3, GR!MM 3.0): how the screens look. `EYE` is GR!MM's own pixel-art look (as in 2.0). More themes follow; the page logic is the same in every theme, only the drawing differs. The theme is saved with the settings and is already in force at the start-up screen.
 
 ---
 

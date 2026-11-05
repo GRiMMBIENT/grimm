@@ -1177,6 +1177,8 @@ static struct {
 #define SET_VER 3u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
 static volatile int32_t sy_vel;                 /* (V2) SYSTEM 3's VELOCITY (its knob) */
+#define THEME_N 1u                              /* (V3.0 THEMES) the themes there are (ui.c UI_THEMES): EYE; set.latch bits 4, 5 hold the one on */
+static volatile int32_t sy_theme;               /* (V3.0) SYSTEM 3's THEME (its knob 3) */
 static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk, sy_latch;   /* SYSTEM's,
                                                  * SYSTEM 2's, SYSTEM 3's knobs (sy_fac: SAMPLES, 1 RESTORE: OCT+
                                                  * writes the factory ones) */
@@ -1284,7 +1286,7 @@ static const page_t PAGES[NPAGE] = {
     {"FM OP", BTN_EDIT, 1, 1, 1, {"RATIO", "LEVEL", "ATTACK", "DECAY"}},  /* (the operator OP selects) */
     {"MASTER", BTN_FX, 1, 0, 1, {"CUTOFF", "RESONANCE", "TYPE", "POSITION"}},   /* (V2: FX's 5th and 6th, master.c) */
     {"DRIVE", BTN_FX, 1, 0, 1, {"AMOUNT", "TYPE", "TONE", "MIX"}},
-    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "VELOCITY", "", ""}},   /* (V2: VELOCITY: a MIDI note's volume; a NEW
+    {"SYSTEM 3", BTN_HOME, 1, 0, 0, {"LATCH", "VELOCITY", "THEME", ""}},   /* (V2: VELOCITY: a MIDI note's volume; a NEW
                                                  * project's tracks' LATCH) */
     {"LINE 2", BTN_EDIT, 1, 1, 1, {"WAVE", "DCW", "RING", "NOISE"}},   /* (V2: a PHASE track's, after SOURCE: phase.c) */
     {"PHASE ENV", BTN_EDIT, 1, 1, 1, {"DCW ENV", "DCW DECAY", "PITCH ENV", "PITCH DECAY"}},   /* (V2: a PHASE track's, after
@@ -1405,7 +1407,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
     case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : &sy_clk;
-    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : 0;   /* (V2: LATCH, VELOCITY) */
+    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : k == 2u ? &sy_theme : 0;   /* (V2: LATCH, VELOCITY; V3.0: THEME) */
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -1425,7 +1427,7 @@ static int32_t knob_max(uint32_t pg, uint32_t k)
            pg == PG_LFO ? (k == 0u ? 127 : k == 1u ? 100 : k == 2u ? NLFODEST - 1 : NLFOSHAPE - 1) :
            pg == PG_SONG ? (k == 0u ? SONG_N - 1 : k == 1u ? SONG_END : k == 2u ? 16 : NSONGMODE - 1) :
            pg == PG_SYSTEM ? (k == 0u ? 3 : k == 1u ? MCH_MAX : k == 2u ? 50 : 4) : pg == PG_SYS2 ? (k == 3u ? CK_N - 1 : k ? 1 : 2) :
-           pg == PG_SYS3 ? 1 : pg == PG_PDLINE ? (k == 0u ? 8 : k == 1u ? 127 : 1) : pg == PG_PDENV ? (k == 2u ? 63 : 127) :
+           pg == PG_SYS3 ? (k == 2u ? (int32_t)THEME_N - 1 : 1) : pg == PG_PDLINE ? (k == 0u ? 8 : k == 1u ? 127 : 1) : pg == PG_PDENV ? (k == 2u ? 63 : 127) :
            pg == PG_HOME && k == 3u ? 200 : pg == PG_FMALGO ? (k == 0u ? 31 : k == 1u ? 7 : k == 2u ? 5 : 99) :
            pg == PG_FMOP ? (k ? 99 : 31) : pg == PG_MIX2 ? (k == 1u ? NFTYPE - 1 : k == 2u ? 1 : 127) :
            pg == PG_MASTER ? (k == 2u ? NFTYPE - 1 : k == 3u ? NMPOS - 1 : 127) :
@@ -1967,7 +1969,8 @@ static void sys_sync(void)
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
     uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
-    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1);   /* (V2: LATCH, VELOCITY) */
+    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1 | clamp(sy_theme, 0, (int32_t)THEME_N - 1) << 4);   /* (V2: LATCH,
+                                                 * VELOCITY; V3.0: THEME, bits 4, 5) */
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
@@ -1983,6 +1986,7 @@ static void sys_sync(void)
         set_dirty = 1, set_t = fm1_ms;
     }
     ck_mode = set.clk, rt_usb_fast = set.clk == CK_USB;   /* (CLOCK: the audio ISR's, platform.c's) */
+    ui_theme_set((uint32_t)clamp(sy_theme, 0, (int32_t)THEME_N - 1));   /* (V3.0 THEMES: the theme's palette first, then its accent) */
     ui_acc = UI_ACCENTS[set.col & 3u];
     tune_f = (set.tune * 23666 + set.tune * set.tune * 7) / 10000;   /* (2^(c / 1200) - 1, x 4096) */
     mo_seq = set.out, snd_latch_off = set.latch & 1u, vel_on = set.latch >> 1 & 1u;
@@ -2007,12 +2011,13 @@ static void sys_load(void)                      /* the settings at power-on into
     }
     if (set.mch > MCH_MAX) set.mch = 0;
     if (set.clk >= CK_N) set.clk = CK_INT;
-    set.latch &= 3u;                            /* (V3.0: CLICK is not a setting. A V3.0 test build saved it in bit 2: gone, LATCH and
-                                                 * VELOCITY kept) */
+    set.latch &= 0x33u;                         /* (V3.0: CLICK is not a setting. A V3.0 test build saved it in bit 2: gone, LATCH and
+                                                 * VELOCITY kept; THEME: bits 4, 5) */
+    if ((set.latch >> 4) >= THEME_N) set.latch &= 3u;   /* (a theme this firmware has not: EYE) */
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
     sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
-    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u;
+    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u, sy_theme = set.latch >> 4 & 3u;
     cl_on = 0;                                  /* (V3.0: CLICK always starts off) */
     sys_sync();
     set_dirty = 0;
@@ -2236,6 +2241,12 @@ static void app_main(void)
         uint8_t st, d1, d2;
         int32_t d;
         platform_poll();
+#ifdef DINGHY_HOST
+        if (host_page_set >= 0) {               /* (a test script's "page N") */
+            if (host_page_set < (int32_t)NPAGE) page = (uint32_t)host_page_set;
+            host_page_set = -1;
+        }
+#endif
         if (fm1_in.notes != prev || fm1_in.buttons) t_touch = t_hand = fm1_ms;   /* (the autosave waits for the hands
                                                  * to rest; SCREEN OFF counts from their last touch) */
 

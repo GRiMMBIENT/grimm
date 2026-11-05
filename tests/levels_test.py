@@ -205,9 +205,12 @@ import re
 ui = open("firmware/src/ui.c", encoding="utf-8").read()
 
 
+PAL = re.findall(r"RGB\(0x(..), 0x(..), 0x(..)\)", ui[ui.index("UI_PAL_EYE = "):ui.index("static const ui_pal_t *ui_pal")])   # (V3.0: EYE's palette: black, dark, mid,
+IDX = {"UI_D": 1, "UI_M": 2, "UI_L": 3, "UI_METER_NORMAL": 9, "UI_METER_LOUD": 10, "UI_METER_HOT": 11}                    # light, white, 4 accents, 3 meter colours)
+
+
 def col(name):
-    m = re.search(r"#define %s RGB\(0x(..), 0x(..), 0x(..)\)" % name, ui)
-    r, g, b = (int(x, 16) for x in m.groups())
+    r, g, b = (int(x, 16) for x in PAL[IDX[name]])
     return ((r >> 3) * 255 // 31, (g >> 2) * 255 // 63, (b >> 3) * 255 // 31)       # (as host mode writes a pixel)
 
 
