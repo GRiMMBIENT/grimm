@@ -439,6 +439,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         put_s(put_s(put_u(put_s(S->lab, "T"), k + 1u), " "), SRC_CODE[clamp(trk[k].eng, 0, NENG - 1)]);
         S->warn = (uint8_t)(trk_closed(k) ? 1u : trk_dry(k) ? 2u : 0u);   /* (rc9: its filter closed, "CUT"; its FX 0
                                                  * with a send up, "DRY": under its label, while so) */
+        if (trk[k].chord) S->warn |= 4u;        /* (V3.0: its chord mode on: "CHD", first of the tags under the label) */
         S->fill = (uint8_t)((clamp(trk[k].level, 0, 127) * 8 + 63) / 127);
         ui_3(S->val, ui_pc(trk[k].level));
         if (trk_quiet >> k & 1u) { put_s(S->val, "MUTE"); S->dim = 1; }
@@ -487,10 +488,11 @@ static void ui_slab_draw(void)
     uint16_t fc = S->acc ? ui_acc : UI_L;
     ui_rect(x, 165, 56, 72, UI_D);
     ui_text(x + 4, 170, S->lab, 1, UI_L);
-    if (S->warn) ui_text(x + 4, 180, S->warn == 1u ? "CUT" : "DRY", 1, ui_acc);   /* (rc10: small, red, under the label;
-                                                 * the label as ever) */
-    for (j = 0; j < 8; j++)                     /* 8 segments: light (the accent) filled, black empty */
-        ui_rect(x + 4 + j * 6, 190, 5, 14, j < S->fill ? fc : UI_K);
+    if (S->warn & 4u) ui_text(x + 4, 180, "CHD", 1, ui_acc);   /* (V3.0: chord mode on: first under the label) */
+    if (S->warn & 3u) ui_text(x + 4, S->warn & 4u ? 188 : 180, (S->warn & 3u) == 1u ? "CUT" : "DRY", 1, ui_acc);   /* (rc10: small, red, under the
+                                                 * label; the label as ever; V3.0: under CHD when both: a line lower) */
+    for (j = 0; j < 8; j++)                     /* 8 segments: light (the accent) filled, black empty; two tags: 8 px lower */
+        ui_rect(x + 4 + j * 6, (S->warn & 4u) && (S->warn & 3u) ? 198 : 190, 5, 14, j < S->fill ? fc : UI_K);
     if (n <= 3) ui_text(x + 4, 214, S->val, 2, S->dim ? UI_M : S->acc ? ui_acc : UI_L);
     else ui_text(x + 4, 222, S->val, 1, S->dim ? UI_M : UI_L);
 }

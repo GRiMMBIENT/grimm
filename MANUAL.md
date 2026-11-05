@@ -70,6 +70,7 @@ The main screen: the eye, two spider webs in the top corners (dew glints on them
 - **CUTOFF / RESONANCE:** a filter at the end of the track, for every source: a low-pass unless MIXER 2 says otherwise. Fully open = no filtering.
 - **FX:** turns all five of the track's effect sends (MIXER 1's DELAY, REVERB, TAPE, GRAIN, DRIVE) up or down together. 0 = dry, 100 % = as set on MIXER 1, 200 % = twice as wet.
 - **CUT and DRY:** a small red **CUT** under a track's name on HOME means its filter is closed (nothing gets through); a red **DRY** means its FX is at 0, so it gets no effects although a send is up. On MIXER 1 such a track's send tiles are dimmed and show **FX0**.
+- **CHD:** a small red **CHD** under a track's name means that track's chord mode is on (each track has its own). With CUT or DRY as well, CHD is the first line and CUT or DRY sits under it.
 
 Press **HOME** again for the mixer pages (and **HOME** once more after LEVELS to come back to HOME):
 
@@ -226,6 +227,8 @@ The screen draws how the six operators are wired: carriers (the ones you hear) o
 ## 5. Scales and chords: SEL
 
 **SEL** opens **SCALE → CHORD**. **Hold SEL** (and let go) to switch **chord mode** on or off for the selected track.
+
+The **SEL light** shows the chord mode of the selected track, on every page: **bright** = chord mode on, **dim glow** = the SCALE or CHORD page is open and chord mode is off, **dark** = neither. Change tracks (ALGORITHM) and it follows. On HOME every track with chord mode on shows **CHD** under its name.
 
 | SCALE | CHORD |
 |---|---|

@@ -2600,6 +2600,9 @@ static void app_main(void)
         fm1_led_key(BTN_OCT_UP, set.oct > 0);
         for (k = 0; k < 14u; k++)               /* the button whose page is open */
             if (BTN_PAGES >> k & 1u) fm1_led_key(k, PAGES[page].btn == k);
+        fm1_led_key(BTN_SEL, trk[sel].chord);   /* (V3.0) SEL: lit = the selected track's chord mode is on (on any page); glow =
+                                                 * the SCALE or CHORD page is open, chord mode off; dark = neither */
+        fm1_led_glow(BTN_SEL, !trk[sel].chord && PAGES[page].btn == BTN_SEL);
         fm1_led_key(BTN_PLAY, playing);
         fm1_led_key(BTN_REC, rec || song_rec);
 

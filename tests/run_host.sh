@@ -72,6 +72,9 @@ python3 tests/click_test.py build/host/grimm
 # GR!MM V3.0: the LEVELS page (HOME's 4th, after MIXER 2): KNOB 1-4 the tracks' LEVEL, the header, the same value as HOME's and
 # MIXER 1's, MIDI LEARN and CCs, saved with the project (tests/levels_test.py)
 python3 tests/levels_test.py build/host/grimm
+# GR!MM V3.0 item 4: chord mode always visible: SEL's light (lit = chord on, glow = SCALE / CHORD page open, dark), HOME's CHD tag
+# (with CUT / DRY under it) (tests/chord_led_test.py)
+python3 tests/chord_led_test.py build/host/grimm
 # GR!MM V3.0: the VA source's filter leaves no DC offset at a low cutoff (dsp.c tsvf_lp rounds): at every cutoff, through each DRIVE
 # type, and with an LFO sweeping the VA's CUTOFF the bass no longer crumbles (tests/va_dc_test.py)
 python3 tests/va_dc_test.py build/host/grimm
