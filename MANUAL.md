@@ -228,7 +228,7 @@ The screen draws how the six operators are wired: carriers (the ones you hear) o
 
 **SEL** opens **SCALE → CHORD**. **Hold SEL** (and let go) to switch **chord mode** on or off for the selected track.
 
-The **SEL light** shows the chord mode of the selected track, on every page: **bright** = chord mode on, **dim glow** = the SCALE or CHORD page is open and chord mode is off, **dark** = neither. Change tracks (ALGORITHM) and it follows. On HOME every track with chord mode on shows **CHD** under its name.
+The **SEL light** shows the chord mode of the selected track, on every page: **bright and steady** = chord mode on, **a slow dim pulse** (glowing about 0.8 s, dark about 0.8 s) = the SCALE or CHORD page is open and chord mode is off, **dark** = neither. Change tracks (ALGORITHM) and it follows. On HOME every track with chord mode on shows **CHD** under its name.
 
 | SCALE | CHORD |
 |---|---|

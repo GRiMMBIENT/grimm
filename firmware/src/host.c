@@ -53,7 +53,11 @@ static void fm1_led_key(uint32_t id, int on)
 {
     uint32_t was = host_led_keys;
     if (id < 14u) {
+        uint32_t wl = host_led_btn_lit;
         host_led_btn_lit = on ? host_led_btn_lit | 1u << id : host_led_btn_lit & ~(1u << id);
+        if (id == 3u && (wl ^ host_led_btn_lit) & 8u && getenv("GRIMM_LED_LOG"))   /* (tests/chord_led_test.py: SEL's lit layer, every write
+                                                 * that changes it: the scan interrupt can read it at any time) */
+            printf("%6u ms  led SELLIT %u\n", fm1_ms, host_led_btn_lit >> 3 & 1u);
         return;
     }
     if (id >= 14u) host_led_keys = on ? host_led_keys | 1u << (id - 14u) : host_led_keys & ~(1u << (id - 14u));

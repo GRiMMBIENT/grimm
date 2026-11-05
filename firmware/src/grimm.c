@@ -1179,6 +1179,7 @@ static int32_t ch_last = -1;                    /* SEL's picture: the note last 
 #define KEY0 53u                                /* key 0 = F3 */
 #include "gen.c"                                /* GR!MM V2: GENERATE (FX held + the black keys F#3 .. D#4) */
 #define OCT_BOTH (1u << BTN_OCT_DOWN | 1u << BTN_OCT_UP)
+#define SEL_PULSE_MS 800u                       /* (V3.0) SEL's pulse (SCALE / CHORD page open, chord mode off): glowing, dark, this long each */
 #define HOLD_MS 600u                            /* a button held this long: its hold function (HOME: SYSTEM) */
 
 static uint32_t pct10(uint32_t ticks)           /* ticks a block -> tenths of a % of the budget, at most 409.5 % */
@@ -2598,11 +2599,20 @@ static void app_main(void)
         }
         fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
         fm1_led_key(BTN_OCT_UP, set.oct > 0);
-        for (k = 0; k < 14u; k++)               /* the button whose page is open */
-            if (BTN_PAGES >> k & 1u) fm1_led_key(k, PAGES[page].btn == k);
-        fm1_led_key(BTN_SEL, trk[sel].chord);   /* (V3.0) SEL: lit = the selected track's chord mode is on (on any page); glow =
-                                                 * the SCALE or CHORD page is open, chord mode off; dark = neither */
-        fm1_led_glow(BTN_SEL, !trk[sel].chord && PAGES[page].btn == BTN_SEL);
+        for (k = 0; k < 14u; k++)               /* the button whose page is open (SEL: below, written once) */
+            if ((BTN_PAGES & ~(1u << BTN_SEL)) >> k & 1u) fm1_led_key(k, PAGES[page].btn == k);
+        {                                       /* (V3.0) SEL: lit = the selected track's chord mode is on (on any page); the SCALE
+                                                 * or CHORD page open with chord mode off: a slow pulse of the glow (SEL_PULSE_MS
+                                                 * on, as long off, from the moment the page opened); dark = neither. Each LED
+                                                 * layer written once, with its final value: the scan interrupt reads them any
+                                                 * time (a lit, then dark in one pass showed as a fast flicker) */
+            static uint32_t sp_t0, sp_was;
+            uint32_t pulse = !trk[sel].chord && PAGES[page].btn == BTN_SEL;
+            if (pulse && !sp_was) sp_t0 = fm1_ms;
+            sp_was = pulse;
+            fm1_led_key(BTN_SEL, trk[sel].chord);
+            fm1_led_glow(BTN_SEL, pulse && ((fm1_ms - sp_t0) / SEL_PULSE_MS & 1u) == 0u);
+        }
         fm1_led_key(BTN_PLAY, playing);
         fm1_led_key(BTN_REC, rec || song_rec);
 

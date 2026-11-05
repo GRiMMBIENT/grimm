@@ -4,6 +4,8 @@
 """GR!MM V3.0 item 4 in host mode (tests/run_host.sh): chord mode is always visible.
   - the SEL button's light: LIT = the selected track's chord mode is on (on any page, the SCALE / CHORD pages too); GLOW =
     the SCALE or CHORD page is open and chord mode is off; DARK = neither; it follows chord on / off and the selected track
+  - the SCALE / CHORD page open with chord off is a SLOW PULSE (glow 0.8 s, dark 0.8 s, from the page's opening), never fast: SEL's
+    lit layer is written only when chord mode changes (a lit-then-dark write in one pass flickered on the device)
   - HOME: a small "CHD" tag under the track's name while that track's chord mode is on (T1 .. T4 each its own), with CUT / DRY
     under it when both show (the probe's slab warning: +4 for CHD); the screen's pixels read too
   python3 tests/chord_led_test.py [build/host/grimm]"""
@@ -19,6 +21,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 SEL, HOME = 3, 8
 ALGO, K2, K4 = 1, 3, 5                          # encoders: ALGORITHM (the track), KNOB 2 (CUTOFF), KNOB 4 (FX)
 bad = 0
+litw = []                                       # SEL's lit layer: every write that changed it
 
 
 def check(what, ok, detail=""):
@@ -38,6 +41,8 @@ def run(name, ev, end):
     out = subprocess.run([EXE, str(OUT / name), str(path)], capture_output=True, text=True, check=True,
                          env=dict(os.environ, GRIMM_LED_LOG="1")).stdout
     leds = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"^\s*(\d+) ms  led SEL (\d)$", out, re.M)]
+    global litw
+    litw = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"^\s*(\d+) ms  led SELLIT (\d)$", out, re.M)]
     probes = {int(ln.split()[1]): ln for ln in out.splitlines() if ln.startswith("probe ")}
     return leds, probes
 
@@ -88,6 +93,21 @@ check("SEL: never glows while lit (chord on on the SCALE / CHORD pages: stays LI
       not [1 for t, s in leds if 7800 <= t <= 8700 and s != 2], str([x for x in leds if 7800 <= x[0] <= 8700]))
 check("SEL: only the changes are logged, in order (no flicker between the states in one frame)",
       all(a[1] != b[1] for a, b in zip(leds, leds[1:])) and len(leds) <= 24, str(leds))
+
+# ---- the pulse: the SCALE page open for 5 s, chord off (SEL tapped at 6100): glow 0.8 s, dark 0.8 s ..., never lit; then chord on: steady
+ev = [(6100, f"btn {SEL}"), (11100, f"btn {HOME}"), *hold(11500), (12400, f"btn {SEL}"), (15500, f"btn {HOME}")]
+leds, _ = run("pulse", ev, 16000)
+phase = [at(leds, 6100 + 800 * k + 400) for k in range(6)]
+check("SEL pulse: SCALE page open, chord off: glow, dark, glow, dark, glow, dark (0.8 s each, from the page's opening)",
+      phase == [1, 0, 1, 0, 1, 0], str(phase))
+gaps = [b[0] - a[0] for a, b in zip(leds, leds[1:]) if 6200 <= a[0] and b[0] <= 11000]
+check("SEL pulse: the changes are 0.8 s apart (no fast flicker)", gaps and all(780 <= g <= 830 for g in gaps), str(gaps))
+check("SEL pulse: the lit layer is never written while chord mode is off (no lit blip: the scan reads it at any time)",
+      [w for w in litw if w[0] < 11500] == [], str([w for w in litw if w[0] < 11500]))
+after = [x for x in leds if x[0] > 11000]
+check("SEL: chord on (hold at 11500): lit once, steady for 3 s on HOME and the SCALE page (no change after, no glow)",
+      [s for _, s in after] == [0, 2] and [w[1] for w in litw] == [1] and 12100 <= litw[0][0] <= 12500 and after[-1][0] < 12500,
+      str(leds) + str(litw))
 
 # ---- the tag: T1's chord mode on (SEL held), CUT, DRY with it; T2 .. T4 their own
 ev = [(6100, "probe"),
