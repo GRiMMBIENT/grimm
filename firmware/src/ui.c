@@ -54,12 +54,13 @@ static uint16_t ui_meter_col(int32_t seg)
 typedef struct {
     const ui_pal_t *pal;
     int16_t hh;                                 /* the header: the top hh rows */
-    int16_t px, pw, py, ph, phf;                /* the picture's region: x, width, y, height (phf: MIXER 1's, the whole page) */
+    int16_t px, pw, py, ph, pyf, phf;           /* the picture's region: x, width, y, height (pyf, phf: MIXER 1's, the whole page) */
     int16_t sy, sh;                             /* the knob blocks: their top and height (x: 3 + 59 k, 56 wide) */
     int16_t dx, dy, dyf;                        /* a borrowed picture moved this far (MIXER 1's: dyf) */
     uint8_t anim;                               /* HOME's own moving picture (the eye, the candles) */
     uint8_t fit8;                               /* the header's text cut to fit in 8 px characters (ui_head_text) */
     uint8_t bfin;                               /* the boot screen's finish: 0 EYE's, 1 BRUTAL's (hard edges, no glow, its font) */
+    uint8_t tiles;                              /* HOME's picture shows the four tracks and its knob blocks the knobs (EYE: the slabs are the tracks) */
     void (*head)(void);
     void (*slab)(void);
     void (*pic)(void);
@@ -243,9 +244,12 @@ static void ui_head_draw(void)
 }
 
 /* ---- the slabs: KNOB 1..4 of the page */
-typedef struct { char lab[12], val[12]; uint8_t fill, acc, dim, warn; } slab_t;   /* (rc9) warn: 1 "CUT", 2 "DRY" under
+typedef struct { char lab[12], val[12]; uint8_t fill, acc, dim, warn, sel; } slab_t;   /* (rc9) warn: 1 "CUT", 2 "DRY" under
                                                  * the label (HOME) */
 static slab_t ui_sl[4], ui_slab_shown[4];
+static uint32_t ui_kn_pg = 0xFFFFFFFFu, ui_kn_last;   /* (V3.0) the knob turned last, and on which page: BRUTAL's selected block */
+static void ui_pic_draw(void);
+#include "brutal.c"                           /* (V3.0) the BRUTAL theme */
 static const char *const LONG_LAB[][2] = {
     {"RESONANCE", "RES"}, {"POSITION", "POS"}, {"AMOUNT", "AMT"}, {"DETUNE", "DTUNE"}, {"DRAWBARS", "BARS"},
     {"STRUCTURE", "STRUCT"}, {"SATURATION", "SAT"},
@@ -343,6 +347,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
     uint32_t eng = sel_eng();
     char t[32];
     S->acc = S->dim = S->warn = 0;
+    S->sel = ui_kn_pg == page && ui_kn_last == k;   /* (BRUTAL's selected block: the knob turned last on this page) */
     S->val[0] = 0;
     ui_label(S->lab, name[0] ? name : "-");
     if (page == PG_GRID && k == 3u) put_s(S->lab, "LEN");   /* (Seq's; SAMPLE keeps its LENGTH) */
@@ -468,10 +473,17 @@ static void ui_slab_make(uint32_t k, slab_t *S)
         if (k == 0u) fm_ratio_text(S->val, (uint32_t)clamp(fm_op, 0, 5));
         else ui_3(S->val, (uint32_t)clamp(v, 0, 99));
         return;
-    case PG_HOME: case PG_LEVELS:               /* (V3.0: LEVELS: the same four slabs, the knobs T1..T4's LEVEL, no track in the
+    case PG_HOME: case PG_LEVELS:               /* (V3.0: BRUTAL's HOME shows the tracks as tiles: its blocks the knobs: VOLUME, CUTOFF, RESONANCE, FX of the
+                                                 * selected track, as the header says them; LEVELS: the same four slabs, the knobs T1..T4's LEVEL, no track in the
                                                  * accent) the four tracks (the knobs are the selected one's: VOLUME, CUTOFF,
                                                  * RESONANCE, FX; the header says what they change): "T2 FM", its LEVEL;
                                                  * the selected track in the accent; MUTE */
+        if (page == PG_HOME && ui_th->tiles) {
+            if (k == 1u) hz_text(S->val, trk[sel].cut, trk[sel].ftype);
+            else if (k == 3u) put_s(put_u(S->val, (uint32_t)clamp(trk[sel].fx, 0, 200)), "%");
+            else ui_3(S->val, ui_pc(k ? trk[sel].res : trk[sel].level));
+            return;
+        }
         put_s(put_s(put_u(put_s(S->lab, "T"), k + 1u), " "), SRC_CODE[clamp(trk[k].eng, 0, NENG - 1)]);
         S->warn = (uint8_t)(trk_closed(k) ? 1u : trk_dry(k) ? 2u : 0u);   /* (rc9: its filter closed, "CUT"; its FX 0
                                                  * with a send up, "DRY": under its label, while so) */
@@ -2011,7 +2023,7 @@ static uint32_t ui_pic_key(void)
             UI_H(trk[t].drv), UI_H(trk[t].tap), UI_H(trk[t].vty), UI_H(trk[t].pd_ring), UI_H(trk[t].pd_noise), UI_H(trk[t].pd_wav), UI_H(trk[t].pd_dcw), UI_H(trk[t].pd_de), UI_H(trk[t].pd_dd), UI_H(trk[t].pd_pe),
             UI_H(trk[t].pd_pd), UI_H(trk[t].glide), UI_H(trk[t].fx), UI_H(trk[t].cut),   /* (rc9: HOME's CUT, DRY;
                                                  * MIXER 1's FX0) */
-            UI_H(trk[t].ftype), UI_H(trk[t].fpos);
+            UI_H(trk[t].ftype), UI_H(trk[t].fpos), UI_H(trk[t].chord);
     UI_H(trk[sel].fm_alg), UI_H(trk[sel].fm_fb), UI_H(fm_op), UI_H(trk[sel].p[ENG_FM][0]);
     UI_H(trk[sel].latch), UI_H(trk[sel].chord), UI_H(trk[sel].ch_type), UI_H(trk[sel].ch_voice), UI_H(sc_root), UI_H(sc_scale);
     if (PAGES[page].btn == BTN_SEL) UI_H(ch_last), UI_H(ui_oct);
@@ -2151,7 +2163,9 @@ static void bs_draw(uint32_t e)
     for (i = 0; i < NBSTAR; i++) {
         int32_t x = bs_x[i], y = bs_y[i];
         uint32_t s = bs_st(i, e);
-        if (s == 3u) {
+        if (s == 3u && ui_th->bfin)             /* (BRUTAL: hard edges, no glow: a white square) */
+            ui_rect(x, y, 3, 3, UI_W);
+        else if (s == 3u) {
             ui_rect(x - 3, y, 9, 3, UI_L), ui_rect(x, y - 3, 3, 9, UI_L);
             ui_rect(x, y, 3, 3, UI_W);
         } else
@@ -2170,11 +2184,13 @@ static void ui_boot_draw(void)                  /* Boot: the stars, the eye, the
     ui_eye(80 + ey.jx, 48 + ey.jy, ey.k, ey.dx, ey.dy);
     ui_eye_tiny = 0;
     bat_draw(bt_e);
-    ui_text(120 - 12 * 5, 100, APP_NAME, 3, UI_L);
+    if (ui_th->bfin) br_text(120 - br_len(&BRF24, APP_NAME, 1) / 2, 122 - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, UI_W);   /* (BRUTAL: its face) */
+    else ui_text(120 - 12 * 5, 100, APP_NAME, 3, UI_L);
     for (y = 0; y < 10; y++)
         for (x = 0; x < 30; x++)
             if (!y || y <= bt_len((uint32_t)x)) ui_rect(60 + x * 4, 128 + y * 4, 4, 4, y ? ui_acc : UI_M);
-    ui_text(120 - 4 * ui_len(bt_note ? bt_note : BOOT_LINE), 210, bt_note ? bt_note : BOOT_LINE, 1, bt_note ? ui_acc : UI_M);
+    if (ui_th->bfin) br_text(120 - br_len(&BRF8, bt_note ? bt_note : BOOT_LINE, 1) / 2, 217 - br_cap(&BRF8) - br_capy(&BRF8), bt_note ? bt_note : BOOT_LINE, &BRF8, 1, bt_note ? ui_acc : UI_M);
+    else ui_text(120 - 4 * ui_len(bt_note ? bt_note : BOOT_LINE), 210, bt_note ? bt_note : BOOT_LINE, 1, bt_note ? ui_acc : UI_M);
 }
 static void ui_boot(void)
 {
@@ -2210,7 +2226,8 @@ static void ui_boot_frame(void)
 
 static int ui_native_all(void) { return 1; }   /* (EYE: every picture is its own) */
 static const ui_theme_t UI_THEMES[] = {         /* (THEME 0, 1 ..: SYSTEM 3's knob; firmware/src/grimm.c sys_sync) */
-    {&UI_PAL_EYE, 24, 0, 240, 24, 141, 216, 165, 72, 0, 0, 0, 1, 1, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
+    {&UI_PAL_EYE, 24, 0, 240, 24, 141, 24, 216, 165, 72, 0, 0, 0, 1, 1, 0, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
+    {&UI_PAL_BRUTAL, 26, 0, 240, 32, 160, 29, 211, 195, 42, 0, 8, 3, 0, 0, 1, 1, br_head_draw, br_knob_draw, br_pic, br_native},   /* BRUTAL */
 };
 #define NTHEME (sizeof UI_THEMES / sizeof UI_THEMES[0])
 static void ui_theme_set(uint32_t i)            /* the theme i on (its palette; the accent: sys_sync, after it) */
@@ -2236,8 +2253,10 @@ static void ui_update(int32_t oct)
     if (all) {
         if (shown_page == 0xFFFFFFFFu || ui_th != shown_th)
             lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen, or a new theme: all of it cleared once) */
-        else if (shown_page == PG_MIX1 && page != PG_MIX1)
+        else if (shown_page == PG_MIX1 && page != PG_MIX1) {
             lcd_fill(0, ui_th->sy, 240, (int32_t)(240 - ui_th->sy), UI_K);   /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
+            if (ui_th->py > ui_th->pyf) lcd_fill(0, ui_th->pyf, 240, (int32_t)(ui_th->py - ui_th->pyf), UI_K);   /* (V3.0: and where its page began above the picture's) */
+        }
         shown_page = page, shown_acc = ui_acc, shown_th = ui_th;
         for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '';
         pic_key = ~ui_pic_key();
@@ -2269,7 +2288,7 @@ static void ui_update(int32_t oct)
         pic_t = fm1_ms;
         stat_key = 0xFFFFFFFFu;
         dot_shown = page == PG_LFO ? lfo_dot() : 0xFFFFFFFFu;
-        ui_region(ui_th->px, ui_th->py, ui_th->pw, page == PG_MIX1 ? ui_th->phf : ui_th->ph, UI_K, ui_th->pic);   /* (V2: MIXER 1, the whole page) */
+        ui_region(ui_th->px, page == PG_MIX1 ? ui_th->pyf : ui_th->py, ui_th->pw, page == PG_MIX1 ? ui_th->phf : ui_th->ph, UI_K, ui_th->pic);   /* (V2: MIXER 1, the whole page) */
     }
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
@@ -2292,7 +2311,7 @@ static void ui_update(int32_t oct)
         ui_slab_make(k, &ui_sl[k]);
         if (!same(ui_sl[k].lab, ui_slab_shown[k].lab) || !same(ui_sl[k].val, ui_slab_shown[k].val) ||
             ui_sl[k].fill != ui_slab_shown[k].fill || ui_sl[k].acc != ui_slab_shown[k].acc ||
-            ui_sl[k].warn != ui_slab_shown[k].warn) {
+            ui_sl[k].warn != ui_slab_shown[k].warn || ui_sl[k].sel != ui_slab_shown[k].sel) {
             ui_slab_shown[k] = ui_sl[k];
             ui_k = k;
             ui_region(3 + (int32_t)k * 59, ui_th->sy, 56, ui_th->sh, UI_K, ui_th->slab);

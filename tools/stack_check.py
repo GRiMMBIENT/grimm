@@ -4,7 +4,7 @@
 and .ram_text). Each function's frame: its prologue's push ({rets, r15-r4}: 4 B a register) and the deepest its sp
 goes after (sp += -N, read straight down); each call's callee then on top of the deepest frame. The calls through a
 pointer, by where they are: an engine's block (the audio ISR), begin (voice_begin), text (app_main); a drawing
-(ui_region's callback); the flash driver's RAM code (fl_write, st_read, ...). Two stacks (firmware/app.ld):
+(ui_region's callback; V3.0: the theme's hooks in ui_update); the flash driver's RAM code (fl_write, st_read, ...). Two stacks (firmware/app.ld):
   user stack   the main loop: fm1_cstart and app_main and all they call, under _ustack_top
   system stack the interrupts: isr_timer5 and isr_alnk0 (the audio), each as fm1_isr.S has them (8 + 4 registers
                pushed), both at once as the worst (one nested in the other)
@@ -63,9 +63,9 @@ for f, ins in funcs.items():
 ENG = [f for f in funcs if re.fullmatch(r"(va|fm|sampler|formant|choir|wheel|phys|phase|pd)_block", f)]
 BEG = [f for f in funcs if re.fullmatch(r"\w+_begin", f) and f != "voice_begin"]
 TXT = [f for f in funcs if re.fullmatch(r"(va|fm|sampler|formant|wheel|phys|phase)_text", f)]
-DRAW = [f for f in funcs if re.search(r"draw|^pic_", f)]
+DRAW = [f for f in funcs if re.search(r"draw|^pic_|^br_|^ui_native", f)]            # (V3.0 themes: BRUTAL's br_ drawing, the themes' native test)
 RAMT = [f for f in funcs if f.startswith(("rt_flash", "fl_", "spi_", "flash_")) and not calls[f]]
-TARGETS = {"app_audio": ENG, "voice_begin": BEG, "app_main": TXT, "ui_region": DRAW,
+TARGETS = {"app_audio": ENG, "voice_begin": BEG, "app_main": TXT, "ui_region": DRAW, "ui_update": DRAW,   # (ui_update: the theme's header, pictures, blocks)
            "fl_write": RAMT, "st_read": RAMT, "st_write": RAMT, "ota_erase": RAMT, "sample_flash_erase": RAMT,
            "settings_save": RAMT}
 unknown = [f for f in funcs if ind[f] and f not in TARGETS and f != "fm1_cstart"]

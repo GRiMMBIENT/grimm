@@ -1177,7 +1177,7 @@ static struct {
 #define SET_VER 3u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
 static volatile int32_t sy_vel;                 /* (V2) SYSTEM 3's VELOCITY (its knob) */
-#define THEME_N 1u                              /* (V3.0 THEMES) the themes there are (ui.c UI_THEMES): EYE; set.latch bits 4, 5 hold the one on */
+#define THEME_N 2u                              /* (V3.0 THEMES) the themes there are (ui.c UI_THEMES): EYE, BRUTAL; set.latch bits 4, 5 hold the one on */
 static volatile int32_t sy_theme;               /* (V3.0) SYSTEM 3's THEME (its knob 3) */
 static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk, sy_latch;   /* SYSTEM's,
                                                  * SYSTEM 2's, SYSTEM 3's knobs (sy_fac: SAMPLES, 1 RESTORE: OCT+
@@ -2197,6 +2197,13 @@ static void app_main(void)
     pj_slot = slot_cur;
     sys_load();                                 /* (the settings: the octave, SYSTEM's; the accent before the boot
                                                  * screen) */
+#ifdef DINGHY_HOST
+    if (getenv("GRIMM_THEME")) {                /* (host mode, tests/stress.sh: THEME N from the start, as if saved) */
+        sy_theme = atoi(getenv("GRIMM_THEME"));
+        sys_sync();
+        set_dirty = 0;
+    }
+#endif
 
     ui_boot();                                  /* (the boot screen, UI_BOOT_MS: ui_update moves it) */
     if ((k = smp_erased()) != 0u) {             /* the factory samples into the slots that hold nothing (samples.c),
@@ -2521,6 +2528,7 @@ static void app_main(void)
                 if (page == PG_HOME) home_say(k);   /* (HOME: what it changed, in the header a moment) */
                 if (page == PG_LEVELS) levels_say(k);   /* (V3.0: LEVELS: track k's, in the header) */
                 if (b_down >> BTN_SEL & 1u) b_used |= 1u << BTN_SEL;
+                ui_kn_pg = page, ui_kn_last = k;   /* (V3.0: BRUTAL's selected block: the knob turned last on this page) */
                 t_touch = fm1_ms;
             }
 

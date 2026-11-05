@@ -234,6 +234,24 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
       check(rc === 2 && (await cl.get(OBJ.SET, info.setSize))[SET_V2] === cur[SET_V2],
             `editor: SETTINGS: a bit past LATCH and VELOCITY (3.0's test build kept CLICK there) is refused (rc ${rc}), the settings unchanged`);
     }
+    {                                                        // (V3.0 THEMES: SYSTEM 3's THEME is bits 4, 5 of the same byte: written, read back, kept when the editor changes LATCH;
+      const cur = await cl.get(OBJ.SET, info.setSize), th = Uint8Array.from(cur);   // a theme this firmware has not (2, 3) and the bits above are refused)
+      th[SET_V2] = (th[SET_V2] & 3) | 0x10;
+      await cl.put(OBJ.SET, th, info.fmt);
+      const t1 = await cl.get(OBJ.SET, info.setSize);
+      const kept = withSettings(t1, { mch: 0, clk: 0, latch: 1, velocity: 0 });
+      await cl.put(OBJ.SET, kept, info.fmt);
+      const t2 = await cl.get(OBJ.SET, info.setSize), rcs = [];
+      for (const b of [0x20, 0x30, 0x40]) {
+        const x = Uint8Array.from(t2); x[SET_V2] = b;
+        try { await cl.put(OBJ.SET, x, info.fmt); rcs.push(0); } catch (e) { rcs.push(e.rc); }
+      }
+      check(t1[SET_V2] === ((cur[SET_V2] & 3) | 0x10) && (t2[SET_V2] & 0x30) === 0x10 && (t2[SET_V2] & 1) === 1 && rcs.every((r) => r === 2) &&
+            (await cl.get(OBJ.SET, info.setSize))[SET_V2] === t2[SET_V2],
+            `editor: SETTINGS: THEME BRUTAL (bit 4) written and read back, kept when LATCH is changed by the editor; a theme past BRUTAL and the bits above are refused (${rcs})`);
+      th[SET_V2] = th[SET_V2] & 3;
+      await cl.put(OBJ.SET, th, info.fmt);
+    }
     await cl.put(OBJ.SET, withSettings(s4, { mch: 0, clk: 0, latch: 0, velocity: 0 }), info.fmt);
   }
   {                                                          // GR!MM V2: FX (25): read, set live (MASTER, DRIVE, T2's filter)

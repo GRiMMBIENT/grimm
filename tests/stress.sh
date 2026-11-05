@@ -4,7 +4,7 @@
 # The stress test: firmware/src/grimm.c in host mode (firmware/src/host.c) with address and undefined-behaviour checking and
 # the checks of firmware/src/stress_check.c, played by tests/stress_gen.py's script (every source on every track, chords,
 # voicings, SCALE, LATCH, the octaves, fast keys, MIDI in, every page and hold combo while notes sound and the sequencer
-# plays and records, slots, undo / redo, PRESETS; first a project come back from as at power-on), after
+# plays and records, slots, undo / redo, PRESETS; first a project come back from as at power-on; V3.0: once with THEME EYE, once BRUTAL), after
 # tests/device_names.py (no two variables made one in the device build). Prints "stress test: passed", or what failed (exit 1).
 #   tests/stress.sh [SEED]
 set -e
@@ -21,6 +21,15 @@ UBSAN_OPTIONS=print_stacktrace=1 STRESS_CHECKS=build/stress/checks.txt build/str
 rc=$?
 set -e
 if [ $rc -eq 0 ] && grep -q "^STRESS OK" build/stress/log.txt; then
+    set +e                                      # (V3.0 THEMES: the same again with THEME BRUTAL: its drawing under the sanitizers too)
+    GRIMM_THEME=1 UBSAN_OPTIONS=print_stacktrace=1 STRESS_CHECKS=build/stress/checks.txt build/stress/grimm build/stress/out build/stress/script.txt         > build/stress/log_brutal.txt 2>&1
+    rc=$?
+    set -e
+    if [ $rc -ne 0 ] || ! grep -q "^STRESS OK" build/stress/log_brutal.txt; then
+        echo "stress test: FAILED with THEME BRUTAL (exit $rc; build/stress/log_brutal.txt)"
+        grep -m 5 -E "STRESS FAIL|ERROR|runtime error|SUMMARY" build/stress/log_brutal.txt || tail -5 build/stress/log_brutal.txt
+        exit 1
+    fi
     echo "stress test: passed"
 else
     echo "stress test: FAILED (exit $rc; build/stress/log.txt)"

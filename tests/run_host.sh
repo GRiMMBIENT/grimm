@@ -85,6 +85,8 @@ python3 tests/keylights_test.py build/host/grimm
 python3 tests/chordvoice_test.py build/host/grimm
 # GR!MM V3.0 THEMES: EYE is pixel-identical to GR!MM before the theme layer (the boot screen, every page, a playing state); BRUTAL (tests/theme_test.py)
 python3 tests/theme_test.py build/host/grimm
+# GR!MM V3.0 THEMES, stage 1: BRUTAL: THEME saved and read before the boot screen, HOME, the knob blocks, messages, chips, every page in its frame, the polygon and line drawing (tests/brutal_test.py)
+python3 tests/brutal_test.py build/host/grimm
 # GR!MM V3.0: the VA source's filter leaves no DC offset at a low cutoff (dsp.c tsvf_lp rounds): at every cutoff, through each DRIVE
 # type, and with an LFO sweeping the VA's CUTOFF the bass no longer crumbles (tests/va_dc_test.py)
 python3 tests/va_dc_test.py build/host/grimm
