@@ -27,8 +27,13 @@ static uint16_t ui_acc = RGB(0xc8, 0x32, 0x1e); /* the accent */
 #define UI_METER_NORMAL RGB(0x3c, 0xa8, 0x4a)   /* green: a normal level */
 #define UI_METER_LOUD RGB(0xd8, 0xc0, 0x2a)     /* yellow: loud */
 #define UI_METER_HOT RGB(0xd8, 0x32, 0x28)      /* red: near the top */
-#define UI_METER_LOUD_FROM 5                    /* the first loud segment (~-11 dB of full), */
-#define UI_METER_HOT_FROM 7                     /* .. the first near the top (~-5 dB) */
+#define UI_METER_LOUD_FROM 5                    /* the first loud segment (-8 dBFS of the mix), */
+#define UI_METER_HOT_FROM 7                     /* .. the first near the top: the track alone within 4.5 dB of where the output limiter
+                                                 * starts (OUT_LIM, -0.09 dBFS, MASTER at the top) */
+static const uint16_t UI_METER_FROM[8] = {163, 520, 1300, 3277, 6540, 13000, 16400, 19500};   /* a segment lights from this peak of
+                                                 * the track's part of the mix (Q15, 32767 = 0 dBFS): -46 -36 -28 -20 -14 -8 -6 -4.5 dBFS.
+                                                 * From the factory sounds (a 4-note chord, LEVEL 100: median -8.6, top quarter above
+                                                 * -4.3, loudest -0.8 dBFS) and a loud driven chord (DRIVE send 100: -3 .. -5 dBFS) */
 static uint16_t ui_meter_col(int32_t seg)
 {
     return seg >= UI_METER_HOT_FROM ? UI_METER_HOT : seg >= UI_METER_LOUD_FROM ? UI_METER_LOUD : UI_METER_NORMAL;
@@ -1224,16 +1229,15 @@ static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W 
     return RGB(0x5e + (0xe8 - 0x5e) * a / 127, 0x5b + (0xe4 - 0x5b) * a / 127, 0x54 + (0xd8 - 0x54) * a / 127);
 }
 static void ui_pic_draw(void);
-static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its peak since the last, up at once, down over ~0.3 s;
-                                                 * 1 if the cells lit moved (shared by MIXER 1's LEVEL and LEVELS) */
+static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its part of the mix since the last (vis_tk: after LEVEL,
+                                                 * PAN, its filter, TAPE and DRIVE sends), up at once, down over ~0.3 s; 1 if the cells lit
+                                                 * moved (shared by MIXER 1's LEVEL and LEVELS) */
 {
-    static const uint8_t CELL[8] = {3, 8, 16, 32, 48, 72, 104, 150};   /* (a cell lit from: ~-38 .. -4 dB of full) */
     uint32_t e, h;
-    e = vis_pk[t] / 96u, vis_pk[t] = 0;
-    e = e > 256u ? 256u : e;
-    e = trk_quiet >> t & 1u ? 0u : e * (uint32_t)clamp(trk[t].level, 0, 127) / 127u;
+    e = vis_tk[t], vis_tk[t] = 0;
+    e = e > 65535u ? 65535u : trk_quiet >> t & 1u ? 0u : e;
     mx_e[t] = e >= mx_e[t] ? e : mx_e[t] - (mx_e[t] + 5u) / 6u;
-    for (h = 0; h < 8u && mx_e[t] >= CELL[h]; h++)
+    for (h = 0; h < 8u && mx_e[t] >= UI_METER_FROM[h]; h++)
         ;
     if (h == mx_h[t]) return 0;
     mx_h[t] = (uint8_t)h;

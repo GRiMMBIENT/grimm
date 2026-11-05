@@ -60,6 +60,18 @@ def slabs(sl):                                   # [(label, value, accent, fill)
     return [tuple(x.split(":")) for x in sl.split(" meter ")[0].split()[2:]]
 
 
+def sx(t, *b):                                   # an editor frame in (docs/EDITOR_PROTOCOL.md; host mode's "sx")
+    return (t, "sx " + " ".join(f"{x:02X}" for x in (0x7D, 0x47, 0x52) + b))
+
+
+def fx_set(t, i, v):                             # 25 FX, op 1: value i := v (28 + 4 t + 3: T1.. DRIVE send; 20 + k: the DRIVE page's four; 29: T1's REV send)
+    return sx(t, 25, 1, i, v)
+
+
+def tk(sl):                                      # the meters' readings since the last probe (Q15 of the mix), the mix's peak
+    return [int(x) for x in sl.split(" tk ")[1].split()[0].split(",")], int(sl.split(" mixpk ")[1].split()[0])
+
+
 def meter(sl):                                   # the four meters' cells lit (0..8)
     return [int(x) for x in sl.split(" meter ")[1].split()[0].split(",")]
 
@@ -207,6 +219,75 @@ check("the three meter colours are named once (green / yellow / red) and chosen 
       0 < LOUD_FROM < HOT_FROM < 8)
 
 
+FROM = [int(x) for x in re.search(r"UI_METER_FROM\[8\] = \{([^}]*)\}", ui).group(1).split(",")]
+cells = lambda v: sum(1 for f in FROM if v >= f)
+dbfs = lambda v: 20 * __import__("math").log10(max(v, 1) / 32767.0)
+check("the scale: eight segments, rising, from -46 to -4.5 dBFS of the mix; yellow from -8, red from -4.5 (the output limiter starts at -0.09)",
+      len(FROM) == 8 and FROM == sorted(FROM) and abs(dbfs(FROM[0]) + 46) < 0.5 and abs(dbfs(FROM[-1]) + 4.5) < 0.2 and
+      abs(dbfs(FROM[LOUD_FROM]) + 8) < 0.5 and abs(dbfs(FROM[HOT_FROM]) + 4.5) < 0.2, str(FROM))
+
+# the factory sounds: a 4-note chord each on T1, LEVEL 100, its REV send off (the mix is then the track's own); the meter's reading against the mix itself
+ev = [fx_set(1000, 29, 0)] + tap(1100) + tap(1200) + tap(1300)      # (LEVELS shown: the meter measures only while a meter is on screen)
+t, ends = 1500, []
+for i in range(44):
+    ev.append((t, "enc 6 1")), ev.append((t + 280, "probe"))
+    ev += [(t + 300, f"midi 0x90 {n} 100") for n in (48, 55, 60, 64)]
+    ev.append((t + 1600, "probe")), ends.append(t + 1600)
+    for n in (48, 55, 60, 64):
+        ev += [(t + 1650, f"midi 0x80 {n} 0"), (t + 1680, f"midi 0x90 {n} 100"), (t + 1710, f"midi 0x80 {n} 0")]
+    t += 2500
+pr, sl, _ = run("factory", ev, t + 500)
+rd = [(tk(sl[e])[0][0], tk(sl[e])[1]) for e in ends]
+ratio = [a / b for a, b in rd if b > 2000]
+srt = sorted(a for a, _ in rd)
+nred = sum(1 for a in srt if cells(a) == 8)
+nloud = sum(1 for a in srt if cells(a) >= 6)
+print(f"  info  levels: the 44 factory sounds as a 4-note chord on T1 (LEVEL 100): the track's part of the mix, dBFS: quietest {dbfs(srt[0]):.1f}, "
+      f"median {dbfs(srt[22]):.1f}, quarter-loudest {dbfs(srt[33]):.1f}, loudest {dbfs(srt[-1]):.1f}; {nred} show red, {nloud} yellow or red; "
+      f"meter / the mix itself: {min(ratio):.2f} .. {max(ratio):.2f}")
+check("the factory sounds read as measured: a spread from quiet to near full scale, about a third of the 4-note chords red, half yellow or more",
+      dbfs(srt[0]) < -18 and -11 < dbfs(srt[22]) < -7 and dbfs(srt[-1]) > -2 and 8 <= nred <= 18 and 14 <= nloud <= 28, f"{srt}")
+check("... the reading follows the mix itself (the track's own part of it): within -2.5 dB and +0.5 dB of the real peak",
+      min(ratio) >= 0.75 and max(ratio) <= 1.06, f"{min(ratio):.2f} .. {max(ratio):.2f}")
+
+
+def chord_run(name, extra, notes=(29, 36), wave=2, hold=1500, pre=()):
+    """T1: VA (wave 2 = SUPER) two low notes held; extra editor frames / events; -> tk, mix peak, output peak, meter cells of T1 at the end"""
+    ev = [(500, "btn 6"), (600, f"enc {KNOB1} {wave}")] + tap(700) + list(pre) + tap(800) + tap(850) + tap(900) + list(extra)   # (EDIT: the source; HOME, its knobs; then MIXER 1, 2, LEVELS)
+    ev += [(2000, f"midi 0x90 {n} 100") for n in notes] + [(2000 + hold - 50, "probe"), (2000 + hold + 400, "probe")]
+    pr, sl, _ = run(name, ev, 2000 + hold + 600)
+    line = sl[2000 + hold + 400]
+    return tk(line)[0][0], tk(line)[1], int(line.split(" outpk ")[1].split()[0]), cells(tk(line)[0][0])
+
+
+# the user's case: two supersaw notes low down, the DRIVE send up (and DRIVE page AMOUNT, TONE, MIX 100 %): the meter reads the track's driven
+# part of the mix, not the sound before the drive
+dry = chord_run("drv_dry", [fx_set(100, 29, 0)])
+check("two low supersaw notes, no drive: about -11 dBFS, green only (5 segments)", -13 < dbfs(dry[0]) < -9 and dry[3] == 5, f"{dry}")
+seen_dr = {}
+for ty, nm in enumerate(("SOFT", "FUZZ", "CLIP", "FOLD")):
+    send = chord_run(f"drv_{nm}", [fx_set(100, 29, 0), fx_set(110, 20 + 1, ty), fx_set(120, 31, 127)])
+    both = chord_run(f"drvp_{nm}", [fx_set(100, 29, 0), fx_set(105, 20, 127), fx_set(110, 21, ty), fx_set(115, 22, 127), fx_set(120, 23, 127), fx_set(125, 31, 127)])
+    seen_dr[nm] = (send, both)
+    check(f"DRIVE send 100 % ({nm}): the track's part of the mix {dbfs(send[0]):.1f} dBFS ({send[3]} segments), as the mix itself {dbfs(send[1]):.1f}",
+          0.9 <= send[0] / send[1] <= 1.05 and send[0] > 1.6 * dry[0] and send[3] == {"SOFT": 8, "FUZZ": 8, "CLIP": 7, "FOLD": 6}[nm], f"{send} dry {dry}")
+    check(f"... also with the DRIVE page at 100 % ({nm}): the same reading (the page drives the whole mix, not this track; the output peaks {dbfs(both[2]):.1f} dBFS)",
+          both[0] == send[0] and both[3] == send[3], f"{both} {send}")
+
+# the measure works only while a meter is on screen (LEVELS, MIXER 1): HOME shows none, so the audio does none of it
+ev = [fx_set(100, 29, 0)] + [(2000, f"midi 0x90 {n} 100") for n in (48, 55, 60, 64)] + [(2100, "probe"), (3300, "probe")]
+pr, sl, _ = run("tk_off", ev, 3500)
+check("on HOME (no meter shown) the meter's measure is off: the track sounds (the mix peaks) and the reading stays 0", tk(sl[3300])[1] > 4000 and tk(sl[3300])[0] == [0, 0, 0, 0],
+      f"{tk(sl[3300])}")
+
+# after its own chain: LEVEL, the filter
+base_rd = chord_run("chain0", [fx_set(100, 29, 0)], notes=(48, 55, 60, 64), wave=0)
+lvl_rd = chord_run("chain1", [fx_set(100, 29, 0)], notes=(48, 55, 60, 64), wave=0, pre=[(720, f"enc {KNOB1} -39")])
+cut_rd = chord_run("chain2", [fx_set(100, 29, 0)], notes=(48, 55, 60, 64), wave=0, pre=[(720, f"enc {KNOB1 + 1} -127")])
+check("after its LEVEL (HOME's VOLUME turned down to about half: the reading about half) and its filter (CUTOFF closed: almost nothing)",
+      0.42 < lvl_rd[0] / base_rd[0] < 0.62 and cut_rd[0] < 0.1 * base_rd[0], f"open {base_rd} level down {lvl_rd} cutoff closed {cut_rd}")
+
+
 def ppm(path):
     d = open(path, "rb").read()
     i = d.index(b"\n") + 1
@@ -222,9 +303,9 @@ def near(a, b):
     return all(abs(p - q) <= 3 for p, q in zip(a, b))
 
 
-# T1: four notes on a LEVEL raised to the top (loud), T2: one note, T3: one note but muted (GLO + key), T4: nothing
+# T1: four notes, its DRIVE send up and its LEVEL raised to the top (loud), T2: one note, T3: one note but muted (GLO + key), T4: nothing
 mid = [(0, "midi 0x92 60 100"), (0, "midi 0x91 59 100"), (0, "midi 0x90 36 100"), (0, "midi 0x90 48 100"), (0, "midi 0x90 55 100"), (0, "midi 0x90 60 100")]
-ev = base[:3] + [(1100, f"enc {KNOB1} 40")] + [(1200, "down 7"), (1300, "keys 16"), (1400, "keys 0"), (1500, "up 7")]
+ev = base[:3] + [fx_set(1050, 31, 127), (1100, f"enc {KNOB1} 40")] + [(1200, "down 7"), (1300, "keys 16"), (1400, "keys 0"), (1500, "up 7")]
 ev += [(2000 + k, e) for k, (_, e) in enumerate(mid)] + [(9500, "probe")]
 pr, sl, _ = run("shot", ev, 10800)           # (host mode writes the screen at 15500 ms: 9500 on, the notes held)
 img = ppm(str(OUT / "shot-15500.ppm"))

@@ -157,6 +157,10 @@ enum { PF_REV, PF_ECHO, PF_TAPE, PF_BACK, PF_FDOWN, PF_FUP, PF_STUT, NPF };   /*
 static volatile uint32_t pf_held;               /* main loop: bit PF_: its key held (FX held + it; perform.c) */
 static void perform_render(int32_t *out, uint32_t n, uint32_t pb);
 static volatile uint32_t trk_quiet;             /* audio: the tracks silent (muted, or another soloed: mute_watch) */
+static volatile uint32_t vis_tk_on;              /* main loop: a meter is on screen (LEVELS, MIXER 1): trk_meter works; else it does nothing */
+static volatile uint32_t vis_tk[NT];               /* audio: (V3.0) each track's part of the mix, its peak since the main loop last took it
+                                                 * (Q15 of the mix, 32767 = full scale before MASTER): after its LEVEL and PAN, its filter,
+                                                 * its TAPE send, with its DRIVE send's driven sound added (LEVELS' meter, ui.c) */
 static volatile uint32_t vis_pk[NT], vis_lr[2]; /* audio: each track's peak (before LEVEL), the output's left and right,
                                                  * the highest since the main loop last took them (HOME's moving
                                                  * picture, ui.c; every 16th frame looked at) */
@@ -297,11 +301,69 @@ static int32_t fx_send(uint32_t t, int32_t s)   /* a send (0..127) times FX (0..
 {
     return s * 258 * clamp(trk[t].fx, 0, 200) / 100;
 }
-static void mix_xb(uint32_t t, const int32_t *x, const int32_t *g, int32_t a, int32_t b, uint32_t n)   /* (V2) x into
+#ifndef TK_STRIDE
+#define TK_STRIDE 8u                            /* (every 8th frame looked at: at most ~2 dB under a sharp peak, tests/levels_test.py) */
+#endif
+static uint32_t tk_dv[NT];                      /* audio: this block's peak of track t's driven DRIVE send (Q15 of the mix), when
+                                                 * trk_meter could not add it sample by sample (POS POST) */
+#ifdef DINGHY_HOST
+static uint32_t host_tk_hold[NT], host_mix_hold, host_out_hold;   /* (tests: the meter's readings, the mix and the output's
+                                                 * peaks, the highest since the probe last took them) */
+#endif
+static int32_t trk_dsend(uint32_t ty, int32_t G, int32_t LV, int32_t x, int32_t gs)   /* (V3.0) what the DRIVE send makes of sample x at
+                                                 * gain gs (Q15): drive_send's curve for its TYPE, its own gain, level-matched
+                                                 * (Q15 of the mix; no TONE) */
+{
+    int32_t v = clamp(mulq15w(x, gs) >> PB, -131071, 131071), y = (v * G) >> 8;
+    return (dr_shape(ty, y) * LV) >> 12;
+}
+static void trk_drive(uint32_t t, const int32_t *x, int32_t gs, uint32_t n)   /* (V3.0) the DRIVE send's driven sound alone (a peak, in
+                                                 * tk_dv): where its input is not the dry sound's */
+{
+    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), k, pk = 0, a;
+    int32_t G, LV, w;
+    if (!vis_tk_on) return;
+    G = dr_gain(ty, DV_AMT), LV = dr_level(ty, DV_AMT);
+    for (k = 0; k < n; k += TK_STRIDE) {
+        w = trk_dsend(ty, G, LV, x[k], gs);
+        a = (uint32_t)(w < 0 ? -w : w);
+        if (a > pk) pk = a;
+    }
+    if (pk > tk_dv[t]) tk_dv[t] = pk;
+}
+static void trk_meter(uint32_t t, const int32_t *x, uint32_t n, int32_t g0, int32_t g1, int32_t gs)   /* (V3.0) track t's part of the
+                                                 * mix: x through its two gains (LEVEL, PAN), with its DRIVE send's driven sound
+                                                 * (gain gs, 0: none; added sample by sample, signed, as the mix gets them), the
+                                                 * peak of every TK_STRIDE-th frame */
+{
+    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), pk = 0, a, k;
+    int32_t G, LV;
+    if (!vis_tk_on) return;
+    G = gs ? dr_gain(ty, DV_AMT) : 0, LV = gs ? dr_level(ty, DV_AMT) : 0;
+    for (k = 0; k < n; k += TK_STRIDE) {
+        int32_t l = mulq15w(x[k], g0) >> PB, r = mulq15w(x[k], g1) >> PB;
+        if (gs) {
+            int32_t w = trk_dsend(ty, G, LV, x[k], gs);
+            l += w, r += w;
+        }
+        a = (uint32_t)(l < 0 ? -l : l);
+        if (a > pk) pk = a;
+        a = (uint32_t)(r < 0 ? -r : r);
+        if (a > pk) pk = a;
+    }
+    pk += tk_dv[t], tk_dv[t] = 0;
+    if (pk > vis_tk[t]) vis_tk[t] = pk;
+#ifdef DINGHY_HOST
+    if (pk > host_tk_hold[t]) host_tk_hold[t] = pk;
+#endif
+}
+static void mix_xb(uint32_t t, const int32_t *x, const int32_t *g, int32_t a, int32_t b, uint32_t n, int tk)   /* (V2) x into
                                                  * the DRIVE send's bus, its gain x a, x b / TF_PX1 (POS's share) */
 {
-    if (g[5] | mix_g[t][5])
+    if (g[5] | mix_g[t][5]) {
         mix_add(vbus, 1u, x, (mix_g[t][5] * a) >> 8, (g[5] * b) >> 8, n);
+        if (tk) trk_drive(t, x, (g[5] * b) >> 8, n);   /* (V3.0: POS POST: what it makes of it, for the meter) */
+    }
 }
 static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the sounding tracks into out and the buses (LEVEL,
                                                  * PAN and the sends as the LFO moves them, lfo.c; the sends times
@@ -336,27 +398,29 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
             int32_t *bus[3] = {dbus, rbus, gbus};
             if (px0 == TF_PX1 && px1 == TF_PX1) {
                 for (k = 0; k < 3u; k++) mix_add(bus[k], 1u, x, mix_g[t][2u + k], g[2u + k], n);
-                mix_xb(t, x, g, TF_PX1, TF_PX1, n);
+                mix_xb(t, x, g, TF_PX1, TF_PX1, n, 1);
                 trk_filter(t, x, n);
             } else {
                 for (k = 0; k < 3u; k++)
                     mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * px0) >> 8, (g[2u + k] * px1) >> 8, n);
-                mix_xb(t, x, g, px0, px1, n);
+                mix_xb(t, x, g, px0, px1, n, 1);
                 trk_filter(t, x, n);
                 for (k = 0; k < 3u; k++)
                     mix_add(bus[k], 1u, x, (mix_g[t][2u + k] * (TF_PX1 - px0)) >> 8, (g[2u + k] * (TF_PX1 - px1)) >> 8, n);
-                mix_xb(t, x, g, TF_PX1 - px0, TF_PX1 - px1, n);
+                mix_xb(t, x, g, TF_PX1 - px0, TF_PX1 - px1, n, 1);
             }
             mix_add(out, 2u, x, mix_g[t][0], g[0], n);
             mix_add(out + 1, 2u, x, mix_g[t][1], g[1], n);
             trk_peak(t, x, n);
+            trk_meter(t, x, n, g[0], g[1], 0);   /* (V3.0: the dry; the send's driven peak added from tk_dv) */
         } else {
             if (used >> t & 1u) trk_filter(t, x, n);
             else tf_on[t] = 0;                  /* (silent: from bypassed when it sounds again) */
             if (used >> t & 1u) {
                 trk_peak(t, x, n);
+                trk_meter(t, x, n, g[0], g[1], g[5]);   /* (V3.0: x is also the send's input) */
                 mix_add5(out, x, mix_g[t], g, n);
-                mix_xb(t, x, g, TF_PX1, TF_PX1, n);   /* (V2: DRIVE's send) */
+                mix_xb(t, x, g, TF_PX1, TF_PX1, n, 0);   /* (V2: DRIVE's send; the meter has it already) */
             }
         }
         for (k = 0; k < 6u; k++) mix_g[t][k] = g[k];
@@ -500,7 +564,19 @@ static void app_audio(int32_t *out, uint32_t n)
     if (lo) q_up(out, 2u * n);
     CS_MARK(CS_MASTER);
     click_render(out, n);                       /* (V3.0) the metronome, last in the mix: MASTER and the limiter still apply */
+#ifdef DINGHY_HOST
+    for (i = 0; i < 2u * n; i++) {              /* (tests: the mix's peak here, Q15 of the mix) */
+        uint32_t a = (uint32_t)(out[i] < 0 ? -out[i] : out[i]) >> PB;
+        if (a > host_mix_hold) host_mix_hold = a;
+    }
+#endif
     out_stage(out, n);                          /* (V2) the headroom, the MASTER knob, the limiter */
+#ifdef DINGHY_HOST
+    for (i = 0; i < 2u * n; i++) {              /* (.. and the output's, the DAC's Q15) */
+        uint32_t a = (uint32_t)(out[i] < 0 ? -out[i] : out[i]) >> 7;
+        if (a > host_out_hold) host_out_hold = a;
+    }
+#endif
     CS_MARK(CS_MASTER);
 #undef CS_MARK
     for (i = 0; i < 2u * n; i += 32u) {         /* (the output's peaks, left and right, roughly: HOME's eye) */
@@ -2537,6 +2613,7 @@ static void app_main(void)
             lcd_light(0);
         }
         batt_poll();
+        vis_tk_on = !scr_dark && (page == PG_LEVELS || page == PG_MIX1);   /* (V3.0: the meters' measure only while one is shown) */
         if (!scr_dark) ui_update(set.oct);
 #ifdef GRIMM_STRESS
         stress_poll();
