@@ -120,6 +120,13 @@ static void host_probe(void)
                                                  * voices let go; the header's message, "_" for a space) */
         for (i = 0; hd_msg[i] && fm1_ms < hd_until; i++) putchar(hd_msg[i] == ' ' ? '_' : hd_msg[i]);
         if (!hd_msg[0] || fm1_ms >= hd_until) putchar('-');
+        {                                       /* (V3.0, tests/voices_test.py) the voices in use, the notes dropped, the notes that took another track's voice,
+                                                 * SYSTEM 2's VOICES row's text (spaces as "_") */
+            char vt[24];
+            const char *q = voices_text(vt) ? vt : "";
+            printf(" vo %u %u %u ", voices_used(), vo_full_n, vo_take_n);
+            for (; *q; q++) putchar(*q == ' ' ? '_' : *q);
+        }
         printf(" p1 %d,%d,%d,%d fxk", (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][0],
                (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][1], (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][2],
                (int)trk[0].p[clamp(trk[0].eng, 0, NENG - 1)][3]);   /* (rc9: T1's source's four; the 16 effects' knobs

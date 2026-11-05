@@ -741,6 +741,17 @@ static uint32_t trk_voices(uint32_t t, int phys)   /* track t's voices sounding 
         n += !voice_latched(v) && !voice_idle(v) && vc[v].trk == t && (!phys || vc[v].eng == ENG_PHYS);
     return n;
 }
+/* (V3.0) when the voices run out, counted in the audio path (note_on's), said by the main loop (the header: VOICES FULL, NOTE TAKEN; SYSTEM 2's
+ * VOICES row counts the voices in use, voices_used) */
+static volatile uint32_t vo_full_n;             /* audio: notes no voice was found for (dropped) */
+static volatile uint32_t vo_take_n;             /* audio: notes that took another track's voice (pick_voice's last way) */
+static uint32_t voices_used(void)               /* the voices in use: a note held, a latched one, a release still sounding (main loop: a look at the voices) */
+{
+    uint32_t v, n = 0;
+    for (v = 0; v < NV; v++)
+        n += !voice_idle(v);
+    return n;
+}
 static int take_from(uint32_t t, int phys, int rel, uint32_t *v)   /* track t's quietest release, else (rel 0) its oldest
                                                  * note: its voice */
 {
@@ -769,7 +780,11 @@ static int pick_voice(uint32_t t, uint32_t note, uint32_t *v)
                                                  * note; none: not played) */
     for (u = 0; u < NT; u++)                    /* (none at all: from the track holding the most) */
         if (u != t && trk_voices(u, phys) > most) most = trk_voices(u, phys), from = u;
-    return from < NT && take_from(from, phys, 0, v);
+    if (from < NT && take_from(from, phys, 0, v)) {
+        vo_take_n++;                            /* (V3.0: it took another track's voice) */
+        return 1;
+    }
+    return 0;
 }
 /* (V2) GENERATE on two tracks or more (heard ones): each generating track has a share of the voices the others leave
  * (the tracks not generating: their notes and releases, as ever), the first ones the odd ones over; a generated note
@@ -860,6 +875,7 @@ static void note_on(uint32_t t, uint32_t id, uint32_t note, uint32_t src, int ec
         else if (!(gs ? gen_pick(t, ns[i], &v) : pick_voice(t, ns[i], &v))) {   /* (V2: no voice of its own for it: not
                                                  * played) */
             gen_short += src == SRC_GEN;
+            vo_full_n++;                        /* (V3.0: no voice for it: dropped) */
             continue;
         }
         if (src == SRC_GEN && i >= no && !voice_idle(v) && vc[v].trk != t) gen_took++;
@@ -1179,6 +1195,7 @@ static int32_t ch_last = -1;                    /* SEL's picture: the note last 
 #define KEY0 53u                                /* key 0 = F3 */
 #include "gen.c"                                /* GR!MM V2: GENERATE (FX held + the black keys F#3 .. D#4) */
 #define OCT_BOTH (1u << BTN_OCT_DOWN | 1u << BTN_OCT_UP)
+#define VO_SAY_MS 1500u                         /* (V3.0) VOICES FULL, NOTE TAKEN: at most one in this time */
 #define HOLD_MS 600u                            /* a button held this long: its hold function (HOME: SYSTEM) */
 
 static uint32_t pct10(uint32_t ticks)           /* ticks a block -> tenths of a % of the budget, at most 409.5 % */
@@ -2653,6 +2670,17 @@ static void app_main(void)
         {                                       /* (rc9) the overload guard let a voice go: said */
             static uint32_t shed_seen;
             if (shed_n != shed_seen) shed_seen = shed_n, hd_say("CPU FULL: NOTE DROPPED");
+        }
+        {                                       /* (V3.0) the voices ran out: a note dropped (VOICES FULL), a note that took another track's
+                                                 * voice (NOTE TAKEN): the header ~1.5 s, once in that time at most (the counts come from
+                                                 * the audio path; this loop only reads them and draws) */
+            static uint32_t full_seen, take_seen, said_t;
+            uint32_t f = vo_full_n, tk = vo_take_n;
+            if ((f != full_seen || tk != take_seen) && (!said_t || fm1_ms - said_t >= VO_SAY_MS)) {
+                hd_say(f != full_seen ? "VOICES FULL" : "NOTE TAKEN");
+                said_t = fm1_ms;
+            }
+            full_seen = f, take_seen = tk;
         }
         if (!playing && sv_pend >= 0 && voices_silent()) {   /* SOUNDS: a SAVE or CLEAR that waited (the stop, silence) */
             sv_sound((uint32_t)sv_pend, sv_pend_slot, sv_pend_cat, sv_pend_trk);

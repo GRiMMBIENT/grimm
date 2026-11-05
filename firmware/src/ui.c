@@ -1850,6 +1850,17 @@ static void sys2_cpu(void)                      /* SYSTEM 2's last row: CPU NOW,
     ui_text(PX0 + 6, 148, l, 1, UI_L);
     ui_text(PX0 + 210 - 8 * ui_len(r), 148, r, 1, UI_W);
 }
+static char *voices_text(char *s)               /* (V3.0) SYSTEM 2's VOICES row: the voices in use of NV ("VOICES 4/6": held, latched, releasing) */
+{
+    return put_u(put_s(put_u(put_s(s, "VOICES "), voices_used()), "/"), NV);
+}
+static void sys2_voices(void)                   /* (V3.0) the row over USB REC DROPS's (CPU's rows) */
+{
+    char l[16];
+    voices_text(l);
+    ui_rect(PX0, 110, 216, 15, UI_D);
+    ui_text(PX0 + 6, 114, l, 1, UI_L);
+}
 static uint32_t sys2_drops(void)                /* (rc9) the USB recording's dropouts since PEAK was set to 0 */
 {
     static uint32_t base, seen;
@@ -1873,13 +1884,14 @@ static void pic_sys2(void)
     ui_caption("MIDI LEARN: LINKS", v);
     sys2_cpu();
     sys2_usb();
+    sys2_voices();
     if (!n) { ui_text(120 - 4 * 8, 84, "NO LINKS", 1, UI_M); return; }
-    for (i = 0; i < 5 && i < n; i++) {
+    for (i = 0; i < 4 && i < n; i++) {         /* (V3.0: four links, the VOICES row under them) */
         int32_t y = 42 + i * 17;
         const uint8_t *L = set.lk[n - 1 - i];
         ui_rect(PX0, y, 216, 15, UI_D);
-        if (i == 4 && n > 5) {                  /* (more than five: how many more) */
-            put_s(put_u(put_s(v, "+"), (uint32_t)(n - 4)), " MORE");
+        if (i == 3 && n > 4) {                  /* (more than four: how many more) */
+            put_s(put_u(put_s(v, "+"), (uint32_t)(n - 3)), " MORE");
             ui_text(PX0 + 6, y + 4, v, 1, UI_M);
             break;
         }
@@ -2213,13 +2225,13 @@ static void ui_update(int32_t oct)
         ui_region(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_pic_draw);
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
-        st = pct10(cpu_now) << 16 ^ pct10(cpu_peak) ^ sys2_drops() * 2654435761u;   /* (rc9: and USB's drops) */
+        st = pct10(cpu_now) << 16 ^ pct10(cpu_peak) ^ sys2_drops() * 2654435761u ^ voices_used() * 40503u;   /* (rc9: and USB's drops; V3.0: and the voices) */
 #ifdef GRIMM_LEVEL_TEST
         st ^= (uint32_t)lt_m * 2654435761u ^ (uint32_t)lt_g << 3 ^ (uint32_t)lt_in * 40503u ^ (uint32_t)lt_out << 11;
 #endif
         if (st != stat_key) {
             stat_key = st;
-            ui_region(PX0, 127, 216, 32, UI_K, ui_pic_draw);   /* (rc9: USB's row too) */
+            ui_region(PX0, 110, 216, 49, UI_K, ui_pic_draw);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
         }
     }
     for (k = 0; k < 4u && page != PG_MIX1; k++) {   /* (V2: MIXER 1 none: its tiles) */
