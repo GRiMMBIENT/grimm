@@ -5,8 +5,9 @@
  * the knob blocks concrete, the selected one black with a red frame; each with a thin value bar along its bottom. The pages' logic is EYE's (ui.c):
  * what is shown, when it changes; only the drawing differs. A page's picture is BRUTAL's own (native) or EYE's, moved into BRUTAL's frame, until
  * the pages are drawn here (br_native).
- * Included by ui.c (before the themes' table). The font: Archivo Black, 1 bit, 8 .. 24 px (tools/gen_brutalfont.py, firmware/gen/brutal_font.h);
- * the small labels: the pixfont, 8 px. Drawing by the shared functions (ui_rect, ui_text, ui_region). */
+ * Included by ui.c (before the themes' table). The fonts (tools/gen_brutalfont.py, firmware/gen/brutal_font.h): Archivo Black, 1 bit, only big (16 and 24 px: the
+ * page title if it fits, big values, HOME's numbers, the boot wordmark: its strokes run together smaller); all the small text Terminus Bold (6x12, 8x14,
+ * 8x16: the chip, the tag's label, the blocks' labels and the values that do not fit big, the messages). Drawing by the shared functions (ui_rect, ui_region). */
 
 #include "brutal_font.h"
 
@@ -21,7 +22,8 @@
 static const ui_pal_t UI_PAL_BRUTAL = {RGB(0x14, 0x13, 0x12), RGB(0x2a, 0x28, 0x26), RGB(0x6e, 0x6b, 0x66), RGB(0xb8, 0xb4, 0xab), RGB(0xf2, 0xef, 0xe8),
                                        {RGB(0xb8, 0x26, 0x1a), RGB(0xd0, 0x8a, 0x1c), RGB(0x2f, 0x8f, 0x8a), RGB(0x6a, 0x4a, 0x8c)},   /* red, amber,
                                                  * teal, violet (SYSTEM's COLOUR: the tag, the selected tile's frame, the bars) */
-                                       {RGB(0xf2, 0xef, 0xe8), RGB(0xd0, 0x8a, 0x1c), RGB(0xb8, 0x26, 0x1a)}};   /* the live meters: cream, amber, red */
+                                       {RGB(0xf2, 0xef, 0xe8), RGB(0xd0, 0x8a, 0x1c), RGB(0xb8, 0x26, 0x1a)},   /* the live meters: cream, amber, red */
+                                       {0x6e, 0x6b, 0x66}, {0xf2, 0xef, 0xe8}};   /* MIXER 1's LEVEL ramp: mid to white */
 
 /* ---- the font */
 static uint32_t br_ix(char ch)                  /* a character's glyph: lower case is upper case, what the face has not is "?" */
@@ -55,6 +57,33 @@ static int32_t br_text(int32_t x, int32_t y, const char *s, const br_font_t *f, 
         x += f->adv[g] * sc;
     }
     return x;
+}
+
+/* Terminus Bold: a fixed cell, a byte a row; s at (x, y) = the cell's top, in f, in col; the end */
+static int32_t br_tlen(const br_tfont_t *f, const char *s) { return ui_len(s) * f->w; }
+static int32_t br_tt(int32_t x, int32_t y, const char *s, const br_tfont_t *f, uint16_t col)
+{
+    for (; *s; s++, x += f->w) {
+        uint32_t c = (uint8_t)*s, r, b, b0;
+        const uint8_t *d;
+        c = c >= 32u && c <= 126u ? c - 32u : (uint32_t)'?' - 32u;
+        d = f->data + c * f->h;
+        for (r = 0; r < f->h; r++)
+            for (b = 0; b < f->w;) {
+                if (!(d[r] >> (7u - b) & 1u)) { b++; continue; }
+                for (b0 = b; b < f->w && (d[r] >> (7u - b) & 1u); b++)
+                    ;
+                ui_rect(x + (int32_t)b0, y + (int32_t)r, (int32_t)(b - b0), 1, col);
+            }
+    }
+    return x;
+}
+static void br_tfit(char *d, const char *s, const br_tfont_t *f, int32_t room)   /* s cut to fit room pixels */
+{
+    int32_t n = room / f->w;
+    int32_t i;
+    for (i = 0; s[i] && i < n && i < 23; i++) d[i] = s[i];
+    d[i] = 0;
 }
 
 /* ---- polygons and lines (the pictures of the curves and the waves: thick lines with sharp (miter) corners). Points in 1/16 pixel (Q4), pixels
@@ -170,36 +199,38 @@ static void br_tag(char *lab, char *val)        /* the tag: TRACK 03, BPM 120, V
 static void br_head_draw(void)
 {
     char b[24], lab[8], val[16];
-    const br_font_t *f;
-    int32_t x, room;
-    if (ui_hmsg) {                              /* a message (SAVED, CLICK ON, VOICES FULL ..): the whole header, red */
+    int32_t x, room, w;
+    if (ui_hmsg) {                              /* a message (SAVED, CLICK ON, VOICES FULL ..): the whole header, red, Terminus Bold */
         ui_rect(3, 3, 234, 26, ui_acc);
-        br_fit(b, ui_hl, &BRF12, 222);
-        br_text(9, 3 + (26 - br_cap(&BRF12)) / 2 - br_capy(&BRF12), b, &BRF12, 1, UI_W);
+        br_tfit(b, ui_hl, &BRT16, 222);
+        br_tt(9, 3 + (26 - BRT16.cap) / 2 - BRT16.capy, b, &BRT16, UI_W);
         return;
     }
     ui_rect(3, 3, 175, 26, BR_BAR);
     x = 3 + 4;
-    ui_rect(x, 9, 8 * ui_len(ui_hb) + 8, 14, UI_K);   /* the button's name: a black chip */
-    ui_text(x + 4, 12, ui_hb, 1, UI_W);
-    x += 8 * ui_len(ui_hb) + 8 + 6;
-    f = ui_len(ui_hl) <= 7 ? &BRF15 : &BRF12;
+    ui_rect(x, 9, br_tlen(&BRT14, ui_hb) + 8, 14, UI_K);   /* the button's name: a black chip */
+    br_tt(x + 4, 9, ui_hb, &BRT14, UI_W);
+    x += br_tlen(&BRT14, ui_hb) + 8 + 6;
     room = 175 - (x - 3) - 5 - (ui_bat >= 0 ? 21 : 0);
-    br_fit(b, ui_hl, f, room);
-    br_text(x, 3 + (26 - br_cap(f)) / 2 - br_capy(f), b, f, 1, UI_K);
+    w = br_len(&BRF16, ui_hl, 1);
+    if (w <= room) br_text(x, 3 + (26 - br_cap(&BRF16)) / 2 - br_capy(&BRF16), ui_hl, &BRF16, 1, UI_K);   /* (the title, big if it fits) */
+    else {
+        br_tfit(b, ui_hl, &BRT16, room);
+        br_tt(x, 3 + (26 - BRT16.cap) / 2 - BRT16.capy, b, &BRT16, UI_K);
+    }
     if (ui_bat >= 0) br_bat_draw(3 + 175 - 5 - 16, 12);
     ui_rect(181, 3, 56, 26, ui_acc);            /* the tag */
     br_tag(lab, val);
-    ui_text(187, 6, lab, 1, UI_W);
-    br_text(187, 15 - br_capy(&BRF12), val, &BRF12, 1, UI_W);
+    br_tt(187, 5 - BRT12.capy, lab, &BRT12, UI_W);
+    if (br_len(&BRF16, val, 1) <= 44) br_text(187, 15 - br_capy(&BRF16), val, &BRF16, 1, UI_W);
+    else br_tt(187, 15 - BRT14.capy, val, &BRT14, UI_W);
 }
 
-/* ---- a knob's block: the label (the pixfont), the value (the face, as big as it fits), a 3 px bar along the bottom: how far the knob is turned */
+/* ---- a knob's block: the label (Terminus Bold), the value (Archivo Black if it fits, else Terminus Bold), a 3 px bar along the bottom: how far the knob is turned */
 static void br_knob_draw(void)
 {
     const slab_t *S = &ui_sl[ui_k];
-    int32_t x = 3 + (int32_t)ui_k * 59, y = ui_th->sy, w = 56, h = ui_th->sh, bw = w - 10, i;
-    const br_font_t *f;
+    int32_t x = 3 + (int32_t)ui_k * 59, y = ui_th->sy, w = 56, h = ui_th->sh, bw = w - 10, base = y + h - 8;   /* (base: the value's ink ends here) */
     int sel = S->sel, empty = S->lab[0] == '-' && !S->lab[1] && !S->val[0];
     uint16_t fg = sel ? UI_W : S->dim ? UI_M : UI_K;
     if (empty) { ui_rect(x, y, w, h, UI_D); return; }
@@ -208,12 +239,10 @@ static void br_knob_draw(void)
         ui_rect(x, y, w, 2, ui_acc), ui_rect(x, y + h - 2, w, 2, ui_acc), ui_rect(x, y, 2, h, ui_acc), ui_rect(x + w - 2, y, 2, h, ui_acc);
     } else
         ui_rect(x, y, w, h, BR_C3);
-    ui_text(x + 5, y + 5, S->lab, 1, sel ? BR_SELLAB : UI_K);
-    i = ui_len(S->val);
-    f = i <= 3 ? &BRF12 : i <= 5 ? &BRF10 : &BRF8;
-    if (br_len(f, S->val, 1) > bw && f == &BRF12) f = &BRF10;
-    if (br_len(f, S->val, 1) > bw && f == &BRF10) f = &BRF8;
-    br_text(x + 5, y + h - 8 - br_cap(f) - br_capy(f), S->val, f, 1, fg);   /* (its ink's bottom 3 px over the bar) */
+    br_tt(x + 4, y + 5 - BRT14.capy, S->lab, &BRT14, sel ? BR_SELLAB : UI_K);
+    if (br_len(&BRF16, S->val, 1) <= bw) br_text(x + 5, base - br_cap(&BRF16) - br_capy(&BRF16), S->val, &BRF16, 1, fg);
+    else if (br_tlen(&BRT14, S->val) <= w - 6) br_tt(x + 4, base - BRT14.cap - BRT14.capy, S->val, &BRT14, fg);
+    else br_tt(x + 4, base - BRT12.cap - BRT12.capy, S->val, &BRT12, fg);
     ui_rect(x + 5, y + h - 5, bw, 3, sel ? BR_SELBG : BR_TRACK);
     if (S->fill) ui_rect(x + 5, y + h - 5, bw * S->fill / 8, 3, sel ? ui_acc : UI_K);
 }
@@ -221,8 +250,8 @@ static void br_knob_draw(void)
 /* ---- HOME: the four tracks as tiles (the number, its source, its level; the selected one black with a red frame), CHD, CUT, DRY and MUTE as chips */
 static void br_chip(int32_t x, int32_t y, const char *t, uint16_t bg, uint16_t fg)
 {
-    ui_rect(x, y, 8 * ui_len(t) + 4, 10, bg);
-    ui_text(x + 2, y + 1, t, 1, fg);
+    ui_rect(x, y, br_tlen(&BRT12, t) + 4, 10, bg);
+    br_tt(x + 2, y + 1 - BRT12.capy, t, &BRT12, fg);
 }
 static void br_home(void)
 {
@@ -239,11 +268,11 @@ static void br_home(void)
         } else
             ui_rect(x, y, w, h, t & 1u ? BR_C2 : BR_C1);
         br_text(x + 7, y + 28 - br_cap(&BRF24) - br_capy(&BRF24), num, &BRF24, 1, isel ? ui_acc : UI_K);   /* (the number's ink ends at y + 28) */
-        ui_text(x + w - 7 - 8 * ui_len(code), y + 6, code, 1, isel ? UI_W : UI_K);
+        br_tt(x + w - 7 - br_tlen(&BRT14, code), y + 6 - BRT14.capy, code, &BRT14, isel ? UI_W : UI_K);
         if (trk[t].chord) br_chip(x + 7, cy, "CHD", isel ? UI_W : UI_K, isel ? UI_K : UI_W), cy += 12;
         if (trk_closed(t)) br_chip(x + 7, cy, "CUT", ui_acc, UI_W);
         else if (trk_dry(t)) br_chip(x + 7, cy, "DRY", ui_acc, UI_W);
-        if (trk_quiet >> t & 1u) br_chip(x + w - 7 - 36, y + 34, "MUTE", ui_acc, UI_W);
+        if (trk_quiet >> t & 1u) br_chip(x + w - 7 - 28, y + 34, "MUTE", ui_acc, UI_W);
         ui_rect(x + 7, y + h - 15, w - 14, 7, isel ? BR_SELBG : BR_TRACK);
         if (lv) ui_rect(x + 7, y + h - 15, (w - 14) * lv / 100, 7, isel ? UI_W : trk_quiet >> t & 1u ? UI_M : UI_K);
     }

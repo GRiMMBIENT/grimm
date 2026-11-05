@@ -124,8 +124,8 @@ check("a message (CHORD ON) is the whole header, red, its text white; after its 
       P(m1, 100, 8) == RED and P(m1, 230, 8) == RED and P(m1, 5, 5) == RED and P(c4, 100, 6) == BAR and P(c4, 200, 5) == RED and count(m1, BW, (3, 3, 237, 29)) > 40,
       f"{P(m1, 100, 8)} {P(c4, 100, 6)} {count(m1, BW, (3, 3, 237, 29))}")
 check("HOME's chips: CHD where a track's chord mode is on (T1 on a concrete tile: black; T2, the selected tile: white), CUT red under it on T2, MUTE red on T1",
-      P(m2, 10, 66) == BK and P(m2, 129, 66) == BW and P(c3, 129, 66) == BW and P(c3, 129, 78) == RED and P(c4, 79, 66) == RED,
-      str([P(m2, 10, 66), P(m2, 129, 66), P(c3, 129, 66), P(c3, 129, 78), P(c4, 79, 66)]))
+      P(m2, 10, 66) == BK and P(m2, 129, 66) == BW and P(c3, 129, 66) == BW and P(c3, 129, 78) == RED and P(c4, 83, 66) == RED,
+      str([P(m2, 10, 66), P(m2, 129, 66), P(c3, 129, 66), P(c3, 129, 78), P(c4, 83, 66)]))
 
 # ---- every page
 ev = [(BOOT + 500 * n, f"page {n}") for n in range(N)]
@@ -153,5 +153,74 @@ check("polygon and line drawing: a triangle of 1500 px (within 1 %), a 5 px line
       "3 sqrt 2 over its point), a 4 px slant of 304 px (within 4 %)",
       abs(tri - 1500) <= 15 and hor_rows == list(range(37, 42)) and hor_cols[0] == 97 and hor_cols[-1] == 201 and on(140, 56) and not on(140, 55) and abs(sla - 304) <= 12,
       f"tri {tri} rows {hor_rows} cols {hor_cols[:1]} {hor_cols[-1:]} tip {on(140, 56)} {on(140, 55)} slant {sla}")
+
+# ---- the fonts: Archivo Black only big, Terminus Bold for all the small text
+fsrc = Path("firmware/gen/brutal_font.h").read_text(encoding="utf-8")
+sizes = sorted(int(n) for n in re.findall(r"static const br_font_t BRF(\d+) =", fsrc))
+small_use = re.findall(r"BRF(?:8|10|12|15)\b", src + ui_src)
+check("fonts: Archivo Black has only its big sizes (16 and 24 px) and nothing uses a smaller one; the small text (chip, tag label, block labels, small values, messages, "
+      "the boot line) is Terminus Bold (6x12, 8x14, 8x16)",
+      sizes == [16, 24] and not small_use and all(f"BRT{n} = " in fsrc for n in ("12", "14", "16")) and src.count("&BRT") >= 12 and "&BRT12" in ui_src,
+      f"{sizes} {small_use}")
+w_, d_ = px(h1)
+rows = lambda x0, x1, y0, y1: [y for y in range(y0, y1) if any(tuple(d_[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) == BK for x in range(x0, x1))]
+lab = rows(8, 55, 196, 215)                                    # (VOLUME: the label's ink, Terminus 8x14 bold: 10 rows from y + 5)
+check("a block's label is Terminus Bold 8x14: its capitals 10 rows tall, from 5 px under the block's top (200 .. 209)", lab[0] == 200 and lab[-1] == 209 and len(lab) == 10, str(lab))
+
+# ---- the boot screen: the eye opens and looks around as in EYE: its box, frame by frame (every 50 ms), the same pixels in the theme's colours; the red of the eye,
+# the bats and the drips in the same places
+ef = film("boot_eye", [], 6500, None, fps=20)
+EYEPAL = rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")])[:6]
+
+
+def roles(ppm, pal):
+    w, d = px(ppm)
+    r = {c: i for i, c in enumerate(pal)}
+    return [r.get(tuple(d[3 * i:3 * i + 3]), 9) for i in range(w * 240)]
+
+
+diff_eye, diff_red, nf = [], [], 0
+for ms in range(0, 5600, 50):
+    a, b = roles(ef(ms), EYEPAL), roles(bf(ms), PAL[:6])
+    nf += 1
+    if [a[y * 240 + x] for y in range(40, 92) for x in range(74, 166)] != [b[y * 240 + x] for y in range(40, 92) for x in range(74, 166)]:
+        diff_eye.append(ms)
+    if [i for i, v in enumerate(a) if v == 5] != [i for i, v in enumerate(b) if v == 5]:
+        diff_red.append(ms)
+check(f"the BRUTAL boot's eye is EYE's, frame by frame: the eye's box (74 .. 165, 40 .. 91) has the same pixels, in the theme's colours, in all {nf} frames (every 50 ms, 0 .. 5.55 s: "
+      "it opens, trembles, looks around, blinks), and the red (the eye's iris, the bats' eyes, the drips) is in the same places",
+      not diff_eye and not diff_red, f"eye differs {diff_eye[:6]}, red differs {diff_red[:6]}")
+
+# ---- the theme switch: the whole panel cleared and drawn again: no pixel of the other theme left, on any page, both ways (the switch with the page shown, as the editor makes it)
+EYEC = set(PAL_E := rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))
+BRUC = set(PAL) | {c for c in (BAR, C1, C2, C3, TRACK, SELBG, c888(0xe0, 0x70, 0x5f))}
+
+
+def ramp(a, b):
+    return {c888(a[0] + (b[0] - a[0]) * v // 127, a[1] + (b[1] - a[1]) * v // 127, a[2] + (b[2] - a[2]) * v // 127) for v in range(128)}
+
+
+EYEC |= ramp((0x5e, 0x5b, 0x54), (0xe8, 0xe4, 0xd8))          # (MIXER 1's LEVEL ramp, each theme's)
+BRUC |= ramp((0x6e, 0x6b, 0x66), (0xf2, 0xef, 0xe8))
+EYE_ONLY, BRU_ONLY = EYEC - BRUC, BRUC - EYEC
+
+
+def left(ppm, only):
+    w, d = px(ppm)
+    return sum(1 for i in range(w * 240) if tuple(d[3 * i:3 * i + 3]) in only)
+
+
+ev = []
+for n in range(N):
+    ev += [(BOOT + 1500 * n, f"page {n}"), (BOOT + 1500 * n + 500, "theme 1"), (BOOT + 1500 * n + 1000, "theme 0")]
+sf = film("switch", ev, BOOT + 1500 * N + 300)
+leftovers = []
+for n in range(N):
+    t = BOOT + 1500 * n
+    a, b = left(sf(t + 900), EYE_ONLY), left(sf(t + 1400), BRU_ONLY)
+    if a or b:
+        leftovers.append((n, a, b))
+check(f"THEME switched with each of the {N} pages shown (EYE to BRUTAL, back to EYE): the whole panel is cleared and drawn again: not one pixel of the other theme "
+      "is left (checked against the colours only that theme has, MIXER 1's ramp too)", not leftovers, f"(page, EYE pixels in BRUTAL, BRUTAL pixels in EYE): {leftovers[:6]}")
 
 sys.exit(1 if bad else 0)

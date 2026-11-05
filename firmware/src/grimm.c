@@ -2249,6 +2249,10 @@ static void app_main(void)
         int32_t d;
         platform_poll();
 #ifdef DINGHY_HOST
+        if (host_theme_set >= 0) {              /* (a test script's "theme N": as the knob or the editor sets it) */
+            sy_theme = host_theme_set, host_theme_set = -1;
+            sys_sync();
+        }
         if (host_page_set >= 0) {               /* (a test script's "page N") */
             if (host_page_set < (int32_t)NPAGE) page = (uint32_t)host_page_set;
             host_page_set = -1;

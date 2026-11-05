@@ -1,46 +1,48 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
-"""GR!MM's BRUTAL theme font: Archivo Black (assets/fonts/ArchivoBlack-Regular.ttf, SIL Open Font License 1.1, The Archivo Black Project
-Authors; LICENSES/OFL-ArchivoBlack.txt; no Reserved Font Name is declared) rasterised to 1-bit bitmaps at a few sizes, ASCII 32..95 (space .. _,
-digits, upper case, punctuation; lower case is folded to upper case when it is drawn) -> firmware/gen/brutal_font.h. Under the OFL a format
-conversion is a Modified Version, so GR!MM calls it "brutal face", not Archivo Black.
+"""GR!MM's BRUTAL theme fonts -> firmware/gen/brutal_font.h (and build/brutal_font_preview.png):
+  * the big text: Archivo Black (assets/fonts/ArchivoBlack-Regular.ttf, SIL Open Font License 1.1, The Archivo Black Project Authors; LICENSES/OFL-ArchivoBlack.txt;
+    no Reserved Font Name is declared) rasterised to 1-bit bitmaps at 16 and 24 px (the em size), ASCII 32..95 (space .. _: digits, upper case, punctuation; lower
+    case is drawn as upper case): the page title, the big values, HOME's track numbers, the boot wordmark. At smaller sizes its strokes run together on the panel,
+    so it has none. Each glyph is the box round its ink: width, height, its offset from the pen and from the line's top, the advance; the bits packed, row after
+    row, the top bit first.
+  * all the small text: Terminus Bold (assets/fonts/terminus-bold/ter-u12b, ter-u14b, ter-u16b: the ASCII part of Terminus Font 4.49.1's bold cuts 6x12, 8x14
+    and 8x16, Dimitar Toshkov Zhekov, SIL OFL 1.1: assets/fonts/Terminus-LICENSE.txt), one byte a row, the left pixel the top bit, a fixed cell, ASCII 32..126.
+Under the OFL a format conversion is a Modified Version, so GR!MM calls them "brutal face" and "brutal term", not by the fonts' names.
 
-A size is the em size in pixels (the mockup's 2x CSS size halved: docs/themes/brutal-mockup.html): the glyphs are rendered by FreeType with its own
-hinting, 1 bit, and kept as the box round their ink: width, height, the offset from the pen and from the top of the line, the advance. The bits are
-packed, row after row, the most significant bit first. Bigger text is a bitmap drawn whole pixels larger (ui.c br_text's scale).
-
-  python3 tools/gen_brutalfont.py          (needs Pillow; writes the header, and build/brutal_font_preview.png)
+  python3 tools/gen_brutalfont.py          (needs Pillow)
 """
+import re
 from pathlib import Path
 
 from PIL import Image, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 TTF = ROOT / "assets" / "fonts" / "ArchivoBlack-Regular.ttf"
+BDF = ROOT / "assets" / "fonts" / "terminus-bold"
 OUT = ROOT / "firmware" / "gen" / "brutal_font.h"
 PREVIEW = ROOT / "build" / "brutal_font_preview.png"
-SIZES = [("8", 8), ("10", 10), ("12", 12), ("15", 15), ("24", 24)]
+SIZES = [("16", 16), ("24", 24)]
+TERM = [("12", "ter-u12b-ascii.bdf"), ("14", "ter-u14b-ascii.bdf"), ("16", "ter-u16b-ascii.bdf")]
 FIRST, LAST = 32, 95
 
 
 def glyph(font, ch):
-    """-> (the ink's bitmap rows as strings of 0/1 or [], xo from the pen, yo from the line's top, advance)"""
+    """-> (the ink's bitmap rows as lists of 0/1 or [], x from the pen, y from the line's top, advance)"""
     adv = int(round(font.getlength(ch)))
     if ch == " ":
         return [], 0, 0, adv
     m = font.getmask(ch, mode="1")
     w, h = m.size
-    ox, oy = font.getbbox(ch, anchor="la")[0:2]         # (the ink's box from the pen / the top of the ascent line)
+    ox, oy = font.getbbox(ch, anchor="la")[0:2]
     rows = [[1 if m.getpixel((x, y)) else 0 for x in range(w)] for y in range(h)]
-    # crop to the ink
     ys = [y for y in range(h) if any(rows[y])]
     xs = [x for x in range(w) if any(rows[y][x] for y in range(h))]
     if not ys:
         return [], 0, 0, adv
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-    rows = [r[x0:x1 + 1] for r in rows[y0:y1 + 1]]
-    return rows, ox + x0, oy + y0, adv
+    return [r[x0:x1 + 1] for r in rows[y0:y1 + 1]], ox + x0, oy + y0, adv
 
 
 def pack(rows):
@@ -54,26 +56,46 @@ def pack(rows):
     return bytes(out)
 
 
+def bdf(path):
+    """-> (cell width, cell height, {code: [one byte a row]}) of a Terminus BDF (every glyph at most 8 wide, at x offset 0)"""
+    t = path.read_text(encoding="latin-1")
+    asc = int(re.search(r"FONT_ASCENT (\d+)", t).group(1))
+    cw, ch = (int(x) for x in re.search(r"FONTBOUNDINGBOX (\d+) (\d+)", t).groups())
+    out = {}
+    for blk in re.findall(r"STARTCHAR .*?ENDCHAR", t, re.S):
+        code = int(re.search(r"ENCODING (\d+)", blk).group(1))
+        w, h, xo, yo = (int(x) for x in re.search(r"BBX (-?\d+) (-?\d+) (-?\d+) (-?\d+)", blk).groups())
+        rows = [int(x, 16) for x in re.search(r"BITMAP\n(.*?)\nENDCHAR", blk, re.S).group(1).split()]
+        assert w <= 8 and xo == 0
+        cell = [0] * ch
+        top = asc - (yo + h)
+        for i, r in enumerate(rows):
+            cell[top + i] = r
+        out[code] = cell
+    return cw, ch, out
+
+
 def main():
-    lines = ["/* generated by tools/gen_brutalfont.py: GR!MM's brutal face, Archivo Black (SIL OFL 1.1, The Archivo Black Project Authors) rasterised at",
-             " * 8, 10, 12, 15 and 24 px (em), 1 bit, ASCII 32..95; per size: the line's height, the baseline's row, then per glyph the advance, the ink's",
-             " * width and height, its offset from the pen and from the line's top, and where its bits are (packed rows, the top bit first) */",
-             "typedef struct { uint8_t h, base; const uint8_t *adv, *w, *hh; const int8_t *xo, *yo; const uint16_t *off; const uint8_t *data; } br_font_t;"]
-    preview = Image.new("RGB", (900, 400), (20, 19, 18))
-    py = 6
+    lines = ["/* generated by tools/gen_brutalfont.py: GR!MM's BRUTAL fonts.",
+             " * brutal face: Archivo Black (SIL OFL 1.1, The Archivo Black Project Authors) at 16 and 24 px (em), 1 bit, ASCII 32..95; per size the line's height, the",
+             " * baseline's row, then per glyph the advance, the ink's width and height, its offset from the pen and from the line's top, where its bits are (packed rows,",
+             " * the top bit first). brutal term: Terminus Bold (SIL OFL 1.1, Dimitar Toshkov Zhekov) 6x12, 8x14, 8x16, ASCII 32..126, a byte a row, the left pixel the top bit */",
+             "typedef struct { uint8_t h, base; const uint8_t *adv, *w, *hh; const int8_t *xo, *yo; const uint16_t *off; const uint8_t *data; } br_font_t;",
+             "typedef struct { uint8_t w, h, capy, cap; const uint8_t *data; } br_tfont_t;   /* capy, cap: where the capitals' ink starts, and its height */"]
     total = 0
+    preview = Image.new("RGB", (480, 420), (20, 19, 18))
+    py = 4
     for name, size in SIZES:
         font = ImageFont.truetype(str(TTF), size, layout_engine=ImageFont.Layout.BASIC)
         asc, desc = font.getmetrics()
         gl = [glyph(font, chr(c)) for c in range(FIRST, LAST + 1)]
         data = bytearray()
         offs = []
-        for rows, xo, yo, adv in gl:
+        for rows, *_ in gl:
             offs.append(len(data))
             data += pack(rows)
         ws = [len(r[0]) if r else 0 for r, *_ in gl]
         hs = [len(r) for r, *_ in gl]
-        n = FIRST
         lines.append(f"static const uint8_t BRF{name}_ADV[] = {{{', '.join(str(g[3]) for g in gl)}}};")
         lines.append(f"static const uint8_t BRF{name}_W[] = {{{', '.join(map(str, ws))}}};")
         lines.append(f"static const uint8_t BRF{name}_H[] = {{{', '.join(map(str, hs))}}};")
@@ -87,24 +109,39 @@ def main():
         lines.append(f"static const br_font_t BRF{name} = {{{asc + desc}, {asc}, BRF{name}_ADV, BRF{name}_W, BRF{name}_H, BRF{name}_XO, BRF{name}_YO, BRF{name}_OFF, BRF{name}_DATA}};")
         size_b = len(data) + 5 * len(gl) + 2 * len(gl)
         total += size_b
-        print(f"{name:>3} px: line {asc + desc}, base {asc}: {len(data)} B of bits, {size_b} B with the tables")
-        # preview: the text at this size (zoom 2)
-        x = 6
-        for (rows, xo, yo, adv), c in zip(gl, "".join(chr(c) for c in range(FIRST, LAST + 1))):
-            pass
-        txt = "GR!MM HOME 0123456789 BRUTAL %+-./:"
-        x = 6
-        for ch in txt:
+        print(f"Archivo Black {size} px: line {asc + desc}, base {asc}: {size_b} B with the tables")
+        x = 4
+        for ch in "GR!MM HOME 0123456789 BRUTAL":
             rows, xo, yo, adv = gl[ord(ch) - FIRST]
             for yy, r in enumerate(rows):
                 for xx, b in enumerate(r):
-                    if b:
-                        for dy in range(2):
-                            for dx in range(2):
-                                if x * 2 + (xo + xx) * 2 + dx < 900 and (py + yo + yy) * 2 + dy - 0 < 400:
-                                    preview.putpixel((x * 2 + (xo + xx) * 2 + dx, (py + (yo + yy) * 1) * 1 + dy), (242, 239, 232))
+                    if b and x + xo + xx < 480 and py + yo + yy < 420:
+                        preview.putpixel((x + xo + xx, py + yo + yy), (242, 239, 232))
             x += adv
-        py += (asc + desc) * 2 + 4
+        py += asc + desc + 3
+    for name, fn in TERM:
+        cw, chh, cells = bdf(BDF / fn)
+        data = bytearray()
+        for c in range(32, 127):
+            data += bytes(cells[c])
+        hrows = [i for i, b in enumerate(cells[ord("H")]) if b]
+        capy, cap = hrows[0], len(hrows)
+        lines.append(f"static const uint8_t BRT{name}_DATA[] = {{")
+        for i in range(0, len(data), 24):
+            lines.append("    " + ", ".join(f"0x{b:02X}" for b in data[i:i + 24]) + ",")
+        lines.append("};")
+        lines.append(f"static const br_tfont_t BRT{name} = {{{cw}, {chh}, {capy}, {cap}, BRT{name}_DATA}};")
+        total += len(data)
+        print(f"Terminus Bold {cw}x{chh}: caps {cap} rows from row {capy}: {len(data)} B")
+        x = 4
+        for ch in "GR!MM HOME 0123456789 BRUTAL %+-./: VOLUME CUTOFF FEEDBK":
+            c = cells[ord(ch)]
+            for yy, b in enumerate(c):
+                for xx in range(cw):
+                    if b >> (7 - xx) & 1 and py + yy < 420:
+                        preview.putpixel((x + xx, py + yy), (242, 239, 232))
+            x += cw
+        py += chh + 3
     OUT.write_text("\n".join(lines) + "\n")
     PREVIEW.parent.mkdir(exist_ok=True)
     preview.save(PREVIEW)

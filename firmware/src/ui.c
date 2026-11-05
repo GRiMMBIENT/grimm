@@ -17,12 +17,13 @@
 
 /* (V3.0) the palette is the theme's: black (the background), dark, mid, light, white, the four accents (SYSTEM's COLOUR) and the three live-meter
  * colours; the screens' code says UI_K .. UI_W, ui_acc and UI_METER_*, whichever theme is on */
-typedef struct { uint16_t k, d, m, l, w, acc[4], meter[3]; } ui_pal_t;
+typedef struct { uint16_t k, d, m, l, w, acc[4], meter[3]; uint8_t ma[3], mb[3]; } ui_pal_t;   /* (ma .. mb: MIXER 1's LEVEL ramp, as 8-bit colours) */
 static const ui_pal_t UI_PAL_EYE = {RGB(0x0b, 0x0b, 0x0a), RGB(0x26, 0x25, 0x1f), RGB(0x5e, 0x5b, 0x54), RGB(0xb8, 0xb4, 0xa9), RGB(0xe8, 0xe4, 0xd8),
                                     {RGB(0xc8, 0x32, 0x1e), RGB(0xd0, 0x8a, 0x1c), RGB(0x2f, 0x8f, 0x8a), RGB(0x7a, 0x4f, 0xb0)},   /* red (the default),
                                                  * amber, teal, violet (SYSTEM) */
-                                    {RGB(0x3c, 0xa8, 0x4a), RGB(0xd8, 0xc0, 0x2a), RGB(0xd8, 0x32, 0x28)}};   /* the live meters (LEVELS): green: a normal
+                                    {RGB(0x3c, 0xa8, 0x4a), RGB(0xd8, 0xc0, 0x2a), RGB(0xd8, 0x32, 0x28)},   /* the live meters (LEVELS): green: a normal
                                                  * level; yellow: loud; red: near the top */
+                                    {0x5e, 0x5b, 0x54}, {0xe8, 0xe4, 0xd8}};
 static const ui_pal_t *ui_pal = &UI_PAL_EYE;    /* the theme's now */
 #define UI_K (ui_pal->k)                        /* black (the background), */
 #define UI_D (ui_pal->d)                        /* dark */
@@ -1277,10 +1278,11 @@ static uint32_t mx_e[NT];
 #define MXT_H 104
 #define MXT_DX 79
 #define MXT_DY 107
-static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W */
+static uint16_t mx_col(int32_t lv)              /* LEVEL 0 .. 127: UI_M .. UI_W (the theme's ramp) */
 {
     int32_t a = clamp(lv, 0, 127);
-    return RGB(0x5e + (0xe8 - 0x5e) * a / 127, 0x5b + (0xe4 - 0x5b) * a / 127, 0x54 + (0xd8 - 0x54) * a / 127);
+    const uint8_t *p = ui_pal->ma, *q = ui_pal->mb;
+    return RGB(p[0] + (q[0] - p[0]) * a / 127, p[1] + (q[1] - p[1]) * a / 127, p[2] + (q[2] - p[2]) * a / 127);
 }
 static void ui_pic_draw(void);
 static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its part of the mix since the last (vis_tk: after LEVEL,
@@ -2184,12 +2186,17 @@ static void ui_boot_draw(void)                  /* Boot: the stars, the eye, the
     ui_eye(80 + ey.jx, 48 + ey.jy, ey.k, ey.dx, ey.dy);
     ui_eye_tiny = 0;
     bat_draw(bt_e);
-    if (ui_th->bfin) br_text(120 - br_len(&BRF24, APP_NAME, 1) / 2, 122 - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, UI_W);   /* (BRUTAL: its face) */
+    if (ui_th->bfin) {
+        if (ui_in(20, 94, 200, 36)) br_text(120 - br_len(&BRF24, APP_NAME, 1) / 2, 122 - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, UI_W);   /* (BRUTAL: its face; only
+                                                 * where the region being drawn reaches: the eye and the stars are redrawn a region at a time) */
+    }
     else ui_text(120 - 12 * 5, 100, APP_NAME, 3, UI_L);
     for (y = 0; y < 10; y++)
         for (x = 0; x < 30; x++)
             if (!y || y <= bt_len((uint32_t)x)) ui_rect(60 + x * 4, 128 + y * 4, 4, 4, y ? ui_acc : UI_M);
-    if (ui_th->bfin) br_text(120 - br_len(&BRF8, bt_note ? bt_note : BOOT_LINE, 1) / 2, 217 - br_cap(&BRF8) - br_capy(&BRF8), bt_note ? bt_note : BOOT_LINE, &BRF8, 1, bt_note ? ui_acc : UI_M);
+    if (ui_th->bfin) {
+        if (ui_in(0, 205, 240, 18)) br_tt(120 - br_tlen(&BRT12, bt_note ? bt_note : BOOT_LINE) / 2, 209 - BRT12.capy, bt_note ? bt_note : BOOT_LINE, &BRT12, bt_note ? ui_acc : UI_M);   /* (BRUTAL: Terminus Bold) */
+    }
     else ui_text(120 - 4 * ui_len(bt_note ? bt_note : BOOT_LINE), 210, bt_note ? bt_note : BOOT_LINE, 1, bt_note ? ui_acc : UI_M);
 }
 static void ui_boot(void)
