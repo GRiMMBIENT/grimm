@@ -52,14 +52,17 @@ PRODUCT = "FM-1_966"                # GR!MM: 966, every release (1.x, 2.x) (FM-1
                                     # other firmwares hold 950, 95x, 961, so not Dinghy's 9 + minor); Dinghy is 99N
 VERSION = None                      # APP_VER for release builds (else DEFAULT_VERSION)
 def _dev_version():
-    """V3 work in progress, a build without --release: "3.0-d" and the commit it was built from (4 hex, so build what you committed): the
-    version on the System pages, the boot screen and in INFO tells which build an FM-1 runs (the editor reads "3.0" from it; the boot
-    line holds 30 characters, the System pages' header 11 after the V)"""
+    """V3 work in progress, a build without --release: "3.0-d" and the commit it was built from (4 hex), then "+" when tracked files differ
+    from that commit (an uncommitted build: the stamp must never pass for the commit): the version on the System pages, the boot screen
+    and in INFO tells which build an FM-1 runs (the editor reads "3.0" from it; the boot line holds 30 characters, the System pages'
+    header 11 after the V: "3.0-da0d5+" fits)"""
     try:
         h = subprocess.run(["git", "rev-parse", "--short=4", "HEAD"], cwd=SRC, capture_output=True, text=True, timeout=10).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=SRC, capture_output=True, text=True,
+                               timeout=30).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return "3.0-dev"
-    return "3.0-d" + h if re.fullmatch(r"[0-9a-f]{4}", h) else "3.0-dev"
+    return "3.0-d" + h + ("+" if dirty else "") if re.fullmatch(r"[0-9a-f]{4}", h) else "3.0-dev"
 
 
 DEFAULT_VERSION = _dev_version()
