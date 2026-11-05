@@ -27,13 +27,16 @@ static uint16_t ui_acc = RGB(0xc8, 0x32, 0x1e); /* the accent */
 #define UI_METER_NORMAL RGB(0x3c, 0xa8, 0x4a)   /* green: a normal level */
 #define UI_METER_LOUD RGB(0xd8, 0xc0, 0x2a)     /* yellow: loud */
 #define UI_METER_HOT RGB(0xd8, 0x32, 0x28)      /* red: near the top */
-#define UI_METER_LOUD_FROM 5                    /* the first loud segment (-8 dBFS of the mix), */
-#define UI_METER_HOT_FROM 7                     /* .. the first near the top: the track alone within 4.5 dB of where the output limiter
-                                                 * starts (OUT_LIM, -0.09 dBFS, MASTER at the top) */
-static const uint16_t UI_METER_FROM[8] = {163, 520, 1300, 3277, 6540, 13000, 16400, 19500};   /* a segment lights from this peak of
-                                                 * the track's part of the mix (Q15, 32767 = 0 dBFS): -46 -36 -28 -20 -14 -8 -6 -4.5 dBFS.
-                                                 * From the factory sounds (a 4-note chord, LEVEL 100: median -8.6, top quarter above
-                                                 * -4.3, loudest -0.8 dBFS) and a loud driven chord (DRIVE send 100: -3 .. -5 dBFS) */
+#define UI_METER_LOUD_FROM 4                    /* the first loud segment (-12 dBFS of the mix), */
+#define UI_METER_HOT_FROM 6                     /* .. the first near the top (-6 dBFS). The colours are the output's headroom shared among
+                                                 * the four tracks: green, all four could play at this level and never reach the output
+                                                 * limiter (OUT_LIM, -0.09 dBFS, MASTER at the top); yellow, they could not all; red, two
+                                                 * like it would */
+static const uint16_t UI_METER_FROM[8] = {163, 520, 1300, 3277, 8231, 13000, 16422, 19500};   /* a segment lights from this peak of
+                                                 * the track's part of the mix (Q15, 32767 = 0 dBFS): -46 -36 -28 -20 -12 -8 -6 -4.5 dBFS.
+                                                 * From the factory sounds (a 4-note chord, LEVEL 100: median -8.2, loudest -0.9 dBFS) and
+                                                 * the DRIVE send up through the DRIVE page (V3.0: two low supersaw notes, send 100 %: -3 ..
+                                                 * -7 dBFS by TYPE and AMOUNT; without the drive -14) */
 static uint16_t ui_meter_col(int32_t seg)
 {
     return seg >= UI_METER_HOT_FROM ? UI_METER_HOT : seg >= UI_METER_LOUD_FROM ? UI_METER_LOUD : UI_METER_NORMAL;
@@ -1421,7 +1424,8 @@ static void pic_master(void)                    /* (V2) Master: the filter's cur
     }
 }
 static void pic_drive(void)                     /* (V2) Drive: a sine through it (AMOUNT, TYPE, TONE left out), the clean
-                                                 * one dim behind it; AMOUNT 0: "OFF" */
+                                                 * one dim behind it; AMOUNT 0: "OFF". (V3.0) A line under it says what is heard: the
+                                                 * tracks whose DRIVE send is up, or why nothing is (AMOUNT 0, MIX 0, no send up) */
 {
     static const int16_t SIN37[37] = {0, 5690, 11207, 16384, 21063, 25102, 28378, 30792, 32270, 32767, 32270, 30792,
                                       28378, 25102, 21063, 16384, 11207, 5690, 0, -5690, -11207, -16384, -21063, -25102,
@@ -1438,6 +1442,16 @@ static void pic_drive(void)                     /* (V2) Drive: a sine through it
         ui_rect(9 + i * 6, 98 - y * 40 / 32768, 3, 3, a ? UI_L : UI_M);
     }
     ui_rect(9, 99, 219, 1, UI_D);
+    {
+        char m[28] = "DRIVEN:", *e = m + 7;
+        int32_t k;
+        for (k = 0; k < (int32_t)NT; k++)
+            if (trk[k].drv > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
+        if (!a) put_s(m, "AMOUNT 0: NO DRIVE HEARD");
+        else if (clamp(dr_mix, 0, 127) == 0) put_s(m, "MIX 0: NO DRIVE HEARD");
+        else if (e == m + 7) put_s(m, "NO DRIVE SEND UP (MIXER 1)");
+        ui_text(9, 146, m, 1, e > m + 7 && a && dr_mix > 0 ? UI_L : UI_M);
+    }
 }
 
 static void pic_grid(void)                      /* Seq: the 64 steps of the track's pattern, 8 rows of 8 */

@@ -6,7 +6,7 @@ half step a floor takes off each sample into an offset (-658 of 16 bits at the l
 sound), which a DRIVE multiplied into a lopsided, wandering clip: the bass crumbled as an LFO swept the VA's CUTOFF. Host mode:
   - SAW, SQR and SUPERSAW, two low notes, at 12 cutoffs from 0 to 127 and RESONANCE 0 and 60, no drive: the DC (the mean of 2 s)
     is under 10 LSB and under 5 % of the sound;
-  - the same at CUTOFF 0 and 20 through the DRIVE page at 100 % (AMOUNT, TONE, MIX 127), each TYPE: SOFT, CLIP, FOLD keep under 6 %
+  - the same at CUTOFF 0 and 20 through the DRIVE page at 100 % (AMOUNT, TONE, MIX 127) and T1's DRIVE send at 100 %, each TYPE: SOFT, CLIP, FOLD keep under 6 %
     of the sound (FUZZ's lopsided curve has an offset of its own, under 30 %);
   - an LFO (DEPTH 100) on the VA's CUTOFF, three cycles, the DRIVE page at 100 %: the 50 ms means of the output wander by
     less than 0.45 (FUZZ, CLIP 0.7, FOLD 1.1) of its rms; before the fix 0.6 .. 1.75.
@@ -56,10 +56,11 @@ def sound(wave_, cut, res, lfo=(60, 0, 5, 0)):
 
 
 def render(name, snd, drive=None, dur=4000, notes=(29, 36)):
-    """T1 plays snd, two low notes held; drive: None, or the DRIVE page's TYPE at 100 %; -> the left channel (after 1.5 s)"""
+    """T1 plays snd, two low notes held; drive: None, or the DRIVE page's TYPE at 100 % and T1's DRIVE send at 100 %; -> the left channel (after 1.5 s)"""
     ev = [sx(1000, 23, 1, 0, *pack7(list(snd))), sx(1100, 25, 1, 29, 0)]          # (T1\'s REV send off)
     if drive is not None:
-        ev += [sx(1110, 25, 1, 20, 127), sx(1120, 25, 1, 21, drive), sx(1130, 25, 1, 22, 127), sx(1140, 25, 1, 23, 127)]
+        ev += [sx(1110, 25, 1, 20, 127), sx(1120, 25, 1, 21, drive), sx(1130, 25, 1, 22, 127), sx(1140, 25, 1, 23, 127),
+               sx(1150, 25, 1, 31, 127)]      # (V3.0: the DRIVE page, and T1's DRIVE send up: the drive is heard through the send)
     ev += [(2000 + 50 * k, f"midi 0x90 {n} 100") for k, n in enumerate(notes)]
     path = OUT / f"{name}.txt"
     path.write_text("".join(f"{t + BOOT} {s}\n" for t, s in sorted(ev, key=lambda e: e[0])) + f"{2000 + dur + BOOT} end\n")

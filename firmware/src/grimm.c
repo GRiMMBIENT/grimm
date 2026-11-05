@@ -310,22 +310,23 @@ static uint32_t tk_dv[NT];                      /* audio: this block's peak of t
 static uint32_t host_tk_hold[NT], host_mix_hold, host_out_hold;   /* (tests: the meter's readings, the mix and the output's
                                                  * peaks, the highest since the probe last took them) */
 #endif
-static int32_t trk_dsend(uint32_t ty, int32_t G, int32_t LV, int32_t x, int32_t gs)   /* (V3.0) what the DRIVE send makes of sample x at
-                                                 * gain gs (Q15): drive_send's curve for its TYPE, its own gain, level-matched
-                                                 * (Q15 of the mix; no TONE) */
+static int32_t trk_dsend(uint32_t ty, int32_t G, int32_t LV, int32_t RG, int32_t x, int32_t gs)   /* (V3.0) what the DRIVE page makes of
+                                                 * the track's sample x sent at gain gs (Q15): drive_send's curve, the page's TYPE,
+                                                 * AMOUNT (G, LV: its gain, its level matching) and MIX (RG, the return), as the mix
+                                                 * gets it (Q15 of the mix; no TONE) */
 {
     int32_t v = clamp(mulq15w(x, gs) >> PB, -131071, 131071), y = (v * G) >> 8;
-    return (dr_shape(ty, y) * LV) >> 12;
+    return (((dr_shape(ty, y) * LV) >> 12) * RG) >> 15;
 }
 static void trk_drive(uint32_t t, const int32_t *x, int32_t gs, uint32_t n)   /* (V3.0) the DRIVE send's driven sound alone (a peak, in
                                                  * tk_dv): where its input is not the dry sound's */
 {
     uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), k, pk = 0, a;
-    int32_t G, LV, w;
+    int32_t G, LV, RG, w;
     if (!vis_tk_on) return;
-    G = dr_gain(ty, DV_AMT), LV = dr_level(ty, DV_AMT);
+    G = dr_gain(ty, clamp(dr_amt, 0, 127)), LV = dr_level(ty, clamp(dr_amt, 0, 127)), RG = dr_return();
     for (k = 0; k < n; k += TK_STRIDE) {
-        w = trk_dsend(ty, G, LV, x[k], gs);
+        w = trk_dsend(ty, G, LV, RG, x[k], gs);
         a = (uint32_t)(w < 0 ? -w : w);
         if (a > pk) pk = a;
     }
@@ -337,13 +338,13 @@ static void trk_meter(uint32_t t, const int32_t *x, uint32_t n, int32_t g0, int3
                                                  * peak of every TK_STRIDE-th frame */
 {
     uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), pk = 0, a, k;
-    int32_t G, LV;
+    int32_t G, LV, RG;
     if (!vis_tk_on) return;
-    G = gs ? dr_gain(ty, DV_AMT) : 0, LV = gs ? dr_level(ty, DV_AMT) : 0;
+    G = gs ? dr_gain(ty, clamp(dr_amt, 0, 127)) : 0, LV = gs ? dr_level(ty, clamp(dr_amt, 0, 127)) : 0, RG = gs ? dr_return() : 0;
     for (k = 0; k < n; k += TK_STRIDE) {
         int32_t l = mulq15w(x[k], g0) >> PB, r = mulq15w(x[k], g1) >> PB;
         if (gs) {
-            int32_t w = trk_dsend(ty, G, LV, x[k], gs);
+            int32_t w = trk_dsend(ty, G, LV, RG, x[k], gs);
             l += w, r += w;
         }
         a = (uint32_t)(l < 0 ? -l : l);
@@ -382,8 +383,8 @@ static void mix_tracks(int32_t *out, uint32_t used, uint32_t n)   /* the soundin
                                                  * after LEVEL (ECHO THROW, REV THROW held: full) */
         g[3] = mulq15(lv, pf_held >> PF_REV & 1u ? 127 * 258 : fx_send(t, lfo_move(t, LD_REV, clamp(trk[t].rev, 0, 127), 127)));
         g[4] = mulq15(lv, fx_send(t, lfo_move(t, LD_GRAIN, clamp(trk[t].grn, 0, 127), 127)));
-        g[5] = trk[t].drv > 0 ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send; 0:
-                                                 * none, nothing done) */
+        g[5] = trk[t].drv > 0 && dr_on() ? mulq15(lv, fx_send(t, clamp(trk[t].drv, 0, 127))) : 0;   /* (V2: DRIVE's send; 0:
+                                                 * none, nothing done; V3.0: the DRIVE page at AMOUNT 0 or MIX 0: none either) */
         if ((used >> t & 1u) && (g[5] | mix_g[t][5]) && !(xb_used & 1u)) {   /* (the bus cleared as it is first fed
                                                  * this block) */
             int32_t i;
@@ -532,7 +533,7 @@ static void app_audio(int32_t *out, uint32_t n)
                                                  * range, their returns (fxo) back up into the mix) */
     q_down(dbus, n), q_down(rbus, n), q_down(gbus, n);
     CS_MARK(CS_MIX);
-    if (xb_used & 1u) {                         /* (V2) the tracks' DRIVE sends: their bus driven, back into the mix */
+    if (xb_used & 1u) {                         /* (V2) the tracks' DRIVE sends: their bus driven by the DRIVE page (V3.0), back into the mix */
         q_down(vbus, n);
         fx_zero(n);
         drive_send(fxo, n);
@@ -549,14 +550,12 @@ static void app_audio(int32_t *out, uint32_t n)
     hall_render(rbus, fxo, n);                  /* SPACE: the REV bus in, the reverb out */
     fx_join(out, n);
     CS_MARK(CS_SPACE);
-    lo = master_here(MP_POST) || dr_amt > 0 || (tf.hl | tf.hn) != 0 || master_here(MP_END);
-    if (lo) q_down(out, 2u * n);                /* (V2: MASTER's filter, DRIVE, TAPE's HISS work at Q15: one of them on, the mix
-                                                 * down to it once, back up after the last) */
+    lo = master_here(MP_POST) || (tf.hl | tf.hn) != 0 || master_here(MP_END);
+    if (lo) q_down(out, 2u * n);                /* (V2: MASTER's filter, TAPE's HISS work at Q15: one of them on, the mix down to
+                                                 * it once, back up after the last) */
     master_filter(out, n, MP_POST);             /* (V2) MASTER, POST REVERB */
     CS_MARK(CS_MASTER);
-    drive_render(out, n);                       /* (V2) DRIVE and its limiter, */
-    CS_MARK(CS_DRIVE);
-    tapefx_render(out, n);                      /* TAPE's HISS (V2: the tracks through it: mix_tracks), */
+    tapefx_render(out, n);                      /* TAPE's HISS (V2: the tracks through it: mix_tracks), (V3.0: no whole-mix DRIVE here) */
     CS_MARK(CS_TAPE);
     perform_render(out, n, lo ? 0u : PB);       /* then the FX layer's tricks, the last stage before MASTER */
     CS_MARK(CS_PERFORM);

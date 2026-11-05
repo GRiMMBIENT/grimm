@@ -222,9 +222,9 @@ check("the three meter colours are named once (green / yellow / red) and chosen 
 FROM = [int(x) for x in re.search(r"UI_METER_FROM\[8\] = \{([^}]*)\}", ui).group(1).split(",")]
 cells = lambda v: sum(1 for f in FROM if v >= f)
 dbfs = lambda v: 20 * __import__("math").log10(max(v, 1) / 32767.0)
-check("the scale: eight segments, rising, from -46 to -4.5 dBFS of the mix; yellow from -8, red from -4.5 (the output limiter starts at -0.09)",
+check("the scale: eight segments, rising, from -46 to -4.5 dBFS of the mix; yellow from -12, red from -6 (two such tracks fill the output limiter, which starts at -0.09)",
       len(FROM) == 8 and FROM == sorted(FROM) and abs(dbfs(FROM[0]) + 46) < 0.5 and abs(dbfs(FROM[-1]) + 4.5) < 0.2 and
-      abs(dbfs(FROM[LOUD_FROM]) + 8) < 0.5 and abs(dbfs(FROM[HOT_FROM]) + 4.5) < 0.2, str(FROM))
+      abs(dbfs(FROM[LOUD_FROM]) + 12) < 0.2 and abs(dbfs(FROM[HOT_FROM]) + 6) < 0.2, str(FROM))
 
 # the factory sounds: a 4-note chord each on T1, LEVEL 100, its REV send off (the mix is then the track's own); the meter's reading against the mix itself
 ev = [fx_set(1000, 29, 0)] + tap(1100) + tap(1200) + tap(1300)      # (LEVELS shown: the meter measures only while a meter is on screen)
@@ -240,13 +240,13 @@ pr, sl, _ = run("factory", ev, t + 500)
 rd = [(tk(sl[e])[0][0], tk(sl[e])[1]) for e in ends]
 ratio = [a / b for a, b in rd if b > 2000]
 srt = sorted(a for a, _ in rd)
-nred = sum(1 for a in srt if cells(a) == 8)
-nloud = sum(1 for a in srt if cells(a) >= 6)
+nred = sum(1 for a in srt if cells(a) > HOT_FROM)
+nloud = sum(1 for a in srt if cells(a) >= LOUD_FROM + 1)
 print(f"  info  levels: the 44 factory sounds as a 4-note chord on T1 (LEVEL 100): the track's part of the mix, dBFS: quietest {dbfs(srt[0]):.1f}, "
       f"median {dbfs(srt[22]):.1f}, quarter-loudest {dbfs(srt[33]):.1f}, loudest {dbfs(srt[-1]):.1f}; {nred} show red, {nloud} yellow or red; "
       f"meter / the mix itself: {min(ratio):.2f} .. {max(ratio):.2f}")
-check("the factory sounds read as measured: a spread from quiet to near full scale, about a third of the 4-note chords red, half yellow or more",
-      dbfs(srt[0]) < -18 and -11 < dbfs(srt[22]) < -7 and dbfs(srt[-1]) > -2 and 8 <= nred <= 18 and 14 <= nloud <= 28, f"{srt}")
+check("the factory sounds read as measured: a spread from quiet to near full scale, about a third of the 4-note chords red, over half yellow or more",
+      dbfs(srt[0]) < -18 and -11 < dbfs(srt[22]) < -7 and dbfs(srt[-1]) > -2 and 8 <= nred <= 20 and 20 <= nloud <= 40, f"{srt}")
 check("... the reading follows the mix itself (the track's own part of it): within -2.5 dB and +0.5 dB of the real peak",
       min(ratio) >= 0.75 and max(ratio) <= 1.06, f"{min(ratio):.2f} .. {max(ratio):.2f}")
 
@@ -260,19 +260,24 @@ def chord_run(name, extra, notes=(29, 36), wave=2, hold=1500, pre=()):
     return tk(line)[0][0], tk(line)[1], int(line.split(" outpk ")[1].split()[0]), cells(tk(line)[0][0])
 
 
-# the user's case: two supersaw notes low down, the DRIVE send up (and DRIVE page AMOUNT, TONE, MIX 100 %): the meter reads the track's driven
-# part of the mix, not the sound before the drive
+# the DRIVE (V3.0: a send effect): two supersaw notes low down, T1's DRIVE send up; what is heard is the DRIVE page's (AMOUNT, TYPE, TONE, MIX = the
+# return): the meter reads the track's part of the mix, the driven sound included; AMOUNT 0 or MIX 0 or no send: the dry sound alone
 dry = chord_run("drv_dry", [fx_set(100, 29, 0)])
-check("two low supersaw notes, no drive: about -11 dBFS, green only (5 segments)", -13 < dbfs(dry[0]) < -9 and dry[3] == 5, f"{dry}")
-seen_dr = {}
+check("two low supersaw notes, no drive: about -12 dBFS, green only (4 segments)", -14 < dbfs(dry[0]) < -10 and dry[3] == LOUD_FROM, f"{dry}")
+page = lambda ty, amt=127, mix=127: [fx_set(105, 20, amt), fx_set(110, 21, ty), fx_set(115, 22, 127), fx_set(120, 23, mix)]
+for nm, extra in (("send 100 %, AMOUNT 0", [fx_set(125, 31, 127)] + page(0, 0)), ("send 100 %, AMOUNT 100 %, MIX 0", [fx_set(125, 31, 127)] + page(0, 127, 0)),
+                  ("no send, AMOUNT 100 %", page(0))):
+    q = chord_run("drv_none", [fx_set(100, 29, 0)] + extra)
+    check(f"DRIVE: {nm}: nothing heard, the meter reads the dry sound", abs(q[0] - dry[0]) <= 0.03 * dry[0] and q[3] == dry[3], f"{q} dry {dry}")
 for ty, nm in enumerate(("SOFT", "FUZZ", "CLIP", "FOLD")):
-    send = chord_run(f"drv_{nm}", [fx_set(100, 29, 0), fx_set(110, 20 + 1, ty), fx_set(120, 31, 127)])
-    both = chord_run(f"drvp_{nm}", [fx_set(100, 29, 0), fx_set(105, 20, 127), fx_set(110, 21, ty), fx_set(115, 22, 127), fx_set(120, 23, 127), fx_set(125, 31, 127)])
-    seen_dr[nm] = (send, both)
-    check(f"DRIVE send 100 % ({nm}): the track's part of the mix {dbfs(send[0]):.1f} dBFS ({send[3]} segments), as the mix itself {dbfs(send[1]):.1f}",
-          0.9 <= send[0] / send[1] <= 1.05 and send[0] > 1.6 * dry[0] and send[3] == {"SOFT": 8, "FUZZ": 8, "CLIP": 7, "FOLD": 6}[nm], f"{send} dry {dry}")
-    check(f"... also with the DRIVE page at 100 % ({nm}): the same reading (the page drives the whole mix, not this track; the output peaks {dbfs(both[2]):.1f} dBFS)",
-          both[0] == send[0] and both[3] == send[3], f"{both} {send}")
+    for amt in (64, 127):
+        q = chord_run(f"drv_{nm}{amt}", [fx_set(100, 29, 0), fx_set(125, 31, 127)] + page(ty, amt))
+        check(f"DRIVE {nm}, AMOUNT {amt * 100 // 127} %, send 100 %: the track's part of the mix {dbfs(q[0]):.1f} dBFS ({q[3]} segments), as the mix itself {dbfs(q[1]):.1f}",
+              0.9 <= q[0] / q[1] <= 1.05 and q[0] > 1.8 * dry[0] and q[3] >= {("SOFT", 64): 8, ("SOFT", 127): 8, ("FUZZ", 64): 8, ("FUZZ", 127): 7,
+                                                                          ("CLIP", 64): 7, ("CLIP", 127): 6, ("FOLD", 64): 7, ("FOLD", 127): 8}[(nm, amt)], f"{q} dry {dry}")
+half = chord_run("drv_half", [fx_set(100, 29, 0), fx_set(125, 31, 60)] + page(1))
+full = chord_run("drv_full", [fx_set(100, 29, 0), fx_set(125, 31, 127)] + page(1))
+check("... the send is how much of the track goes into the drive: half of it reads lower", dry[0] < half[0] < full[0] * 1.01, f"{dry[0]} {half[0]} {full[0]}")
 
 # the measure works only while a meter is on screen (LEVELS, MIXER 1): HOME shows none, so the audio does none of it
 ev = [fx_set(100, 29, 0)] + [(2000, f"midi 0x90 {n} 100") for n in (48, 55, 60, 64)] + [(2100, "probe"), (3300, "probe")]

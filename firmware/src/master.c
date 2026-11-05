@@ -7,11 +7,13 @@
  *     LP with CUTOFF at the top, HP at the bottom: bypassed (nothing done). Each POSITION its own filter and its share
  *     of the sound: a new POSITION (or the filter opened, closed) fades in while the last one fades out, 8 blocks
  *     (~46 ms), the two running together only then: no click.
- *   DRIVE: after SPACE (and MASTER's POST REVERB), before TAPE. AMOUNT: the gain into it, SOFT 1x .. ~8x (the gentlest),
- *     the others 1x .. ~60x; TYPE: SOFT (tanh), FUZZ (tanh, lopsided: even harmonics), CLIP (hard), FOLD (a
- *     wavefolder), each brought to SOFT's loudness at that AMOUNT, at most +6 dB (DR_LEVEL: switching TYPE keeps the
- *     level); TONE: a low-pass after it (the top: none); MIX: the driven sound against the dry. Then a limiter on both sides together: the peak followed at once,
- *     let go over ~90 ms, the sound held at DR_LIM; no look-ahead, no buffer. AMOUNT 0: bypassed (nothing done). */
+ *   DRIVE (V3.0: a send effect, as GRAIN, DELAY and SPACE): the tracks' DRIVE sends (MIXER 1) feed one mono bus; the page says what is
+ *     heard of it. AMOUNT: the gain into the drive, SOFT 1x .. ~8x (the gentlest), the others 1x .. ~60x; TYPE: SOFT (tanh), FUZZ
+ *     (tanh, lopsided: even harmonics), CLIP (hard), FOLD (a wavefolder), each brought to SOFT's loudness at that AMOUNT, at most
+ *     +6 dB (DR_LEVEL: switching TYPE keeps the level); TONE: a low-pass after it (the top: none); MIX: the return, how much of the
+ *     driven bus joins the mix. It joins in the middle, with the tracks' dry mix, before MASTER PRE FX; the driven sound is not
+ *     sent on to GRAIN, DELAY or SPACE. AMOUNT 0 or MIX 0: nothing is heard, whatever the sends. Before V3.0 the page drove the
+ *     whole mix (and a limiter held it) and the sends borrowed its TYPE and TONE with a gain of their own. */
 enum { MP_PRE, MP_POST, MP_END, NMPOS };        /* MASTER's POSITION */
 enum { DT_SOFT, DT_FUZZ, DT_CLIP, DT_FOLD, NDTYPE };   /* DRIVE's TYPE */
 static const char *const MP_NAME[NMPOS] = {"PRE FX", "POST REVERB", "END"};
@@ -19,15 +21,13 @@ static const char *const MP_SHORT[NMPOS] = {"PRE", "POST", "END"};
 static const char *const DT_NAME[NDTYPE] = {"SOFT", "FUZZ", "CLIP", "FOLD"};
 static volatile int32_t mf_cut = 127, mf_res, mf_type, mf_pos = MP_END;   /* MASTER's knobs (open: bypassed) */
 static volatile int32_t dr_amt, dr_type, dr_tone = 127, dr_mix = 127;   /* DRIVE's (AMOUNT 0: bypassed) */
-#define DR_LIM 30000                            /* the limiter's ceiling (Q15: ~-0.8 dB) */
 #define DR_TOP 26000                            /* CLIP's and FOLD's (and FUZZ's offset's) level */
 static const uint16_t DR_LEVEL[NDTYPE][9] = {   /* each TYPE's gain (Q12) at AMOUNT 0, 16 .. 128: SOFT's loudness, at most
                                                  * +6 dB (tools/gen_drive_levels.py) */
     {4096, 4096, 4096, 3956, 3286, 2691, 2251, 1924, 1698}, {4365, 3404, 2741, 2253, 1716, 1393, 1226, 1142, 1099},
     {4014, 3068, 2488, 2120, 1706, 1491, 1388, 1333, 1304}, {4014, 3083, 2650, 2474, 2240, 2204, 2186, 2186, 2184}};
-static int32_t mf_cs[NMPOS], mf_ic[NMPOS][2][4], mf_mx[NMPOS], dr_lp[2], dr_env;   /* audio: MASTER at each POSITION:
-                                                 * its cutoff now, its states, its share (0 .. MF_ONE); DRIVE's TONE's,
-                                                 * the limiter's peak */
+static int32_t mf_cs[NMPOS], mf_ic[NMPOS][2][4], mf_mx[NMPOS];   /* audio: MASTER at each POSITION: its cutoff now, its
+                                                 * states, its share (0 .. MF_ONE) */
 #define MF_ONE 256
 #define MF_STEP 32                              /* (a share's change a block: 8 blocks) */
 /* one side's m frames (p: every other int, L or R) through the SVF c, its TYPE's output; the states in s (the chip:
@@ -138,55 +138,30 @@ static void dr_wet(const int32_t *x, int32_t *w, uint32_t n, uint32_t ty, int32_
     }
 }
 #undef DR_RUN
-/* (V2) the tracks' DRIVE sends (MIXER 1): their bus (mono) driven as DRIVE drives, by its TYPE and TONE, at a gain
- * of its own (DV_AMT: the send's level is how hard it hits it), level-matched (DR_LEVEL), back into the mix in the
- * middle; after the tracks, before MASTER PRE. No send up: never called. DRIVE's AMOUNT, MIX, limiter: the whole mix's */
-#define DV_AMT 80
-static int32_t dv_lp;                           /* audio: its TONE's state */
+/* (V3.0) the DRIVE page's effect on the tracks' DRIVE sends (MIXER 1): their bus (mono) driven by AMOUNT and TYPE, level-matched
+ * (DR_LEVEL), darkened by TONE, MIX the return (a ramp over the block: AMOUNT or MIX to 0 fades it out), back into the mix in the
+ * middle; after the tracks, before MASTER PRE. Called while a send is up or just was (xb_used) */
+static int32_t dv_lp, dv_rg;                    /* audio: its TONE's state; the return gain last block (Q15) */
+static int dr_on(void) { return dr_amt > 0 && dr_mix > 0; }   /* the page lets the drive be heard */
+static int32_t dr_return(void) { return dr_on() ? clamp(dr_mix, 0, 127) * 258 : 0; }   /* MIX: the return gain (Q15; 127: 32766) */
 static void drive_send(int32_t *out, uint32_t n)
 {
     uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), i;
-    int32_t g = dr_gain(ty, DV_AMT), lv = dr_level(ty, DV_AMT), l = dv_lp, y;
+    int32_t a = clamp(dr_amt, 0, 127), g = dr_gain(ty, a), lv = dr_level(ty, a), l = dv_lp, y;
+    int32_t rg0 = dv_rg, rg1 = dr_return(), r = rg0 << 8, dr = ((rg1 - rg0) << 8) / (int32_t)n;   /* (8 bits more: small steps) */
     int32_t tc = dr_tone >= 127 ? 32768 : (int32_t)(pow2_q16((clamp(dr_tone, 0, 127) - 127) * 12) >> 1) + 160;
+    dv_rg = rg1;
+    if (!(rg0 | rg1)) {                         /* (off, and was: the tone's state let go) */
+        dv_lp = 0;
+        return;
+    }
     dr_wet(vbus, vbus, n / 2u, ty, g, lv);      /* (n mono: as n / 2 frames of two) */
     for (i = 0; i < n; i++) {
         y = vbus[i];
         if (tc < 32768) l += ((y - l) >> 1) * tc >> 14, y = l;
+        r += dr;
+        y = mulq15(y, r >> 8);
         out[2u * i] += y, out[2u * i + 1u] += y;
     }
     dv_lp = l;
-}
-static void drive_render(int32_t *out, uint32_t n)   /* audio: DRIVE and its limiter on the mix (n frames, L R) */
-{
-    int32_t a = clamp(dr_amt, 0, 127), g, lv, tc, mx, env = dr_env, l0 = dr_lp[0], l1 = dr_lp[1];
-    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1), i, j, m;
-    if (!a) {                                   /* (bypassed: from silence when it comes back) */
-        dr_env = dr_lp[0] = dr_lp[1] = 0;
-        return;
-    }
-    g = dr_gain(ty, a), lv = dr_level(ty, a);
-    tc = dr_tone >= 127 ? 32768 : (int32_t)(pow2_q16((clamp(dr_tone, 0, 127) - 127) * 12) >> 1) + 160;   /* (Q15:
-                                                 * open, then down an octave every 16 steps, ~100 Hz at 0) */
-    mx = clamp(dr_mix, 0, 127) * 258;           /* (Q15: 127 is 32766, the dry all but gone) */
-    for (j = 0; j < n; j += VB / 2u) {          /* (VB / 2 frames at a time: the driven sound in the DLY bus, free by
-                                                 * now, VB ints) */
-        int32_t *x = out + 2u * j;
-        m = n - j < VB / 2u ? n - j : VB / 2u;
-        dr_wet(x, dbus, m, ty, g, lv);
-        for (i = 0; i < m; i++) {
-            int32_t xl = x[2u * i], xr = x[2u * i + 1u], yl = dbus[2u * i], yr = dbus[2u * i + 1u], al, ar;
-            if (tc < 32768)                     /* TONE */
-                l0 += ((yl - l0) >> 1) * tc >> 14, l1 += ((yr - l1) >> 1) * tc >> 14, yl = l0, yr = l1;
-            if (mx < 32766)                     /* MIX */
-                yl = xl + (((yl - xl) >> 2) * mx >> 13), yr = xr + (((yr - xr) >> 2) * mx >> 13);
-            al = yl < 0 ? -yl : yl, ar = yr < 0 ? -yr : yr, al = al > ar ? al : ar;
-            env = al > env ? al : env - (env >> 12);   /* the limiter: the peak at once, let go over ~90 ms */
-            if (env > DR_LIM) {
-                int32_t gl = (int32_t)(((uint32_t)DR_LIM << 15) / (uint32_t)env);   /* (Q15) */
-                yl = (int32_t)(((int64_t)yl * gl) >> 15), yr = (int32_t)(((int64_t)yr * gl) >> 15);
-            }
-            x[2u * i] = yl, x[2u * i + 1u] = yr;
-        }
-    }
-    dr_env = env, dr_lp[0] = l0, dr_lp[1] = l1;
 }

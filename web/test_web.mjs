@@ -761,6 +761,10 @@ check(saved === null, `settings: ${saved ? `saved at ${saved.ms} ms` : "not save
         /repeat\(8, minmax\(0, 1fr\)\)/.test(html) && /@media \(min-width: 900px\) \{ \.sqgrid/.test(html) && /canWrite\(OBJ\.SLOT \+ k, next/.test(js) &&
         /grimm-slot-\$\{L\}-backup/.test(js) && /slotWithPatterns\(cur, sq\.pats\)/.test(js) && /type: "reply"/.test(readFileSync("web/worklet.js", "utf8")),
         "editor page: the SEQUENCER section (grid 8 wide on a phone, 16 on a computer; IMPORT, SEND with a probe and a backup first, PREVIEW, files)");
+  check(/From GR!MM 3\.0 DRIVE is a send effect, like GRAIN, DELAY and SPACE/.test(html) && /AMOUNT 0 or MIX 0 =\s+no drive heard anywhere, whatever the sends/.test(html) &&
+        /On GR!MM 2\.x the DRIVE page drives the whole mix/.test(html) && /page === "DRIVE"/.test(js) && /HEARD THROUGH THE TRACKS' DRIVE SENDS/.test(js) &&
+        /GR!MM 2\.X: DRIVES THE WHOLE MIX/.test(js),
+        "editor page: the FX note and the DRIVE group say it is a send effect from GR!MM 3.0 (AMOUNT 0 or MIX 0: none heard), and what 2.x does");
   check(["sq-song", "sq-song-blocks", "sq-song-mode", "sq-song-read", "sq-song-send", "sq-song-need", "sq-song-st"].every((i) => html.includes(`id="${i}"`)) &&
         html.indexOf('id="sq-song"') > html.indexOf('id="sq-grid"') && html.indexOf('id="sq-song"') < html.indexOf('id="s-samples"') &&
         /NEEDS GR!MM 3\.0<\/span>/.test(html) && /<option value="0">OFF<\/option><option value="1">SONG<\/option><option value="2">LOOP<\/option>/.test(html) &&

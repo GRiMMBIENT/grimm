@@ -867,6 +867,9 @@ function drawFx() {
   FX_PAGES.forEach(([page, knobs], p) => {
     const g = el("div", { cls: "grp" }, box);
     el("h3", {}, g, page);
+    if (page === "DRIVE")                                    // (GR!MM 3.0: a send effect; 2.x: the whole mix)
+      el("p", { cls: "note" }, g, !conn || songSupported(conn.info.firmware) ? "HEARD THROUGH THE TRACKS' DRIVE SENDS (TRACK SENDS BELOW); AMOUNT 0 OR MIX 0: NONE" :
+         "GR!MM 2.X: DRIVES THE WHOLE MIX; THE TRACK SENDS BORROW ITS TYPE AND TONE");
     knobs.forEach((kn, k) => {
       const i = p * 4 + k, set = (x) => { v[i] = x; fxSend(i, x); };
       if (Array.isArray(kn)) choice(g, kn[0], kn[1], () => v[i], set, true);

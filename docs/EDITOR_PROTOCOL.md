@@ -296,7 +296,7 @@ Request: `op`, then for SET `i`, `v`.
 The values, in order: TAPE (WOW, SATURATION, TONE, HISS), GRAIN (SIZE, DENSITY, SCATTER, MIX), DELAY (TIME, FEEDBACK,
 WEAR, MIX), SPACE (SIZE, DAMP, MIX, PRE-DELAY), MASTER (CUTOFF, RESONANCE, TYPE 0 LP / 1 HP / 2 BP, POSITION 0 PRE FX /
 1 POST REVERB / 2 END), DRIVE (AMOUNT, TYPE 0 SOFT / 1 FUZZ / 2 CLIP / 3 FOLD, TONE, MIX): each 0..127 (or its list),
-as the FM-1's knobs; then T1..T4's filter (MIXER 2): TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST); then T1..T4's
+as the FM-1's knobs (GR!MM 3.0: DRIVE's four are what the tracks' DRIVE sends get, a send effect like GRAIN, DELAY and SPACE; AMOUNT 0 or MIX 0: no drive heard, whatever the sends; before 3.0 they drove the whole mix); then T1..T4's filter (MIXER 2): TYPE (0 LP, 1 HP, 2 BP) + 4 × POS (0 PRE, 1 POST); then T1..T4's
 sends (MIXER 1), four a track: DLY, REV, GRAIN, DRIVE (0..127; value 28 + 4 × track + send); then T1..T4's TAPE
 sends (0..127; value 44 + track). A value out of its range is set to the nearest end.
 

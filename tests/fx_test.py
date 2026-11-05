@@ -3,7 +3,8 @@
 # Copyright (C) 2026 GR!MM
 """GR!MM V2's effects in host mode (tests/run_host.sh): the track filter's TYPE (LP, HP, BP) and POS (PRE, POST: the
 sends unfiltered), MASTER (a filter at PRE FX, POST REVERB, END; open: as without it, to the byte), DRIVE (its four
-TYPEs, its limiter; AMOUNT 0: as without it, to the byte), and their saves (a V1.0 project: LP PRE, MASTER open, DRIVE
+TYPEs; V3.0: a send effect, heard only through the tracks' DRIVE sends; AMOUNT 0 or MIX 0 or no send: as without it, to the
+byte), and their saves (a V1.0 project: LP PRE, MASTER open, DRIVE
 off; V2's: as set). A held saw chord on T1 through each; the sound measured: its level (RMS), its highs (the RMS of
 its slope) and its lows (the RMS of a 64-frame average). Prints a line a check, exit 1 on a failure.
   python3 tests/fx_test.py [build/host/grimm]"""
@@ -86,27 +87,41 @@ for pos, steps in (("PRE FX", -2), ("POST REVERB", -1), ("END", 0)):
 mh, _, _ = run("m_hp", FX(5) + [(1200, "enc 4 1"), (1300, "enc 2 -40")])   # (HP at 87)
 r, h, lo_, _ = measure(mh)
 check("MASTER HP: the lows down", lo_ < lb * 0.5, f"lo {lo_:.0f}/{lb:.0f}")
-# DRIVE: AMOUNT 0 (TYPE turned, still off): the same bytes; each TYPE its own sound; a loud chord at full: limited
-d0, _, d0_b = run("d_off", FX(6) + [(1200, "enc 3 2"), (1300, "enc 4 -30")])
-check("DRIVE off (AMOUNT 0): the sound as without it, to the byte", d0_b == base_b)
+# DRIVE (V3.0: a send effect as GRAIN, DELAY, SPACE): the page says what is heard of the tracks' DRIVE sends (MIXER 1, T1's tile).
+# The page alone, with no send up, is heard nowhere; the sends with AMOUNT 0 or MIX 0 neither: the same bytes as without
+DSEL = [(300, "btn 8"), (310, "enc 0 5")]      # (MIXER 1, DRIVE's tile)
+for ty in range(4):
+    d, _, db = run(f"d_page_{ty}", FX(6) + [(1200, "enc 2 100"), (1300, f"enc 3 {ty}")])
+    check(f"DRIVE page at 100 % ({['SOFT', 'FUZZ', 'CLIP', 'FOLD'][ty]}), no send up: nothing is driven, to the byte", db == base_b)
+d0, _, d0_b = run("d_off", DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 3 2")])
+check("a DRIVE send at 100 %, the page's AMOUNT 0 (TYPE turned): nothing heard, to the byte", d0_b == base_b)
+dm, _, dm_b = run("d_mix0", DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 2 100"), (1300, "enc 5 -127")])
+check("a DRIVE send at 100 %, AMOUNT 100 %, MIX turned to 0: nothing heard after its fade, to the byte",
+      dm[2 * 44100 * 2500 // 1000:] == base[2 * 44100 * 2500 // 1000:])
 outs = []
 for ty in range(4):
-    d, _, db = run(f"d_{ty}", FX(6) + [(1200, "enc 2 100"), (1300, f"enc 3 {ty}")])
+    d, _, db = run(f"d_{ty}", DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 2 100"), (1300, f"enc 3 {ty}")])
     outs.append(db)
     r, h, lo_, pk = measure(d)
-    check(f"DRIVE {['SOFT', 'FUZZ', 'CLIP', 'FOLD'][ty]}: driven (louder, changed), within the limiter",
-          r > rb * 1.2 and db != base_b and pk <= 30200, f"rms {r:.0f}/{rb:.0f} peak {pk}")
+    check(f"DRIVE {['SOFT', 'FUZZ', 'CLIP', 'FOLD'][ty]}: T1's send at 100 %, AMOUNT 100 %: driven beside the clean sound (louder, changed), within range",
+          r > rb * 1.2 and db != base_b and pk <= 32440, f"rms {r:.0f}/{rb:.0f} peak {pk}")
 check("DRIVE: the four TYPEs sound different", len(set(outs)) == 4)
-loud, _, _ = run("d_loud", [(1000, "keys 0x1f0ff")] + FX(6) + [(1200, "enc 2 127"), (1300, "enc 4 -127")])
+loud, _, _ = run("d_loud", [(1000, "keys 0x1f0ff")] + DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 2 127"), (1300, "enc 4 -127")])
 _, _, _, pk = measure(loud)
-check("DRIVE full on a big chord, TONE closed: the limiter holds it (no clipping)", pk <= 30200, f"peak {pk}")
-# DRIVE's levels: at one AMOUNT the four TYPEs within ~1.5 dB of each other; SOFT the gentlest (its highs the least)
+check("DRIVE full on a big chord, TONE closed: the output limiter holds it (no clipping)", pk <= 32440, f"peak {pk}")
+# the send is how much of the track goes into the drive: half of it, a smaller driven part
+half, _, half_b = run("d_half", DSEL + [(400, "enc 2 60")] + FX(6) + [(1200, "enc 2 100")])
+full, _, full_b = run("d_full", DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 2 100")])
+check("the DRIVE send is how much goes into the drive: 47 % of it is driven less than 100 % (and more than none)",
+      base_b != half_b != full_b and measure(base)[0] < measure(half)[0] < measure(full)[0] * 1.001,
+      f"{measure(base)[0]:.0f} {measure(half)[0]:.0f} {measure(full)[0]:.0f}")
+# DRIVE's levels: at one AMOUNT the four TYPEs about as loud; SOFT the gentlest (its highs the least)
 lv = []
 for ty in range(4):
-    d, _, _ = run(f"dl_{ty}", FX(6) + [(1200, "enc 2 80"), (1300, f"enc 3 {ty}")])
+    d, _, _ = run(f"dl_{ty}", DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 2 80"), (1300, f"enc 3 {ty}")])
     lv.append(measure(d)[:2])
 rs = [r for r, _ in lv]
-check("DRIVE at AMOUNT 80: SOFT, FUZZ, CLIP, FOLD about as loud (within 1.5 dB)", max(rs) / min(rs) < 1.19,
+check("DRIVE at AMOUNT 80 (send 100 %): SOFT, FUZZ, CLIP, FOLD about as loud (within 2 dB)", max(rs) / min(rs) < 1.26,
       " ".join(f"{r:.0f}" for r in rs))
 check("DRIVE: SOFT the gentlest (the least highs of the four)", lv[0][1] == min(h for _, h in lv),
       " ".join(f"{h:.0f}" for _, h in lv))
@@ -143,18 +158,18 @@ check("saved and loaded: MASTER, DRIVE, the track filter as set", want in p1 and
 _, p3, _ = run("v10", [(1050, "keys 0")], 1500, dict(os.environ, GRIMM_SAVE_IN="tests/data/v1.0-saves.bin"))
 check("a GR!MM 1.0 project: LP PRE, MASTER open (END), DRIVE off", "fx mf 127,0,0,2 dr 0,0,127,127 ft 0 0 0 0" in p3,
       p3.split(" fx ")[-1])
-# (V2) the tracks' DRIVE sends (MIXER 1: SELECT to DRIVE, KNOB 1): 0, the sound as without; up, T1's chord driven
-# beside its clean sound, by DRIVE's TYPE (the whole mix's DRIVE left off); saved, loaded; a 1.0 project: none
-DSEL = [(300, "btn 8"), (310, "enc 0 5")]      # (MIXER 1, DRIVE's tile)
-_, _, z_b = run("dv_zero", DSEL + [(400, "enc 2 60"), (450, "enc 2 -60")])
+# (V2) the tracks' DRIVE sends (MIXER 1: SELECT to DRIVE, KNOB 1): 0, the sound as without; up (with the page's AMOUNT up, V3.0), T1's chord
+# driven beside its clean sound, by DRIVE's TYPE; saved, loaded; a 1.0 project: none
+AMT = FX(6) + [(1200, "enc 2 100")]            # (the DRIVE page: AMOUNT 100 %)
+_, _, z_b = run("dv_zero", DSEL + [(400, "enc 2 60"), (450, "enc 2 -60")] + AMT)
 check("a DRIVE send turned up and back to 0: the sound as without it, to the byte (after its ramp: the block it went)",
       measure(array.array("h", z_b[44:]), 2500, 4000) == measure(base, 2500, 4000))
-dv, dvp, dv_b = run("dv_up", DSEL + [(400, "enc 2 127")])
+dv, dvp, dv_b = run("dv_up", DSEL + [(400, "enc 2 127")] + AMT)
 r, h, lo_, pk = measure(dv)
 check("T1's DRIVE send up: the chord driven beside its clean sound (louder, brighter, changed; in range)",
       r > rb * 1.1 and h > hb * 1.2 and dv_b != base_b and pk <= 32767, f"rms {r:.0f}/{rb:.0f} hi {h:.0f}/{hb:.0f}")
-_, _, dvf_b = run("dv_fold", DSEL + [(400, "enc 2 127")] + FX(6) + [(1200, "enc 3 3")])
-check("the DRIVE send by DRIVE's TYPE (FOLD: another sound), its AMOUNT left at 0", dvf_b != dv_b)
+_, _, dvf_b = run("dv_fold", DSEL + [(400, "enc 2 127")] + AMT + [(1300, "enc 3 3")])
+check("the DRIVE send by DRIVE's TYPE (FOLD: another sound)", dvf_b != dv_b)
 SV = DSEL + [(400, "enc 2 90"), (1700, "keys 0")]
 _, p1, _ = run("dv_save", SV, 9000, dict(os.environ, GRIMM_SAVE_OUT=str(OUT / "dsaves.bin")))
 _, p2, _ = run("dv_load", [(1050, "keys 0")], 1500, dict(os.environ, GRIMM_SAVE_IN=str(OUT / "dsaves.bin")))

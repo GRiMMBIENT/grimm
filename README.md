@@ -24,7 +24,7 @@ Free and open source (GPL-3.0). Unofficial firmware, not made or endorsed by M-V
 - **GLIDE** on every source; PHASE with a second line, ring mod, noise and its own envelopes
 - **44 factory sounds** in 8 categories (PAD, DRONE, BELL, VOICE, ORGAN, KEYS, OTHER, TEXTURE), plus 64 slots for your own, with names you give them in the editor
 - **4 factory samples** (URCHIN, LEAVE, NIKOLAI, M-SOFT; CC0) in the four sample slots, which you can replace with your own (6.6 s each)
-- **Effects:** TAPE per track (a TAPE tile per track on MIXER 1: worn-tape slips, saturation, tone, hiss), GRAIN (a granular cloud with FREEZE), DELAY (tape echo), SPACE (reverb up to ~32 s, and infinite), MASTER (a stereo LP / HP / BP filter over everything) and DRIVE (soft, fuzz, clip or wavefold, with a limiter)
+- **Effects:** TAPE per track (a TAPE tile per track on MIXER 1: worn-tape slips, saturation, tone, hiss), GRAIN (a granular cloud with FREEZE), DELAY (tape echo), SPACE (reverb up to ~32 s, and infinite), MASTER (a stereo LP / HP / BP filter over everything) and DRIVE (soft, fuzz, clip or wavefold: a send effect, heard through each track's DRIVE send)
 - **Mixer:** level, delay, reverb, tape, grain and drive per track
 - **Per track:** envelope, LFO, a low-, high- or band-pass filter (before or after the effect sends), scale snapping, one-key chords, arpeggiator, latch for drones
 - **Sequencer:** 64 steps per track, chance, ratchets, note lengths, step locks, chord steps, tools (random, mutate, shift, double, copy/paste)
