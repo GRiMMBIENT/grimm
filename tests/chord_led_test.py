@@ -5,7 +5,9 @@
   - the SEL button's light: LIT and steady = the selected track's chord mode is on (on any page, the SCALE / CHORD pages too); the
     SCALE or CHORD page open with chord off = a SLOW BLINK of the full light (0.8 s lit, 0.8 s dark, from the page's opening),
     never fast: SEL's LED is written once a pass, with its final value (a lit-then-dark write in one pass flickered on the
-    device); DARK = neither; it follows chord on / off and the selected track
+    device); DARK = neither; it follows chord on / off and the selected track. The blink's TIME is kept by the key-scan tick
+    (hal/fm1_input.h, FM1_BLINK_MS; here the host's clock stands in for it): the main loop only asks for the blink, the same value
+    every pass, and is tested for that
   - HOME: a small "CHD" tag under the track's name while that track's chord mode is on (T1 .. T4 each its own), with CUT / DRY
     under it when both show (the probe's slab warning: +4 for CHD); the screen's pixels read too
   python3 tests/chord_led_test.py [build/host/grimm]"""
@@ -21,6 +23,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 SEL, HOME = 3, 8
 ALGO, K2, K4 = 1, 3, 5                          # encoders: ALGORITHM (the track), KNOB 2 (CUTOFF), KNOB 4 (FX)
 bad = 0
+litw, blw = [], []                              # SEL's lit layer, and the blink asked for: every write that changed them
 
 
 def check(what, ok, detail=""):
@@ -40,6 +43,9 @@ def run(name, ev, end):
     out = subprocess.run([EXE, str(OUT / name), str(path)], capture_output=True, text=True, check=True,
                          env=dict(os.environ, GRIMM_LED_LOG="1")).stdout
     leds = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"^\s*(\d+) ms  led SEL (\d)$", out, re.M)]
+    global litw, blw
+    litw = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"^\s*(\d+) ms  led SELLIT (\d)$", out, re.M)]
+    blw = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"^\s*(\d+) ms  led SELBL (\d)$", out, re.M)]
     probes = {int(ln.split()[1]): ln for ln in out.splitlines() if ln.startswith("probe ")}
     return leds, probes
 
@@ -100,6 +106,10 @@ check("SEL blink: SCALE page open, chord off: lit, dark, lit, dark, lit, dark (0
 edges = [x for x in leds if 6000 < x[0] <= 11000]
 check("SEL blink: the only writes are the blink's edges, 0.8 s apart, from the opening (no fast flicker, no lit blip)",
       [s for _, s in edges] == [1, 0, 1, 0, 1, 0, 1] and all(abs(t - (6100 + 800 * k)) <= 30 for k, (t, _) in enumerate(edges)), str(edges))
+check("SEL blink: the main loop never writes the light while chord mode is off and asks for the blink once (on at the page's opening, off at "
+      "HOME): the key-scan tick keeps the time (hal/fm1_input.h), nothing in the loop toggles it",
+      [w for w in litw if w[0] < 11500] == [] and [v for t, v in blw if t < 11500] == [1, 0] and 6100 <= blw[0][0] <= 6200 and
+      11100 <= blw[1][0] <= 11200, str(litw) + str(blw))
 after = [x for x in leds if x[0] > 11000]
 check("SEL: chord on (hold at 11500): lit once, steady for 3 s on HOME and the SCALE page (no change after)",
       [s for _, s in after] == [0, 1] and 12100 <= after[1][0] <= 12500, str(after))

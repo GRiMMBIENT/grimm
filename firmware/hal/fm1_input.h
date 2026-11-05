@@ -40,7 +40,8 @@
  * read before it is unchanged). fm1_led_dim[col]: the glow (landmarks, notes under tiles), FM1_GLOW_NS
  * (~1/24 of a lit LED); fm1_led_bg[col]: the backlight (menu LIGHTS), fm1_led_bg_ns, shorter. TIMER4
  * times the pulses bit by bit; only a pulse longer than the whole shift waits for the rest. An LED in
- * several layers takes the brightest. fm1_led_key/btn helpers address them by id.
+ * several layers takes the brightest. fm1_led_key/btn helpers address them by id. GR!MM V3.0: fm1_led_blink[col], a slow
+ * blink of the full light kept by the tick (fm1_led_blink_key).
  */
 #pragma once
 #include <stdint.h>
@@ -87,6 +88,16 @@ static uint8_t fm1_led[FM1_NCOL];
 static uint8_t fm1_led_dim[FM1_NCOL];   /* same layout as fm1_led: the glow */
 static uint8_t fm1_led_bg[FM1_NCOL];    /* same layout: the backlight (labels readable in the dark) */
 static volatile uint16_t fm1_led_bg_ns; /* the backlight pulse a frame (ns), 0 = off (menu LIGHTS) */
+/* GR!MM V3.0: a slow blink of the full light, kept by the key-scan tick itself (the main loop only says which LEDs blink: it
+ * writes them once a pass and never toggles them, so no write of its own can show as a flicker, and a slow pass cannot hold
+ * a LED half way): fm1_led_blink[col], same layout; lit FM1_BLINK_MS, dark as long, from the moment one LED was asked to blink */
+#ifndef FM1_BLINK_MS
+#define FM1_BLINK_MS 800u
+#endif
+static uint8_t fm1_led_blink[FM1_NCOL];
+static uint32_t fm1__bl_t0;                     /* (the tick's: when the phase began) */
+static uint8_t fm1__bl_dark;                    /* (the tick's: 1 in the dark half) */
+#define FM1__LIT(c) ((uint32_t)fm1_led[c] | (fm1__bl_dark ? 0u : (uint32_t)fm1_led_blink[c]))   /* what column c lights now */
 
 static void fm1__led_lines(uint32_t rowmask)
 {
@@ -296,9 +307,12 @@ static void fm1__frame(void)
 static uint8_t fm1__tick_col;
 static void fm1_input_tick(void)
 {
+    uint32_t now = fm1_ticks();
+    if (now - fm1__bl_t0 >= FM1_BLINK_MS * 1000u * FM1_TICKS_PER_US)   /* the blink's half cycle is up (a stalled tick: one step, no catching up) */
+        fm1__bl_t0 = now, fm1__bl_dark ^= 1u;
     uint32_t p = fm1__tick_col, n = p + 1u == FM1_NCOL ? 0u : p + 1u, i;
     uint32_t w = 0xFFFFu ^ (1u << n) ^ (n < 2u ? 1u << (11u + n) : 0u);
-    uint32_t lit = fm1_led[p], a = fm1_led_dim[p] & ~lit, b = fm1_led_bg[p] & ~lit & ~a;
+    uint32_t lit = FM1__LIT(p), a = fm1_led_dim[p] & ~lit, b = fm1_led_bg[p] & ~lit & ~a;
     uint32_t ta = a ? FM1__NS_T(FM1_GLOW_NS) : 0u, tb = b ? FM1__NS_T(fm1_led_bg_ns) : 0u;
     uint32_t tmax = ta > tb ? ta : tb;
     fm1__led_lines(0);
@@ -321,7 +335,7 @@ static void fm1_input_tick(void)
     } else {
         fm1__sr_word(w);
     }
-    fm1__led_lines(fm1_led[n]);
+    fm1__led_lines(FM1__LIT(n));
     fm1__tick_col = (uint8_t)n;
     fm1__keys(p);                                  /* its keys now: no wait for the frame's end */
     if (n == 0u)
@@ -382,6 +396,24 @@ static void fm1_led_glow(uint32_t id, int on)
                     fm1_led_dim[p] |= (uint8_t)(1u << r);
                 else
                     fm1_led_dim[p] &= (uint8_t)~(1u << r);
+            }
+}
+
+/* the blink of key id's LED (button 0..13 or note key 14..40): on = it blinks, from lit (the phase restarts when none blinked before) */
+static void fm1_led_blink_key(uint32_t id, int on)
+{
+    uint32_t p, r, any = 0;
+    for (p = 0; p < FM1_NCOL; p++)
+        any |= fm1_led_blink[p];
+    for (p = 0; p < FM1_NCOL; p++)
+        for (r = 1; r < 5u; r++)
+            if (FM1_KEYMAP[r][p] == (int8_t)id) {
+                if (on && !any)
+                    fm1__bl_dark = 0, fm1__bl_t0 = fm1_ticks();   /* (the first to blink: it starts lit) */
+                if (on)
+                    fm1_led_blink[p] |= (uint8_t)(1u << r);
+                else
+                    fm1_led_blink[p] &= (uint8_t)~(1u << r);
             }
 }
 
