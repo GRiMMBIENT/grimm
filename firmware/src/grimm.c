@@ -997,12 +997,15 @@ static void key_ask(uint32_t c, uint32_t t, uint32_t id, uint32_t note, int echo
                                                  * key's: that one's echo went out) */
     int32_t h;
     if (trk[t].arp) {
-        if (c == NQ_TOGGLE && (h = arp_root(t, note)) >= 0) arp_take(t, (uint32_t)h, h < 27);
+        if (c == NQ_TOGGLE && arp_has(t, id)) arp_take(t, id, id < 27u);   /* (V3.0: the key's own note first: a lit key switches its own note
+                                                 * off, whatever pitch it plays now (the octave moved) */
+        else if (c == NQ_TOGGLE && (h = arp_root(t, note)) >= 0) arp_take(t, (uint32_t)h, h < 27);
         else if (c == NQ_ON || c == NQ_TOGGLE) arp_add(t, id, note, echo);
         else if (arp_has(t, id)) arp_take(t, id, echo);
         return;
     }
-    if (c == NQ_TOGGLE && (h = note_find_root(t, note)) >= 0) note_off(t, lat_id[h], SRC_KEY, lat_id[h] < 27u);
+    if (c == NQ_TOGGLE && note_find(t, id, SRC_KEY) >= 0) note_off(t, id, SRC_KEY, id < 27u);   /* (V3.0: its own note first, as above) */
+    else if (c == NQ_TOGGLE && (h = note_find_root(t, note)) >= 0) note_off(t, lat_id[h], SRC_KEY, lat_id[h] < 27u);
     else if (c == NQ_ON || c == NQ_TOGGLE) note_on(t, id, note, SRC_KEY, echo, -1);
     else note_off(t, id, SRC_KEY, echo);
 }
@@ -2215,7 +2218,7 @@ static void app_main(void)
 #endif
 
     for (;;) {
-        uint32_t keys, down, up, rel, b, n, lit = 0, base = (uint32_t)(KEY0 + 12 * set.oct);
+        uint32_t keys, down, up, rel, b, n, lit = 0, blk = 0, base = (uint32_t)(KEY0 + 12 * set.oct);
         uint8_t st, d1, d2;
         int32_t d;
         platform_poll();
@@ -2579,22 +2582,27 @@ static void app_main(void)
                                                  * number as it came, a step's note */
             uint32_t id = lat_id[k], o = lat_src[k] == SRC_SEQ ? lat_root[k] : id >= MIDI_ID(0) ? id - MIDI_ID(0) : 255u;
             if (lat_trk[k] != sel || lat_src[k] == SRC_ARP) continue;   /* (the arp's: its keys, below) */
-            if (lat_src[k] == SRC_KEY && id < 27u) lit |= 1u << id;
-            else if (o >= base && o < base + 27u) lit |= 1u << (o - base);
+            if (lat_src[k] == SRC_KEY && id < 27u) {   /* (V3.0: a latched hand-played note: its key steady; the octave moved so its key plays
+                                                 * another pitch now: the key blinks) */
+                if (trk[sel].latch && lat_root[k] != sc_snap(base + id)) blk |= 1u << id;
+                else lit |= 1u << id;
+            } else if (o >= base && o < base + 27u) lit |= 1u << (o - base);
         }
         for (k = 0; k < arp[sel].n && k < ARP_N; k++) {   /* ARP: the keys (MIDI notes) in its list */
             uint32_t id = arp[sel].id[k], o = id >= MIDI_ID(0) ? id - MIDI_ID(0) : 255u;
-            if (id < 27u) lit |= 1u << id;
-            else if (o >= base && o < base + 27u) lit |= 1u << (o - base);
+            if (id < 27u) {                     /* (V3.0: the same for the arp's list: its root is the note the key played) */
+                if (trk[sel].latch && arp[sel].root[k] != sc_snap(base + id)) blk |= 1u << id;
+                else lit |= 1u << id;
+            } else if (o >= base && o < base + 27u) lit |= 1u << (o - base);
         }
         if (b_down >> BTN_SEQ & 1u)             /* (SEQ held: the tools' eight keys lit) */
             for (k = 0; k < 8u; k++) lit |= 1u << WK[k];
         if (b_down >> BTN_SEQ & 1u)             /* (V3.0: F#3 lit while CLICK is on) */
             lit |= (cl_on & 1u) << BK[0];
         if (glo_held)                           /* (GLO held: keys 1..4 lit for the tracks muted, 5..8 soloed) */
-            for (lit = 0, k = 0; k < 4u; k++) lit |= (trk_mute >> k & 1u) << WK[k] | (trk_solo >> k & 1u) << WK[4u + k];
+            for (lit = blk = 0, k = 0; k < 4u; k++) lit |= (trk_mute >> k & 1u) << WK[k] | (trk_solo >> k & 1u) << WK[4u + k];
         if (save_held)                          /* (SAVE held: keys 1..4 lit for the slots used) */
-            for (lit = 0, k = 0; k < 4u; k++) lit |= (uint32_t)slot_used(k) << WK[k];
+            for (lit = blk = 0, k = 0; k < 4u; k++) lit |= (uint32_t)slot_used(k) << WK[k];
         if (b_down >> BTN_FX & 1u) {            /* (FX held: the eight tricks' keys glow; one on: lit; V2: GENERATE's
                                                  * eight black keys glow, T1 .. T4's lit while they generate) */
             for (k = 0; k < 8u; k++) lit |= (k ? pf_held >> (k - 1u) & 1u : ge_freeze & 1u) << WK[k];
@@ -2604,6 +2612,7 @@ static void app_main(void)
             lit |= 1u << BK[0];                 /* (V3.0: CLICK on, playing: F#3 flashes with every click, longer on beat 1; a
                                                  * note's light on it is on anyway, the note wins; no flash where the key
                                                  * means something else: SEQ / GLO / SAVE / FX held) */
+        blk &= ~lit;                            /* (a key lit steady for another reason: steady) */
         for (k = 0; k < 27u; k++) {
             uint32_t wk, bk;
             for (wk = 0; wk < 8u && WK[wk] != k; wk++)
@@ -2611,6 +2620,8 @@ static void app_main(void)
             for (bk = 0; bk < 8u && BK[bk] != k; bk++)
                 ;
             fm1_led_key(KEY_LED(k), lit >> k & 1u);
+            fm1_led_blink_key(KEY_LED(k), blk >> k & 1u);   /* (V3.0: the slow blink, kept by the key-scan tick (hal/fm1_input.h): written once a
+                                                 * pass with the same value, never toggled here) */
             fm1_led_glow(KEY_LED(k), (wk < 8u || bk < 8u) && (b_down >> BTN_FX & 1u));
         }
         fm1_led_key(BTN_OCT_DOWN, set.oct < 0);

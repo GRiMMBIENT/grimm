@@ -61,13 +61,15 @@ static void fm1_led_key(uint32_t id, int on)
 }
 
 static void fm1_led_glow(uint32_t id, int on) { (void)id; (void)on; }   /* (the glow: not shown here) */
-static uint32_t web_blink_btn, web_blink_t0;     /* (V3.0) the buttons that blink (hal/fm1_input.h: the tick keeps the phase; here the clock), and when it began */
+static uint32_t web_blink_btn, web_blink_key, web_blink_t0;   /* (V3.0) the buttons and keys that blink (hal/fm1_input.h: the tick keeps the phase;
+                                                 * here the clock), and when it began */
 static void fm1_led_blink_key(uint32_t id, int on)
 {
-    if (id >= 14u) return;
-    if (on && !web_blink_btn) web_blink_t0 = fm1_ms;   /* (the first to blink: it starts lit) */
-    if (on) web_blink_btn |= 1u << id;
-    else web_blink_btn &= ~(1u << id);
+    uint32_t *m = id < 14u ? &web_blink_btn : &web_blink_key, bit = id < 14u ? id : id - 14u;
+    if (id >= 14u + 27u) return;
+    if (on && !(web_blink_btn | web_blink_key)) web_blink_t0 = fm1_ms;   /* (the first to blink: it starts lit) */
+    if (on) *m |= 1u << bit;
+    else *m &= ~(1u << bit);
 }
 
 /* ---- the screen: 240 x 240 RGB565, as host.c keeps it (gfx.c sends blits byte-swapped, as the ST7789 wants) */
@@ -293,7 +295,7 @@ EXPORT void web_midi(uint32_t st, uint32_t d1, uint32_t d2)
 EXPORT uint16_t *web_fb(void) { return fb; }
 EXPORT uint32_t web_screen_draws(void) { return web_draws; }
 EXPORT uint32_t web_lit_buttons(void) { return web_led_btn | (((fm1_ms - web_blink_t0) / 800u & 1u) == 0u ? web_blink_btn : 0u); }   /* (+ the blinking ones, in their lit half) */
-EXPORT uint32_t web_lit_keys(void) { return web_led_key; }
+EXPORT uint32_t web_lit_keys(void) { return web_led_key | (((fm1_ms - web_blink_t0) / 800u & 1u) == 0u ? web_blink_key : 0u); }
 EXPORT uint32_t web_now_ms(void) { return fm1_ms; }
 
 EXPORT uint8_t *web_settings(void) { return web_set; }

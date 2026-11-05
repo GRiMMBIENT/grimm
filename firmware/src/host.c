@@ -49,6 +49,8 @@ static uint32_t fm1_ticks(void)                 /* 24 MHz, as the FM-1's TIMER4:
 }
 static uint32_t host_led_btn_lit, host_led_btn_bl, host_bl_t0, host_sel_was = 9u;   /* (V3.0, tests/chord_led_test.py: the buttons' LEDs lit; the
                                                  * blink asked for, bit = BTN_ id, and when its phase began) */
+static uint32_t host_blink_keys, host_key_chg;   /* (V3.0 item 6, tests/keylights_test.py: the keys that blink asked for; the writes that changed a key's light or
+                                                 * its blink: with nothing pressed they stay still, a flicker would count) */
 static uint32_t host_led_keys;                  /* (V3.0, tests/click_test.py: the keys' LEDs lit, bit k = key k, as the browser build's web_led_key) */
 static void host_sel_log(void)                  /* SEL as the panel shows it: lit, or blinking and in its lit half (hal/fm1_input.h: the tick keeps the
                                                  * phase, FM1_BLINK_MS = 800 here too): each change, "led SEL 0 / 1" */
@@ -69,14 +71,21 @@ static void fm1_led_key(uint32_t id, int on)
         return;
     }
     if (id >= 14u) host_led_keys = on ? host_led_keys | 1u << (id - 14u) : host_led_keys & ~(1u << (id - 14u));
+    host_key_chg += id >= 14u && host_led_keys != was;
     if (id == 15u && (was ^ host_led_keys) & 2u && getenv("GRIMM_LED_LOG"))   /* (tests/click_test.py: F#3's light, each change) */
         printf("%6u ms  led F#3 %u\n", fm1_ms, host_led_keys >> 1 & 1u);
 }
 static void fm1_led_blink_key(uint32_t id, int on)   /* (hal/fm1_input.h: the blink of a LED, kept by the tick; here by the clock) */
 {
-    uint32_t wb = host_led_btn_bl;
-    if (id >= 14u) return;
-    if (on && !host_led_btn_bl) host_bl_t0 = fm1_ms;   /* (the first to blink: it starts lit) */
+    uint32_t wb = host_led_btn_bl, wk = host_blink_keys;
+    if (id >= 14u) {                            /* (V3.0 item 6: a key's blink asked for) */
+        if (id >= 14u + 27u) return;
+        if (on && !(host_led_btn_bl | host_blink_keys)) host_bl_t0 = fm1_ms;
+        host_blink_keys = on ? host_blink_keys | 1u << (id - 14u) : host_blink_keys & ~(1u << (id - 14u));
+        host_key_chg += host_blink_keys != wk;
+        return;
+    }
+    if (on && !(host_led_btn_bl | host_blink_keys)) host_bl_t0 = fm1_ms;   /* (the first to blink: it starts lit) */
     host_led_btn_bl = on ? host_led_btn_bl | 1u << id : host_led_btn_bl & ~(1u << id);
     if (id == 3u && (wb ^ host_led_btn_bl) & 8u && getenv("GRIMM_LED_LOG"))   /* (tests/chord_led_test.py: SEL's blink asked for, each change) */
         printf("%6u ms  led SELBL %u\n", fm1_ms, host_led_btn_bl >> 3 & 1u);

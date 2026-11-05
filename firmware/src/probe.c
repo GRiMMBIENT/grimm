@@ -124,6 +124,8 @@ static void host_probe(void)
                                                  * SYSTEM 2's VOICES row's text (spaces as "_") */
             char vt[24];
             const char *q = voices_text(vt) ? vt : "";
+            printf(" keyl %x %x %u nl %u an %u", host_led_keys, host_blink_keys, host_key_chg, nlat, arp[0].n);   /* (V3.0 item 6) the keys' lights
+                                                 * lit, the keys blinking, the writes that changed them; the notes in the list, T1's arp's */
             printf(" vo %u %u %u ", voices_used(), vo_full_n, vo_take_n);
             for (; *q; q++) putchar(*q == ' ' ? '_' : *q);
         }

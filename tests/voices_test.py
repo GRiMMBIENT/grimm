@@ -41,7 +41,7 @@ def run(name, ev, end):
     res = {}
     for ln in out.splitlines():
         if ln.startswith("probe "):
-            m = re.search(r" hd (\S+) vo (\d+) (\d+) (\d+) (\S+)", ln)
+            m = re.search(r" hd (\S+) .* vo (\d+) (\d+) (\d+) (\S+)", ln)
             res[int(ln.split()[1])] = (int(m.group(2)), int(m.group(3)), int(m.group(4)), m.group(5), m.group(1))
     return res
 
