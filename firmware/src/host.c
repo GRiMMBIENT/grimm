@@ -47,35 +47,23 @@ static uint32_t fm1_ticks(void)                 /* 24 MHz, as the FM-1's TIMER4:
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)ts.tv_sec * 24000000u + (uint32_t)ts.tv_nsec / 1000u * 24u;
 }
-static uint32_t host_led_btn_lit, host_led_btn_glow, host_sel_was = 9u;   /* (V3.0, tests/chord_led_test.py: the buttons' LEDs, lit and glow) */
+static uint32_t host_led_btn_lit;               /* (V3.0, tests/chord_led_test.py: the buttons' LEDs lit, bit = BTN_ id) */
 static uint32_t host_led_keys;                  /* (V3.0, tests/click_test.py: the keys' LEDs lit, bit k = key k, as the browser build's web_led_key) */
 static void fm1_led_key(uint32_t id, int on)
 {
-    uint32_t was = host_led_keys;
+    uint32_t was = host_led_keys, wl = host_led_btn_lit;
     if (id < 14u) {
-        uint32_t wl = host_led_btn_lit;
         host_led_btn_lit = on ? host_led_btn_lit | 1u << id : host_led_btn_lit & ~(1u << id);
-        if (id == 3u && (wl ^ host_led_btn_lit) & 8u && getenv("GRIMM_LED_LOG"))   /* (tests/chord_led_test.py: SEL's lit layer, every write
-                                                 * that changes it: the scan interrupt can read it at any time) */
-            printf("%6u ms  led SELLIT %u\n", fm1_ms, host_led_btn_lit >> 3 & 1u);
+        if (id == 3u && (wl ^ host_led_btn_lit) & 8u && getenv("GRIMM_LED_LOG"))   /* (tests/chord_led_test.py: SEL's light, every write that
+                                                 * changes it: the scan interrupt reads it at any time) */
+            printf("%6u ms  led SEL %u\n", fm1_ms, host_led_btn_lit >> 3 & 1u);
         return;
     }
     if (id >= 14u) host_led_keys = on ? host_led_keys | 1u << (id - 14u) : host_led_keys & ~(1u << (id - 14u));
     if (id == 15u && (was ^ host_led_keys) & 2u && getenv("GRIMM_LED_LOG"))   /* (tests/click_test.py: F#3's light, each change) */
         printf("%6u ms  led F#3 %u\n", fm1_ms, host_led_keys >> 1 & 1u);
 }
-static void host_sel_log(void)                  /* SEL's light, each change: 0 dark, 1 glow, 2 lit (logged once a frame, from the glow call that ends SEL's) */
-{
-    uint32_t s = (host_led_btn_lit >> 3 & 1u) ? 2u : (host_led_btn_glow >> 3 & 1u);
-    if (s != host_sel_was && getenv("GRIMM_LED_LOG")) printf("%6u ms  led SEL %u\n", fm1_ms, s);
-    host_sel_was = s;
-}
-static void fm1_led_glow(uint32_t id, int on)
-{
-    if (id >= 14u) return;
-    host_led_btn_glow = on ? host_led_btn_glow | 1u << id : host_led_btn_glow & ~(1u << id);
-    host_sel_log();
-}
+static void fm1_led_glow(uint32_t id, int on) { (void)id; (void)on; }
 
 /* the screen: 240 x 240 RGB565, as the ST7789 gets it (gfx.c sends the bytes swapped) */
 static uint16_t fb[240 * 240];
