@@ -301,7 +301,8 @@ check(f"THEME switched with each of the {N} pages shown (EYE to BRUTAL, back to 
 # ================================================= the pictures: every page BRUTAL's own (stage by stage), the live values
 psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
 PGN = [n.lower() for n in re.findall(r"PG_(\w+)", re.search(r"enum \{ (PG_SOUND.*?)NPAGE \}", Path("firmware/src/grimm.c").read_text(encoding="utf-8"), re.S).group(1))]
-NATIVE = {"home", "source", "perform", "mix1", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3"}      # (stage 2a)
+NATIVE = {"home", "source", "perform", "mix1", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3",
+          "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound"}      # (stages 2a, 2b: SOUND for VA, PHASE)
 in_src = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int br_native"):psrc.index("static void br_pic")])}
 check("the pages BRUTAL draws itself (brutalp.c's br_native) are the ones this test knows: " + " ".join(sorted(NATIVE)), in_src == NATIVE, f"{sorted(in_src ^ NATIVE)}")
 
@@ -372,5 +373,53 @@ check("SYSTEM 3: LATCH, VELOCITY, THEME as three rows with their settings big; K
 s10 = shots("l_song", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('song')}"), (7000, "enc 5 1")])
 a, b = s10(6703), s10(7703)
 check("SONG: the chain's 16 steps as tiles (the first, shown, black with a red frame), the MODE under them (OFF, then SONG after KNOB 4)", P(a, 3, 40) == RED and diffpx(a, b, (8, 150, 150, 185)) > 100, str(diffpx(a, b, (8, 150, 150, 185))))
+
+
+# ---- stage 2b: the curve pages follow the values (a knob turned: the picture is another; PHASE's two with the source set to PHASE first); the LFO's dot redraws only its strip
+PHASE_PRE = [(6000, f"page {pg('source')}"), (6050, "enc 2 6")]
+
+
+def moves(name, page, pre, knob, lo, box=(3, 32, 237, 192)):
+    s = shots("m_" + name, [6700 + 3, 7700 + 3], 8500, ENVB, list(pre) + [(6100, f"page {pg(page)}"), (7000, knob)])
+    a, b = s(6703), s(7703)
+    d = diffpx(a, b, box)
+    check(f"{page.upper()}{' (source PHASE)' if pre else ''}: {knob} changes the picture ({d} px differ, at least {lo})", d >= lo, str(d))
+
+
+moves("env", "env", [], "enc 2 -60", 200)
+moves("lfo", "lfo", [], "enc 5 3", 200)
+moves("master", "master", [], "enc 2 -50", 200)
+moves("space", "space", [], "enc 2 -90", 200)
+moves("delay", "delay", [], "enc 3 60", 500)
+moves("grain", "grain", [], "enc 3 60", 200)
+moves("drive", "drive", [], "enc 2 70", 200)
+moves("tape", "tape", [], "enc 2 100", 100)
+moves("va", "sound", [], "enc 2 1", 200)
+moves("phase", "sound", PHASE_PRE, "enc 4 40", 100)
+moves("pdline", "pdline", PHASE_PRE, "enc 3 60", 100)
+moves("pdenv", "pdenv", PHASE_PRE, "enc 2 60", 150)
+
+
+def ptext_run(steps):
+    """steps: [(command, probe after it?)] -> the EYE pixfont texts drawn between the probes (one number a probed step)"""
+    ev, t = [], BOOT
+    for c in steps:
+        ev += [(t, c)] if c != "probe" else [(t, "probe")]
+        t += 300
+    path = OUT / "ptext2.txt"
+    path.write_text("".join(f"{a} {b}\n" for a, b in ev) + f"{t} end\n")
+    out = subprocess.run([EXE, str(OUT / "ptext2"), str(path)], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
+    v = [int(re.search(r" ptext (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")]
+    return [y - x for x, y in zip(v, v[1:])]
+
+
+pp = ptext_run(["probe", f"page {pg('source')}", "enc 2 6", "probe", f"page {pg('sound')}", "probe", f"page {pg('pdline')}", "probe", f"page {pg('pdenv')}", "probe"])
+check("SOUND, LINE 2 and PHASE ENV with the source PHASE: none of EYE's pixel font drawn", pp[1:] == [0, 0, 0] and len(pp) == 4, str(pp))
+
+# the LFO's dot: a moved dot redraws its two strips (14 x 160 px each), not the picture (234 x 160)
+(OUT / "lfodot.txt").write_text(f"{BOOT} probe\n{BOOT + 100} page {pg('lfo')}\n{BOOT + 600} probe\n{BOOT + 700} probe\n{BOOT + 800} end\n")
+lp = subprocess.run([EXE, str(OUT / "lfodot"), str(OUT / "lfodot.txt")], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
+lx = [int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in lp.splitlines() if ln.startswith("slabvals ")]
+check(f"LFO: while the dot moves (a probe 100 ms apart) the strips it was in and is in are redrawn, not the picture ({lx[2] - lx[1]} px; the picture is 37,440)", 0 < lx[2] - lx[1] < 30000, str(lx))
 
 sys.exit(1 if bad else 0)

@@ -1303,6 +1303,7 @@ static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its
     return 1;
 }
 static void bp_meter_region(uint32_t t);        /* (brutalp.c: where a meter moved, BRUTAL's) */
+static void bp_dot_region(uint32_t col);        /* (.. and the LFO's dot) */
 static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
 {
     uint32_t t;
@@ -1722,15 +1723,16 @@ static void pic_arp(void)                       /* Arp: what it holds, its steps
 }
 
 static uint32_t lfo_dot(void) { return (uint32_t)(((uint64_t)lfo_ph[sel] * 54u) >> 32); }   /* the dot's column */
-static int32_t lfo_row(uint32_t sh, uint32_t x)  /* the picture's SHAPE at column x (0..53, a cycle): its row */
+static int32_t lfo_val(uint32_t sh, uint32_t x)  /* the picture's SHAPE at column x (0..53, a cycle): its value (Q15) */
 {
     static const int16_t R[7] = {9000, -20000, 26000, -6000, 15000, -28000, 9000};   /* (RANDOM, DRIFT: an example) */
     int32_t v;
     if (sh == LS_RND) v = R[x / 9u];
     else if (sh == LS_DRIFT) v = lfo_shape(LS_DRIFT, (x % 9u) * 477218588u, R[x / 9u], R[x / 9u + 1u]);
     else v = lfo_shape(sh, x * 79536431u, 0, 0);   /* (2^32 / 54) */
-    return 15 - v * 11 / 32767;
+    return v;
 }
+static int32_t lfo_row(uint32_t sh, uint32_t x) { return 15 - lfo_val(sh, x) * 11 / 32767; }   /* .. its row */
 static void pic_lfo(void)                       /* Lfo: a cycle of SHAPE, the dot where the LFO is (at its rate), a
                                                  * cycle's time */
 {
@@ -2465,9 +2467,13 @@ static void ui_update(int32_t oct)
     }
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
-        if (dot_shown < 54u) ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
+        if (dot_shown < 54u) {
+            if (ui_th->bfin) bp_dot_region(dot_shown);
+            else ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
+        }
         dot_shown = lfo_dot();
-        ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
+        if (ui_th->bfin) bp_dot_region(dot_shown);
+        else ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
         st = pct10(cpu_now) << 16 ^ pct10(cpu_peak) ^ sys2_drops() * 2654435761u ^ voices_used() * 40503u;   /* (rc9: and USB's drops; V3.0: and the voices) */

@@ -285,6 +285,258 @@ static void bp_sys3(void)
     }
 }
 
+/* ---- the curve pages (stage 2b): light ground, a title (Archivo 16) with a note at the right (Terminus), the curve a thick line (5 px; the second, behind it, 3 px in the
+ * mid grey), from the live values; points in picture coordinates, a polyline of at most 53 */
+static void bp_pl(int16_t *q, uint32_t n, int32_t w, uint16_t c)   /* a line through n points (in place: moved to the screen) */
+{
+    uint32_t i;
+    for (i = 0; i < n; i++) q[2 * i] = (int16_t)(q[2 * i] + BP_X), q[2 * i + 1] = (int16_t)(q[2 * i + 1] + BP_Y);
+    br_polyline(q, n, w, c);
+}
+static void bp_head(const char *l, const char *r, uint16_t rc)   /* the title, and a note at the right */
+{
+    int32_t av = r ? 214 - br_tlen(&BRT12, r) - 12 : 214;
+    if (br_len(&BRF16, l, 1) <= av) bp_a(10, 8, l, &BRF16, 1, UI_K);
+    else bp_tt(10, 9, l, &BRT14, UI_K);
+    if (r) bp_ttr(224, 9, r, &BRT12, rc);
+}
+static void bp_wave(int sq, int32_t p, int32_t o, int32_t w, uint16_t c)   /* VA: a saw (or square) of period p from offset o across the picture (the edges clip it) */
+{
+    int16_t q[64];
+    uint32_t n = 0;
+    int32_t x = -(o % p);
+    for (; x < 234 && n < 30u; x += p) {
+        if (sq) {
+            q[2 * n] = (int16_t)x, q[2 * n + 1] = 45, n++;
+            q[2 * n] = (int16_t)(x + p / 2), q[2 * n + 1] = 45, n++;
+            q[2 * n] = (int16_t)(x + p / 2), q[2 * n + 1] = 145, n++;
+            q[2 * n] = (int16_t)(x + p), q[2 * n + 1] = 145, n++;
+        } else {
+            q[2 * n] = (int16_t)x, q[2 * n + 1] = 145, n++;
+            q[2 * n] = (int16_t)(x + p), q[2 * n + 1] = 45, n++;
+        }
+    }
+    bp_pl(q, n, w, c);
+}
+static void bp_va(void)                         /* the waveform of WAVE; a second behind it by the detune (SUPERSAW: two, a spread) */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_VA];
+    int32_t w = p[0], dt = clamp(p[1], 0, 127) / 16 * 3;
+    bp_ground(1);
+    bp_head(w == WAVE_SUPER ? "SUPERSAW" : w == WAVE_SQR ? "SQUARE" : "SAW", 0, UI_K);
+    bp_r(0, 146, 234, 1, BR_TRACK);
+    if (w == WAVE_SUPER) bp_wave(0, 57, 33, 3, UI_M), bp_wave(0, 51, 15, 3, UI_M), bp_wave(0, 54, 0, 5, UI_K);
+    else bp_wave(w == WAVE_SQR, 54 + dt, 9, 3, UI_M), bp_wave(w == WAVE_SQR, 54, 0, 5, UI_K);
+}
+
+static void bp_phase(void)                      /* the bent waveform of WAVE at DCW, then WAVE2 (or WAVE again) beside it, the bend's point a red square under each */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_PHASE];
+    uint32_t w1 = (uint32_t)clamp(p[0], 0, 7), w2 = (uint32_t)clamp(p[1], 0, 8), dcw;
+    int32_t c, i;
+    int16_t q[2 * 26];
+    pd_t b;
+    char s[24], t[16], u[16];
+    dcw = ((uint32_t)clamp(p[2], 0, 127) * 65535u / 127u * 56000u) >> 16;
+    phase_text(p, 0, t);
+    phase_text(p, 1, u);
+    put_s(put_s(s, "WAVE2 "), u);
+    bp_ground(1);
+    bp_head(t, s, UI_M);
+    bp_r(0, 85, 234, 1, BR_TRACK);
+    for (c = 0; c < 2; c++) {
+        int32_t x0 = 12 + c * 110;
+        pd_setup(&b, c && w2 ? w2 - 1u : w1, dcw);
+        for (i = 0; i < 26; i++) q[2 * i] = (int16_t)(x0 + i * 4), q[2 * i + 1] = (int16_t)(85 - pd_wave(&b, (uint32_t)i * 65535u / 25u) * 50 / 32767);
+        bp_pl(q, 26, 5, c ? UI_M : UI_K);
+        bp_r(x0 + (int32_t)(b.x * 100u / 65535u) - 3, 142, 7, 7, ui_acc);
+    }
+}
+
+static void bp_pdline(void)                     /* (V2) LINE 2: line 1 (black) beside line 2 (grey: its WAVE, DCW), how they meet */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_PHASE];
+    int32_t c, i, w2 = clamp(trk[sel].pd_wav, 0, 8), d2 = clamp(trk[sel].pd_dcw, 0, 127);
+    int mix = p[3] || trk[sel].pd_noise || w2 || d2;
+    int16_t q[2 * 24];
+    pd_t b;
+    bp_ground(1);
+    bp_head("LINE 2", trk[sel].pd_ring ? "RING 1 X 2" : mix ? "MIX 1 + 2" : "LINE 1 ALONE", trk[sel].pd_ring ? ui_acc : UI_M);
+    bp_r(0, 80, 234, 1, BR_TRACK);
+    for (c = 0; c < 2; c++) {
+        pd_setup(&b, c && w2 ? (uint32_t)w2 - 1u : (uint32_t)clamp(p[0], 0, 7), pd_dcw(c && d2 ? d2 : p[2]));
+        for (i = 0; i < 24; i++) q[2 * i] = (int16_t)(12 + c * 112 + i * 4), q[2 * i + 1] = (int16_t)(80 - pd_wave(&b, (uint32_t)i * 65535u / 23u) * 40 / 32767);
+        bp_pl(q, 24, 5, c ? UI_M : UI_K);
+        bp_tt(12 + c * 112, 128, c ? "LINE 2" : "LINE 1", &BRT12, c ? UI_M : UI_K);
+    }
+    bp_tt(12, 146, trk[sel].pd_noise ? "NOISE ON" : "NOISE OFF", &BRT12, trk[sel].pd_noise ? ui_acc : UI_M);
+}
+
+static void bp_pdenv(void)                      /* (V2) PHASE ENV: DCW (black: up from the floor) and PITCH (grey: up or down from the middle), each over ~1.2 s */
+{
+    int32_t c, i, j;
+    int16_t q[2 * 53];
+    bp_ground(1);
+    bp_tt(10, 9, trk[sel].pd_de ? "DCW ON" : "DCW OFF", &BRT14, trk[sel].pd_de ? ui_acc : UI_K);
+    bp_ttr(224, 9, trk[sel].pd_pe ? "PITCH ON" : "PITCH OFF", &BRT14, trk[sel].pd_pe ? ui_acc : UI_M);
+    bp_r(0, 90, 234, 1, BR_TRACK);
+    for (c = 0; c < 2; c++) {                   /* (the grey first: the black over it) */
+        int32_t pt = 1 - c, d = pt ? clamp(trk[sel].pd_pe, -64, 63) : clamp(trk[sel].pd_de, 0, 127);
+        uint32_t k = env_k(10u * pow2_q16(clamp(pt ? trk[sel].pd_pd : trk[sel].pd_dd, 0, 127) * 15)), l = 65536u;
+        int32_t base = pt ? 90 : 148, span = pt ? clamp(55 * d / 24, -55, 55) : 105 * d / 127;
+        for (i = 0; i < 53; i++) {
+            q[2 * i] = (int16_t)(12 + i * 4), q[2 * i + 1] = (int16_t)(base - (int32_t)(((int64_t)span * l) >> 16));
+            for (j = 0; j < 32; j++) l -= (uint32_t)mulq16((int32_t)l, k);
+        }
+        bp_pl(q, 53, pt ? 3 : 5, pt ? UI_M : UI_K);
+    }
+}
+
+static void bp_env(void)                        /* the shape of the track's ATTACK, DECAY, SUSTAIN, RELEASE (their letters over their parts) */
+{
+    const volatile int32_t *e = trk[sel].env;
+    int32_t wa = 2 + clamp(e[0], 0, 127) * 18 / 127, wd = 2 + clamp(e[1], 0, 127) * 12 / 127, wr = 2 + clamp(e[3], 0, 127) * 14 / 127, ws = 53 - wa - wd - wr;
+    int32_t ys = 148 - clamp(e[2], 0, 127) * 112 / 127, x1 = 10 + wa * 4, x2 = x1 + wd * 4, x3 = x2 + ws * 4, x4 = x3 + wr * 4;
+    int16_t q[10];
+    bp_ground(1);
+    q[0] = 10, q[1] = 148, q[2] = (int16_t)x1, q[3] = 36, q[4] = (int16_t)x2, q[5] = (int16_t)ys, q[6] = (int16_t)x3, q[7] = (int16_t)ys, q[8] = (int16_t)x4, q[9] = 148;
+    bp_pl(q, 5, 5, UI_K);
+    bp_ttc((10 + x1) / 2, 9, "A", &BRT16, UI_M);
+    bp_ttc((x1 + x2) / 2, 9, "D", &BRT16, UI_M);
+    bp_ttc((x2 + x3) / 2, 9, "S", &BRT16, UI_M);
+    bp_ttc((x3 + x4) / 2, 9, "R", &BRT16, UI_M);
+}
+
+static void bp_dot_region(uint32_t col)         /* the LFO's dot at a column: its strip of the picture */
+{
+    ui_region(BP_X + 4 + (int32_t)col * 4, BP_Y, 14, 160, UI_K, ui_th->pic);
+}
+static void bp_lfo(void)                        /* a cycle of SHAPE across the picture, the red dot where the LFO is (at its rate) */
+{
+    uint32_t sh = (uint32_t)clamp(trk[sel].lfo_shape, 0, NLFOSHAPE - 1), dx = lfo_dot(), x;
+    uint32_t ms = 3932160000u / lfo_hz_q16(trk[sel].lfo_rate);
+    int16_t q[2 * 54];
+    char l[32];
+    lfo_rate_text(put_s(l, ms >= 995u ? "1 CYCLE = " : ""), trk[sel].lfo_rate, " ");
+    put_s(l + ui_len(l), " / FREE");
+    bp_ground(1);
+    bp_head(LFO_SHAPE_NAME[sh], l, UI_M);
+    bp_r(0, 80, 234, 1, BR_TRACK);
+    for (x = 0; x < 54u; x++) q[2 * x] = (int16_t)(10u + x * 4u), q[2 * x + 1] = (int16_t)(80 - lfo_val(sh, x) * 55 / 32767);
+    bp_pl(q, 54, 5, trk[sel].lfo_depth > 0 ? UI_K : UI_M);
+    bp_r(10 + (int32_t)dx * 4 - 5, 80 - lfo_val(sh, dx) * 55 / 32767 - 5, 11, 11, ui_acc);
+}
+
+static void bp_tape(void)                       /* the two reels and the tape between them, its wobble WOW; the tracks on it */
+{
+    int32_t k, r, amp = clamp(tf_wow, 0, 127) * 8 / 127;
+    int16_t q[2 * 17];
+    char on[16] = "ON:", *e = on + 3;
+    for (k = 0; k < (int32_t)NT; k++)
+        if (trk[k].tap > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
+    bp_ground(1);
+    for (r = 0; r < 2; r++) {
+        bp_r(35 + r * 104, 20, 60, 60, UI_K);
+        bp_r(55 + r * 104, 40, 20, 20, BR_C1);
+        bp_r(65 + r * 104, 80, 4, 20, UI_K);
+    }
+    for (k = 0; k < 17; k++) q[2 * k] = (int16_t)(35 + k * 10), q[2 * k + 1] = (int16_t)(103 + ((sine_i((uint32_t)k * 804212224u) * amp + 16384) >> 15));
+    bp_pl(q, 17, 5, UI_K);
+    if (e > on + 3) bp_a(10, 134, on, &BRF16, 1, UI_K);
+    else bp_tt(10, 136, "OFF: TURN UP A TAPE TILE", &BRT14, UI_M);
+}
+
+static void bp_grain(void)                      /* the cloud: squares scattered by SCATTER round the position, as many as DENSITY, as big as SIZE */
+{
+    int32_t i, n = 8 + clamp(ge_dens, 0, 127) * 30 / 127, sp = 8 + clamp(ge_scat, 0, 127) * 100 / 127, bs = 6 + clamp(ge_size, 0, 127) * 15 / 127;
+    char r[12];
+    bp_ground(1);
+    ui_rnd_s = 9;
+    for (i = 0; i < n; i++) {
+        int32_t sz = bs / 2 + (int32_t)ui_rnd((uint32_t)bs / 2u + 1u), gx = 117 - sp + (int32_t)ui_rnd((uint32_t)sp * 2u + 1u), gy = 24 + (int32_t)ui_rnd((uint32_t)(127 - sz));
+        uint32_t cl = ui_rnd(8);
+        bp_r(gx - sz / 2, gy, sz, sz, cl == 0 ? ui_acc : cl < 5 ? UI_K : UI_M);
+    }
+    bp_tt(10, 9, "BUFFER 1.25 S", &BRT12, UI_K);
+    if (ge_freeze) {
+        bp_r(176, 4, 54, 16, ui_acc);
+        bp_ttc(203, 9, "FREEZE", &BRT12, UI_W);
+    } else {
+        put_s(put_u(r, (pow2_q16(clamp(ge_size, 0, 127) * 8) * 10u + 32768u) >> 16), " MS");
+        bp_ttr(224, 9, r, &BRT12, UI_K);
+    }
+}
+
+static void bp_delay(void)                      /* the echoes, smaller each time (FEEDBACK), apart by TIME */
+{
+    static const uint8_t HT[7] = {118, 86, 62, 45, 32, 23, 17};
+    int32_t n = 1 + clamp(dl_fb, 0, 127) * 6 / 127, gap = 3 + clamp(dl_time, 0, 127) * 5 / 127, i, x = 117 - (n * 24 + (n - 1) * gap) / 2;
+    char r[12];
+    ui_time(r, DL_MS[clamp(dl_time, 0, 127)] << 16);
+    bp_ground(1);
+    bp_head("DELAY", r, UI_K);
+    for (i = 0; i < n; i++, x += 24 + gap) bp_r(x, 150 - HT[i], 24, HT[i], i ? UI_M : UI_K);
+}
+
+static void bp_space(void)                      /* the reverb's tail, as long as SIZE (INF: it never falls) */
+{
+    int32_t v = clamp(rv_size, 0, 127), i, tl = 2 + v * 14 / 127;
+    char r[12] = "SIZE ";
+    ui_3(r + 5, ui_pc(v));
+    bp_ground(1);
+    bp_head("REVERB", v >= RV_INF ? "FREEZE" : r, v >= RV_INF ? ui_acc : UI_K);
+    for (i = 0; i < 26; i++) {
+        int32_t h = v >= RV_INF ? 112 : (int32_t)((112u * pow2_q16(-(i * 272) / tl < -3000 ? -3000 : -(i * 272) / tl) + 32768u) >> 16);
+        h += ((i * 7) % 3 - 1) * 2;
+        h = h < 3 ? 3 : h > 112 ? 112 : h;
+        bp_r(12 + i * 8, 150 - h, 6, h, i < 3 ? UI_K : UI_M);
+    }
+}
+
+static void bp_master(void)                     /* the filter's curve: the cutoff where it bends (the red line), RESONANCE its peak there; open: flat */
+{
+    int32_t c = clamp(mf_cut, 0, 127), r = clamp(mf_res, 0, 127), ty = clamp(mf_type, 0, NFTYPE - 1), i;
+    int open = ty == FT_LP ? c >= 127 : ty == FT_HP && c <= 0;
+    int16_t q[2 * 53];
+    bp_ground(1);
+    bp_head(FT_NAME[ty], open ? "OPEN" : MP_NAME[clamp(mf_pos, 0, NMPOS - 1)], open ? ui_acc : UI_M);
+    bp_r(12 + c * 210 / 127 - 1, 30, 3, 122, ui_acc);
+    for (i = 0; i < 53; i++) {
+        int32_t f = i * 127 / 52, d = ty == FT_HP ? c - f : f - c, h;
+        if (ty == FT_BP) d = d < 0 ? -d : d;
+        h = open || d <= 0 ? 112 : 112 - d * 3;   /* (an eighth of a cell: the line smooth) */
+        if (!open && d > -5 && d < 5) h += r * 40 / 127 * (5 - (d < 0 ? -d : d)) / 5;
+        h = h < 8 ? 8 : h > 144 ? 144 : h;
+        q[2 * i] = (int16_t)(12 + i * 4), q[2 * i + 1] = (int16_t)(150 - h * 7 / 8);
+    }
+    bp_pl(q, 53, 5, UI_K);
+}
+
+static void bp_drive(void)                      /* (V2) a sine through it (AMOUNT, TYPE; TONE left out), the clean one grey behind it; (V3.0) under it what is heard */
+{
+    uint32_t ty = (uint32_t)clamp(dr_type, 0, NDTYPE - 1);
+    int32_t a = clamp(dr_amt, 0, 127), g = dr_gain(ty, a), lv = dr_level(ty, a), i, k;
+    int16_t q[2 * 53], z[2 * 53];
+    char r[8], m[28] = "DRIVEN:", *e = m + 7;
+    ui_3(r, ui_pc(a));
+    bp_ground(1);
+    bp_head(DT_NAME[ty], a ? r : "OFF", a ? UI_K : UI_M);
+    bp_r(0, 88, 234, 1, BR_TRACK);
+    for (i = 0; i < 53; i++) {
+        int32_t x = sine_i((uint32_t)i * 165191050u) * 3 / 4, y = a ? (dr_shape(ty, (x * g) >> 8) * lv) >> 12 : x;
+        q[2 * i] = z[2 * i] = (int16_t)(12 + i * 4);
+        q[2 * i + 1] = (int16_t)(88 - x * 46 / 32768), z[2 * i + 1] = (int16_t)(88 - y * 46 / 32768);
+    }
+    bp_pl(q, 53, 3, UI_M);
+    bp_pl(z, 53, 5, a ? UI_K : UI_M);
+    for (k = 0; k < (int32_t)NT; k++)
+        if (trk[k].drv > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
+    if (!a) put_s(m, "AMOUNT 0: NO DRIVE HEARD");
+    else if (clamp(dr_mix, 0, 127) == 0) put_s(m, "MIX 0: NO DRIVE HEARD");
+    else if (e == m + 7) put_s(m, "NO DRIVE SEND UP (MIXER 1)");
+    bp_tt(10, 146, m, &BRT12, e > m + 7 && a && dr_mix > 0 ? UI_K : UI_M);
+}
+
 #ifdef DINGHY_HOST
 static void br_prim_demo(void)                  /* (tests/brutal_test.py: a triangle, a line, a V, a slant, each of a known size) */
 {
@@ -305,7 +557,10 @@ static int br_native(void)
 #endif
     switch (page) {
     case PG_HOME: case PG_SOURCE: case PG_PERFORM: case PG_MIX1: case PG_MIX2: case PG_LEVELS: case PG_SOUNDS: case PG_PROJECTS: case PG_PATTERN: case PG_SONG: case PG_SYS3:
+    case PG_ENV: case PG_LFO: case PG_PDLINE: case PG_PDENV: case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: case PG_MASTER: case PG_DRIVE:
         return 1;
+    case PG_SOUND:                              /* (the sources one by one: VA, PHASE so far) */
+        return sel_eng() == ENG_VA || sel_eng() == ENG_PHASE;
     default:
         return 0;
     }
@@ -327,6 +582,21 @@ static void br_pic(void)
     case PG_PATTERN: bp_pattern(); return;
     case PG_SONG: bp_song(); return;
     case PG_SYS3: bp_sys3(); return;
+    case PG_ENV: bp_env(); return;
+    case PG_LFO: bp_lfo(); return;
+    case PG_PDLINE: bp_pdline(); return;
+    case PG_PDENV: bp_pdenv(); return;
+    case PG_TAPE: bp_tape(); return;
+    case PG_GRAIN: bp_grain(); return;
+    case PG_DELAY: bp_delay(); return;
+    case PG_SPACE: bp_space(); return;
+    case PG_MASTER: bp_master(); return;
+    case PG_DRIVE: bp_drive(); return;
+    case PG_SOUND:
+        if (sel_eng() == ENG_VA) { bp_va(); return; }
+        if (sel_eng() == ENG_PHASE) { bp_phase(); return; }
+        ui_pic_draw();
+        return;
     default: ui_pic_draw();
     }
 }
