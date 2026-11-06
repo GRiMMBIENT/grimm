@@ -104,39 +104,38 @@ static void bp_perform(void)
     }
 }
 
-/* ---- MIXER 1: six tiles over the whole page (3 x 2, the selected track's: LEVEL, DELAY, REVERB, TAPE, GRAIN, DRIVE: a name, the value, a bar; the one SELECT picks black with
- * a red frame); LEVEL's bar is the live meter (8 segments, the theme's colours) over the bar of the level set */
-#define BM_X(i) (3 + (int32_t)((i) % 3u) * 79)  /* a tile's corner: the picture's whole page, from row 29 to 236 */
-#define BM_Y(i) (29 + (int32_t)((i) / 3u) * 105)
-#define BM_W 76
-#define BM_H 102
+/* ---- MIXER 1: EYE's layout exactly (MXT_: six tiles, 3 x 2, in BRUTAL's frame: moved down by the theme's dyf): a label, the 8 segments (7 x 30 px, 8 apart) of the level or the send, LEVEL's live
+ * (the sound now) with a notch under them where LEVEL is set, the value (2 lines of pixels high: Archivo Black 24 or 16), FX0 dim when the sends do nothing, the one SELECT picks with a frame.
+ * Only restyled: concrete tiles, black segments (red on the selected tile, and LEVEL's top two), the selected tile black with a red frame, Terminus Bold labels */
+#define BM_X(i) (MXT_X0 + (int32_t)((i) % 3u) * MXT_DX)
+#define BM_Y(i) (MXT_Y0 + 3 + (int32_t)((i) / 3u) * MXT_DY)
 static void bp_mix1(void)
 {
     static const char *const LAB[MX_N] = {"LEVEL", "DELAY", "REVERB", "TAPE", "GRAIN", "DRIVE"};
     uint32_t i;
     int32_t j;
     for (i = 0; i < MX_N; i++) {
-        int32_t x = BM_X(i), y = BM_Y(i), v = clamp(*mx_tile(sel, i), 0, 127), on = (int32_t)i == mx_sq;
-        int dry = i != MX_LEVEL && trk[sel].fx <= 0;   /* (the sends do nothing: FX 0 on HOME: dim, "FX0") */
-        char s[6];
-        ui_rect(x, y, BM_W, BM_H, UI_K);
-        if (on) ui_rect(x, y, BM_W, 2, ui_acc), ui_rect(x, y + BM_H - 2, BM_W, 2, ui_acc), ui_rect(x, y, 2, BM_H, ui_acc), ui_rect(x + BM_W - 2, y, 2, BM_H, ui_acc);
-        else ui_rect(x, y, BM_W, BM_H, BP_TILE(i));
-        br_tt(x + 6, y + 6 - BRT12.capy, LAB[i], &BRT12, on ? BR_SELLAB : UI_K);
+        int32_t x = BM_X(i), y = BM_Y(i), v = clamp(*mx_tile(sel, i), 0, 127), on = (int32_t)i == mx_sq, f = i == MX_LEVEL ? mx_h[sel] : (v * 8 + 63) / 127;
+        int dry = i != MX_LEVEL && trk[sel].fx <= 0;   /* (FX 0 on HOME: the sends do nothing: dim, "FX0") */
+        uint16_t fc = dry ? UI_M : on ? ui_acc : UI_K;
+        const br_font_t *bf;
+        char s[4];
+        ui_rect(x, y, MXT_W, MXT_H, UI_K);
+        if (on) ui_rect(x, y, MXT_W, 2, ui_acc), ui_rect(x, y + MXT_H - 2, MXT_W, 2, ui_acc), ui_rect(x, y, 2, MXT_H, ui_acc), ui_rect(x + MXT_W - 2, y, 2, MXT_H, ui_acc);
+        else ui_rect(x, y, MXT_W, MXT_H, BP_TILE(i));
+        br_tt(x + 6, y + 8 - BRT12.capy, LAB[i], &BRT12, on ? BR_SELLAB : UI_K);
+        for (j = 0; j < 8; j++)
+            ui_rect(x + 6 + j * 8, y + 28, 7, 30, j >= f ? (on ? BR_SELBG : BR_TRACK) : i != MX_LEVEL ? fc : on || j >= 6 ? ui_acc : UI_K);
+        if (i == MX_LEVEL) ui_rect(x + 6 + v * 60 / 127, y + 60, 3, 5, fc);
         ui_3(s, ui_pc(v));
         if (dry) put_s(s, "FX0");
-        br_text(x + 6, y + 24 - br_capy(&BRF24), s, &BRF24, 1, dry ? ui_acc : on ? UI_W : UI_K);
-        if (i == MX_LEVEL) {                    /* (the sound now: 8 segments; a notch over them where LEVEL is set) */
-            for (j = 0; j < 8; j++) ui_rect(x + 6 + j * 8, y + 52, 7, 14, j < (int32_t)mx_h[sel] ? ui_meter_col(j) : on ? BR_SELBG : BR_TRACK);
-            ui_rect(x + 6 + v * 62 / 127, y + 68, 3, 5, on ? UI_W : UI_K);
-        }
-        ui_rect(x + 6, y + BM_H - 14, BM_W - 12, 6, on ? BR_SELBG : BR_TRACK);
-        if (v) ui_rect(x + 6, y + BM_H - 14, (BM_W - 12) * v / 127, 6, dry ? UI_M : on ? UI_W : UI_K);
+        bf = br_len(&BRF24, s, 1) <= MXT_W - 12 ? &BRF24 : &BRF16;
+        br_text(x + 6, y + 76 - br_capy(bf), s, bf, 1, dry ? ui_acc : fc);
     }
 }
 static void bp_meter_region(uint32_t t)         /* a meter moved: its region (MIXER 1: the selected track's LEVEL bar; LEVELS: that track's meter) */
 {
-    if (page == PG_MIX1) ui_region(BM_X(0) + 6, BM_Y(0) + 52, 64, 14, UI_K, ui_th->pic);
+    if (page == PG_MIX1) ui_region(BM_X(0) + 6, BM_Y(0) + 28, 63, 30, UI_K, ui_th->pic);
     else ui_region(BP_X + (int32_t)t * 59 + 31, BP_Y + 50, 21, 100, UI_K, ui_th->pic);
 }
 
@@ -830,35 +829,6 @@ static void bp_arp(void)                        /* what the arpeggiator holds (O
     }
 }
 
-static void bp_grid(void)                       /* the 64 steps of the track's pattern, 8 rows of 8: a note black (a chord red; a CHANCE one grey; a RATCHET one cut in two; LOCKS a white mark), a tie a bar,
-                                                 * past STEPS dark, NOW white, the cursor a 2 px frame */
-{
-    const seq_trk_t *S = &seq[sel];
-    const seq_pat_t *P = &S->pat[clamp(S->cur, 0, SEQ_NPAT - 1)];
-    int32_t n = seq_steps(S), cur = clamp(S->cursor, 0, SEQ_N - 1), pos = S->pos, i, j;
-    uint8_t tie[SEQ_N];
-    for (i = 0; i < (int32_t)SEQ_N; i++) tie[i] = 0;
-    for (i = 0; i < n; i++)
-        if (P->st[i].note)
-            for (j = 1; j < clamp(P->st[i].len, 1, SEQ_N) && i + j < n; j++) tie[i + j] = 1;
-    for (i = 0; i < (int32_t)SEQ_N; i++) {
-        const seq_step_t *s = &P->st[i];
-        int32_t x = (i & 7) * 29, y = (i >> 3) * 20, bar = !s->note && tie[i] && i < n;
-        uint16_t f = ((i >> 3) + i) & 1 ? BR_C2 : BR_C1;
-        if (i >= n) f = UI_D;
-        else if (s->note) f = s->chord ? ui_acc : s->chance < 100 ? UI_M : UI_K;
-        if (i == pos && seq_on) f = UI_W;
-        bp_r(x, y, 27, 18, f);
-        if (bar) bp_r(x, y + 6, 29, 6, UI_K);
-        if (s->note && i < n && s->ratchet > 1 && f != UI_W) bp_r(x + 12, y, 3, 18, BR_C1);
-        if (s->lmask && s->note && i < n) bp_r(x + 21, y + 3, 4, 4, UI_W);
-        if (i == cur) {
-            uint16_t c = f == UI_K || f == ui_acc || f == UI_D ? UI_W : UI_K;
-            bp_r(x, y, 27, 2, c), bp_r(x, y + 16, 27, 2, c), bp_r(x, y, 2, 18, c), bp_r(x + 25, y, 2, 18, c);
-        }
-    }
-}
-
 static void bp_row(int32_t y, int32_t h, int32_t i, const char *l, const char *v, uint16_t vc)   /* a row of SYSTEM: its name small at the left, its setting big at the right */
 {
     bp_box(0, y, 234, h, BP_TILE((uint32_t)i), 0);
@@ -955,7 +925,7 @@ static int br_native(void)
     case PG_HOME: case PG_SOURCE: case PG_PERFORM: case PG_MIX1: case PG_MIX2: case PG_LEVELS: case PG_SOUNDS: case PG_PROJECTS: case PG_PATTERN: case PG_SONG: case PG_SYS3:
     case PG_ENV: case PG_LFO: case PG_PDLINE: case PG_PDENV: case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: case PG_MASTER: case PG_DRIVE:
         return 1;
-    case PG_SOUND: case PG_FMALGO: case PG_FMOP: case PG_SCALE: case PG_CHORD: case PG_ARP: case PG_GRID: case PG_SYSTEM: case PG_SYS2:
+    case PG_SOUND: case PG_FMALGO: case PG_FMOP: case PG_SCALE: case PG_CHORD: case PG_ARP: case PG_SYSTEM: case PG_SYS2:
         return 1;                               /* (all but TRACK, a page there is no longer) */
     default:
         return 0;
@@ -992,7 +962,6 @@ static void br_pic(void)
     case PG_FMOP: bp_fmop(); return;
     case PG_SCALE: case PG_CHORD: bp_sel(); return;
     case PG_ARP: bp_arp(); return;
-    case PG_GRID: bp_grid(); return;
     case PG_SYSTEM: bp_system(); return;
     case PG_SYS2: bp_sys2(); return;
     case PG_SOUND:

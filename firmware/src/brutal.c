@@ -155,6 +155,20 @@ static void br_polyline(const int16_t *p, uint32_t n, int32_t w, uint16_t col)
     }
 }
 
+/* a borrowed EYE picture's text (SEQ GRID, which keeps EYE's layout: the sequencer is the Baudgirl V93's): Terminus Bold for the small (the cell the pixfont's), Archivo Black 16 for the 2x */
+static int32_t br_ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c)
+{
+#ifdef DINGHY_HOST
+    host_btext++;
+#endif
+    if (sc >= 2) {
+        br_text(x, y - br_capy(&BRF16), s, &BRF16, 1, c);
+        return x + br_len(&BRF16, s, 1);
+    }
+    br_tt(x, y - BRT12.capy, s, &BRT12, c);
+    return x + br_tlen(&BRT12, s);
+}
+
 /* ---- the header: the title bar (the held button's name a black chip, the title, the battery), the tag (a label and a value); a message over all of it */
 static void br_bat_draw(int32_t x, int32_t y)   /* the battery as the title bar shows it: black on the grey (the lowest bar blinks in the accent), a bolt */
 {

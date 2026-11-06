@@ -151,7 +151,7 @@ static void host_probe(void)
         for (; *v; v++) putchar(*v == ' ' ? '_' : *v);
         printf(":%u:%u", ui_sl[i].acc, ui_sl[i].fill);
     }
-    printf(" meter %u,%u,%u,%u lcdpx %u ptext %u", mx_h[0], mx_h[1], mx_h[2], mx_h[3], host_lcd_px, host_ptext);
+    printf(" meter %u,%u,%u,%u lcdpx %u ptext %u btext %u", mx_h[0], mx_h[1], mx_h[2], mx_h[3], host_lcd_px, host_ptext, host_btext);
     printf(" tk %u,%u,%u,%u mixpk %u outpk %u", host_tk_hold[0], host_tk_hold[1], host_tk_hold[2], host_tk_hold[3], host_mix_hold,
            host_out_hold);                      /* (the meter's readings, the mix's and the output's peaks since the last probe) */
     host_tk_hold[0] = host_tk_hold[1] = host_tk_hold[2] = host_tk_hold[3] = host_mix_hold = host_out_hold = 0;   /* (the meters' cells lit, 0 .. 8: LEVELS, MIXER 1) */

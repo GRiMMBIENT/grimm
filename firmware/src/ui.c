@@ -82,8 +82,10 @@ static uint32_t ui_k;                           /* (the slab being drawn) */
 static int32_t ui_dx, ui_dy;                    /* (V3.0) a picture of another theme's frame: where its (0, 0) is, moved */
 static void ui_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) { cv_rect(x + ui_dx - ui_ox, y + ui_dy, w, h, c); }
 static void ui_cell(int32_t x, int32_t y, uint16_t c) { ui_rect(PX0 + x * 4, PY0 + y * 4, 4, 4, c); }
+static int32_t br_ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c);   /* (brutal.c) */
 static int32_t ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c)   /* pixfont x sc; the end */
 {
+    if (ui_th && ui_th->bfin) return br_ui_text(x, y, s, sc, c);   /* (V3.0: a picture borrowed from EYE in BRUTAL: its text in BRUTAL's fonts) */
 #ifdef DINGHY_HOST
     if (ui_th && ui_th->bfin) host_ptext++;     /* (tests/brutal_test.py: BRUTAL draws none of EYE's pixfont) */
 #endif

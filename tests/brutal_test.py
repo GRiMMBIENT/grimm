@@ -303,7 +303,7 @@ psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
 PGN = [n.lower() for n in re.findall(r"PG_(\w+)", re.search(r"enum \{ (PG_SOUND.*?)NPAGE \}", Path("firmware/src/grimm.c").read_text(encoding="utf-8"), re.S).group(1))]
 NATIVE = {"home", "source", "perform", "mix1", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3",
           "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound",
-          "fmalgo", "fmop", "scale", "chord", "arp", "grid", "system", "sys2"}      # (stages 2a, 2b, 2c)
+          "fmalgo", "fmop", "scale", "chord", "arp", "system", "sys2"}      # (stages 2a, 2b, 2c)
 in_src = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int br_native"):psrc.index("static void br_pic")])}
 check("the pages BRUTAL draws itself (brutalp.c's br_native) are the ones this test knows: " + " ".join(sorted(NATIVE)), in_src == NATIVE, f"{sorted(in_src ^ NATIVE)}")
 
@@ -321,8 +321,8 @@ def ptext(pages):
     return {n: v[2 * i + 1] - v[2 * i] for i, n in enumerate(pages)}
 
 
-pt = ptext(sorted(NATIVE))
-check(f"none of EYE's pixel font is drawn on the {len(NATIVE)} pages BRUTAL draws itself (the header, the picture, the knob blocks: Terminus Bold and Archivo Black only)",
+pt = ptext(sorted(NATIVE | {"grid"}))
+check(f"none of EYE's pixel font is drawn on the {len(NATIVE) + 1} pages BRUTAL draws (its own, and SEQ GRID's EYE layout) (the header, the picture, the knob blocks: Terminus Bold and Archivo Black only)",
       not any(pt.values()), f"{[(n, c) for n, c in pt.items() if c]}")
 
 
@@ -346,11 +346,66 @@ check("SOURCE: the track's source is the selected tile (VA black with a red fram
 s2 = shots("l_perf", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('perform')}"), (7000, "down 2"), (7050, "keys 1"), (7100, "keys 0"), (7200, "up 2")])
 a, b = s2(6703), s2(7703)
 check("PERFORM: a trick on (FX held + F3: FREEZE) is the selected style (black, red frame); off: concrete", P(a, 3, 40) != RED and P(a, 6, 40) == C1 and P(b, 3, 40) == RED, str([P(a, 3, 40), P(b, 3, 40)]))
-s3 = shots("l_mix1", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('mix1')}"), (6500, "enc 0 1"), (7000, "enc 2 60")])   # SELECT: the DELAY tile; KNOB 1: its send up
-a, b = s3(6703), s3(7703)
-check("MIXER 1: SELECT picks the DELAY tile (a red frame round it); KNOB 1 raises its send: the value and the bar follow (the bar at the tile's bottom filled to the knob)",
-      P(a, 82, 60) == RED and P(b, 82, 60) == RED and P(a, 100, 118) == SELBG and P(b, 100, 118) == BW and P(b, 140, 118) == SELBG and diffpx(a, b, (86, 52, 150, 80)) > 150,
-      str([P(a, 82, 60), P(a, 100, 118), P(b, 100, 118), P(b, 140, 118), diffpx(a, b, (86, 52, 150, 80))]))
+# MIXER 1 and SEQ GRID keep EYE's layout (the Baudgirl V93 look): the same state in both themes: the same lit segments, the same selected tile, the same cells, the colours by role
+ENVE = {"GRIMM_SETTINGS_IN": str(SETE)}
+EP = [EYEPAL[i] for i in range(6)]
+BP_ = [PAL[i] for i in range(6)]
+ROLE = dict(zip(EP, BP_))                                       # (EYE's k, d, m, l, w, accent -> BRUTAL's)
+
+
+def both(name, ev, t, end):
+    e = shots(name + "_e", [t], end, ENVE, ev)(t)
+    b = shots(name + "_b", [t], end, ENVB, ev)(t)
+    return e, b
+
+
+for nm, ev in (("a", [(6000, f"page {pg('mix1')}"), (6500, "enc 0 1"), (7000, "enc 2 60"), (7300, "keys 1")]),
+               ("b", [(6000, f"page {pg('home')}"), (6200, "enc 5 -127"), (6500, f"page {pg('mix1')}"), (6700, "enc 0 2")])):
+    e, b = both("g_mix1" + nm, ev, 7803, 8500)
+    miss = []
+    for i in range(6):
+        x, y = 3 + (i % 3) * 79, 26 + (i // 3) * 107
+        for j in range(8):
+            le = P(e, x + 6 + j * 8 + 3, y + 28 + 15) != EP[0]
+            lb = P(b, x + 6 + j * 8 + 3, y + 3 + 28 + 15) not in (TRACK, SELBG)
+            if le != lb:
+                miss.append(("seg", i, j, le, lb))
+        se, sb_ = P(e, x + 1, y + 40) == EP[5], P(b, x + 1, y + 3 + 40) == RED
+        if se != sb_:
+            miss.append(("sel", i))
+        ve = sum(1 for yy in range(y + 76, y + 92) for xx in range(x + 6, x + 70) if P(e, xx, yy) != P(e, x + 1, y + 70))
+        vb = sum(1 for yy in range(y + 3 + 76, y + 3 + 94) for xx in range(x + 6, x + 70) if P(b, xx, yy) != P(b, x + 1, y + 3 + 70))
+        if ve < 30 or vb < 30:
+            miss.append(("value", i, ve, vb))
+        for j in range(8):                                       # (dim when FX 0: the sends' lit segments in the mid grey, both themes)
+            if P(e, x + 6 + j * 8 + 3, y + 28 + 15) == EP[2] and i and P(b, x + 6 + j * 8 + 3, y + 3 + 28 + 15) != BP_[2]:
+                miss.append(("dry", i, j))
+    check(f"MIXER 1 ({'LEVEL held, DELAY selected, its send up' if nm == 'a' else 'FX 0, REVERB selected'}): BRUTAL has EYE's layout: the same six tiles (76 x 104 at the same places, 3 rows lower), "
+          "the same lit segments of all 48, the same selected tile, a value in each, the dim sends dim", not miss, str(miss[:6]))
+    if nm == "a":
+        v = 100                                                  # (LEVEL 79 %)
+        nx = 3 + 6 + v * 60 // 127
+        check("MIXER 1: LEVEL's notch (3 x 5 under the segments, where LEVEL is set) in both; LEVEL's live segments are lit (the sound now: a key held)",
+              P(e, nx + 1, 26 + 62) != EP[0] and P(b, nx + 1, 26 + 3 + 62) != C1 and sum(1 for j in range(8) if P(b, 3 + 6 + j * 8 + 3, 26 + 3 + 43) not in (TRACK, SELBG)) >= 1,
+              str([P(e, nx + 1, 26 + 62), P(b, nx + 1, 26 + 3 + 62)]))
+
+# SEQ GRID: every pixel of EYE's grid area (the cells, the cursor ring, NOW, the tie bars, the marks) is the same pixel in BRUTAL, 8 rows lower, in BRUTAL's colour of its role
+ge, gb = both("g_grid", [(6000, f"page {pg('grid')}"), (6100, "enc 2 5"), (6200, "enc 3 -30"), (6300, "enc 4 1"), (6400, "enc 0 1"), (6500, "enc 2 7")], 7003, 7800)
+miss, roles = 0, set()
+for yy in range(28, 165):
+    for xx in range(0, 146):
+        ce = P(ge, xx, yy)
+        if ce in ROLE:
+            roles.add(ce)
+        if ROLE.get(ce) != P(gb, xx, yy + 8):
+            miss += 1
+check(f"SEQ GRID: BRUTAL has EYE's layout: every pixel of the cells' area (x 0 .. 145, EYE's rows 28 .. 164, BRUTAL's 8 lower) is EYE's, in the colour of its role ({len(roles)} of the 6 roles on the page: "
+      f"the dark of past STEPS, the mid grey of OFF, the light of a note, the cursor and a chance mark ..); {miss} pixels differ", miss == 0 and len(roles) >= 4, str(miss))
+(OUT / "gtext.txt").write_text(f"{BOOT} probe\n{BOOT + 100} page {pg('grid')}\n{BOOT + 700} probe\n{BOOT + 800} end\n")
+gt = subprocess.run([EXE, str(OUT / "gtext"), str(OUT / "gtext.txt")], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
+gv = [(int(re.search(r" ptext (\d+)", ln).group(1)), int(re.search(r" btext (\d+)", ln).group(1))) for ln in gt.splitlines() if ln.startswith("slabvals ")]
+check(f"SEQ GRID: its texts (STEP, PLAYING, BPM, STEPS, CHORD, the legend) are in Terminus Bold, Archivo Black for the step number: {gv[1][1] - gv[0][1]} drawn, none in EYE's pixel font ({gv[1][0] - gv[0][0]})",
+      gv[1][1] - gv[0][1] >= 8 and gv[1][0] == gv[0][0], str(gv))
 s4 = shots("l_mix2", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('mix2')}"), (7000, "enc 2 30")])
 a, b = s4(6703), s4(7703)
 check("MIXER 2: KNOB 1 moves T1's PAN: its knob on the bar goes right", diffpx(a, b, (8, 60, 60, 80)) > 60 and P(a, 33, 70) == BW and P(b, 33, 70) == SELBG, str([diffpx(a, b, (8, 60, 60, 80)), P(a, 33, 70), P(b, 33, 70)]))
@@ -436,7 +491,7 @@ moves("phys", "sound", [(6000, f"page {pg('source')}"), (6050, "enc 2 5")], "enc
 moves("scale", "scale", [], "enc 3 2", 50)
 moves("chord", "chord", [], "enc 3 2", 50)
 moves("arp", "arp", [], "enc 2 1", 30)
-moves("grid", "grid", [], "enc 2 5", 100)
+moves("grid", "grid", [], "enc 2 5", 50)
 moves("system", "system", [], "enc 2 1", 100)
 
 # SOUND for each source, and the rest of the pages: none of EYE's pixel font
@@ -448,7 +503,7 @@ pp = ptext_run(steps)
 check(f"SOUND with each of the 7 sources, FM ALGO, FM OP, SCALE, CHORD, ARP, GRID, SYSTEM, SYSTEM 2: none of EYE's pixel font drawn ({len(pp)} intervals)", not any(pp), str(pp))
 
 # every page but TRACK (a page there is none of) is BRUTAL's own
-check("every page is BRUTAL's own but TRACK: NATIVE has all the pages in grimm.c's list except track", set(PGN) - NATIVE == {"track"}, str(sorted(set(PGN) - NATIVE)))
+check("every page is BRUTAL's own but TRACK (a page there is none of) and SEQ GRID (EYE's layout, the Baudgirl V93's look: drawn by EYE's code in BRUTAL's colours and fonts)", set(PGN) - NATIVE == {"track", "grid"}, str(sorted(set(PGN) - NATIVE)))
 
 # FM ALGO: all 32 algorithms, six blocks each, the OUT bracket red, nothing outside the picture
 ev = [(6000, f"page {pg('source')}"), (6050, "enc 2 1"), (6100, f"page {pg('fmalgo')}"), (6150, "enc 2 -40")]
