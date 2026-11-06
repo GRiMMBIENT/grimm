@@ -178,16 +178,24 @@ d04, d08, dsh, d15, d25, d40, d50, d54, d55, d57 = (dr(t) for t in DOORT)
 check("the door, 0 .. 0.8 s: two concrete slabs (the mockup's picture ground: faint lines) slide in from the top and the bottom, faster and faster (0.4 s: 27 rows each; "
       "0.77 s: 110), black between; none of EYE's colours",
       P(d04, 120, 5) == C1 and P(d04, 120, 10) == C2 and P(d04, 120, 60) == BK and P(d04, 120, 236) == C1 and P(d04, 120, 180) == BK and P(d08, 120, 50) in (C1, C2) and
-      P(d08, 120, 115) == BK and P(d08, 120, 104) in (C1, C2) and count(d04, EYE_RED) == 0,
+      P(d08, 120, 115) == BK and P(d08, 120, 95) == C1 and count(d04, EYE_RED) == 0,
       str([P(d04, 120, 5), P(d04, 120, 10), P(d04, 120, 60), P(d04, 120, 236), P(d08, 120, 115)]))
+check("each slab's closing edge is a heavy one: a 6 px black band (0.4 s: rows 21 .. 26 of the top slab; 0.77 s: about 105 .. 110) with the darker concrete's 2 px line just inside it (19 .. 20; about 103 .. 104)",
+      P(d04, 120, 20) == BM and P(d04, 120, 23) == BK and P(d04, 120, 18) == C1 and P(d08, 120, 103) == BM and P(d08, 120, 107) == BK and P(d08, 120, 100) == C1,
+      str([P(d04, 120, 20), P(d04, 120, 23), P(d08, 120, 103), P(d08, 120, 107)]))
 check("the slam: the screen shakes 2 px (the door 2 px down: black rows at the top, the seam at 121 .. 122); then still: a 2 px red seam at 119 .. 120, concrete on both sides",
       P(dsh, 20, 0) == BK and P(dsh, 20, 1) == BK and P(dsh, 20, 121) == RED and P(dsh, 20, 122) == RED and P(d15, 20, 119) == RED and P(d15, 20, 120) == RED and
-      P(d15, 20, 100) == C1 and P(d15, 20, 140) == C1 and P(d15, 20, 0) in (C1, C2), str([P(dsh, 20, 0), P(dsh, 20, 121), P(d15, 20, 119), P(d15, 20, 100)]))
+      P(d15, 20, 100) == C1 and P(d15, 20, 140) == C1, str([P(dsh, 20, 0), P(dsh, 20, 121), P(d15, 20, 119), P(d15, 20, 100)]))
+check("shut: the two black bands are one solid seam (rows 114 .. 125) with the thin red line in the middle (119 .. 120), the darker line each side of it (112 .. 113, 126 .. 127), and the "
+      "slabs' outer edges, a 2 px dark line, at the screen's top and bottom (0 .. 1, 238 .. 239); the shake moves it all (2 .. 3)",
+      all(P(d15, 20, y) == BK for y in (114, 116, 118, 121, 123, 125)) and P(d15, 20, 112) == BM and P(d15, 20, 113) == BM and P(d15, 20, 126) == BM and P(d15, 20, 127) == BM and
+      P(d15, 20, 111) == C1 and P(d15, 20, 128) == C1 and P(d15, 20, 0) == BM and P(d15, 20, 1) == BM and P(d15, 20, 238) == BM and P(d15, 20, 239) == BM and P(dsh, 20, 2) == BM,
+      str([P(d15, 20, y) for y in (111, 112, 114, 119, 126, 128, 0, 239)]))
 check("the eye in the seam (2.5 s: open, a red iris, the seam either side of it); 4.0 s: GR!MM stamped in black (Archivo Black 24 px), the version line under it (Terminus Bold); "
       "no bats, no stars, no drips (nothing but concrete round them)",
       count(d25, RED, (80, 100, 160, 140)) > 10 and P(d25, 20, 119) == RED and P(d25, 200, 120) == RED and count(d25, BK, (60, 150, 180, 172)) == 0 and
       count(d40, BK, (60, 150, 180, 172)) > 150 and count(d40, BK, (40, 184, 200, 196)) > 80 and count(d40, RED, (0, 130, 240, 240)) == 0 and
-      count(d40, BK, (0, 0, 240, 90)) == 0 and count(d40, BD, (0, 0, 240, 240)) == 0 and count(d40, BM, (0, 140, 240, 240)) == 0,
+      count(d40, BK, (0, 0, 240, 90)) == 0 and count(d40, BD, (0, 0, 240, 240)) == 0 and count(d40, BM, (0, 150, 240, 236)) == 0,
       str([count(d25, RED, (80, 100, 160, 140)), count(d40, BK, (60, 150, 180, 172)), count(d40, BK, (40, 184, 200, 196))]))
 check("4.6 .. 5.6 s: the door slides open, top up, bottom down, HOME already behind it (5.0 s: the gap shows the tiles' black and red; 5.4 s: T1's black tile; the stamp goes down with the "
       "bottom slab); at 5.7 s the header is there: the intro lasted 5.6 s",
@@ -208,8 +216,8 @@ path.write_text("".join(f"{t} probe\n" for t in (1100, 3300, 3700, 4300, 4500, 4
 out = subprocess.run([EXE, str(OUT / "doorpx"), str(path)], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
 lcd = {int(ln.split()[1]): int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")}
 fr_eye, fr_stamp, fr_open = (lcd[3300] - lcd[1100]) / 40, (lcd[4300] - lcd[3700]) / 11, (lcd[5600] - lcd[4700]) / 16
-check("only what moves is drawn: the eye's phase sends the eye's box a frame at most (108 x 56 = 6048 px; the whole screen is 57600), the stamp 3.6 s a few small regions, the door "
-      "opening two strips and the stamp; no frame the whole screen but the slam's shake", fr_eye <= 6048 and fr_stamp <= 6048 and fr_open <= 25000,
+check("only what moves is drawn: the eye's phase sends the eye's box a frame at most (108 x 62 = 6696 px with its outline; the whole screen is 57600), the stamp 3.6 s a few small regions, the door "
+      "opening two strips and the stamp; no frame the whole screen but the slam's shake", fr_eye <= 6696 and fr_stamp <= 6696 and fr_open <= 25000,
       f"px a frame: eye {fr_eye:.0f}, stamp {fr_stamp:.0f}, opening {fr_open:.0f}")
 
 # the eye: the same frames as EYE's, in the seam: EYE's eye box (74 .. 165, 40 .. 91) at m x 55 ms is BRUTAL's (74 .. 165, 92 .. 143) at 825 + m x 55 ms (the eye's clock starts 15 frames
@@ -220,29 +228,43 @@ es = shots("doore", [55 * m + 3 for m in ME], 4000, {"GRIMM_BOOT_PLAIN": "1"})  
 bs = shots("doorb", [825 + 55 * m + 3 for m in ME], 6000, ENVB)
 
 
-def eyeset(ppm, pal, y0, skip):
+def eye_rows(ppm, pal, y0):
+    """-> {row: (the first x, the last x)} of the eye in EYE's frame (the pixels that are not its black ground), rows from y0"""
     w, d = px(ppm)
-    r = {pal[2]: "m", pal[4]: "w", pal[5]: "a"}
-    out = set()
-    for y in range(y0, y0 + 52):
-        if y - y0 in skip:
-            continue
-        for x in range(74, 166):
-            v = r.get(tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]))
-            if v:
-                out.add((x, y - y0, v))
+    out = {}
+    for y in range(52):
+        xs = [x for x in range(74, 166) if tuple(d[3 * ((y0 + y) * w + x):3 * ((y0 + y) * w + x) + 3]) != pal[0]]
+        if xs:
+            out[y] = (min(xs), max(xs))
     return out
 
 
-diff, poses = [], set()
+def role_at(d, w, pal, x, y):
+    c = tuple(d[3 * (y * w + x):3 * (y * w + x) + 3])
+    return pal.index(c) if c in pal else 9
+
+
+bad_px, bad_ring, poses = [], [], set()
 for m in ME:
-    a = eyeset(es(55 * m + 3), EYEPAL, 40, {27, 28})
-    b = eyeset(bs(825 + 55 * m + 3), PAL[:6], 92, {27, 28})
-    poses.add(frozenset(a))
-    if a != b:
-        diff.append(m)
-check(f"the eye in the door is EYE's, frame for frame: {len(ME)} frames (3.4 s of it: shut, a flutter, startled wide open, looking round, the blink): the same mid grey, white and red "
-      f"pixels in the same places in every one ({len(poses)} different poses)", not diff and len(poses) >= 8, f"differs at frames {diff[:8]}, {len(poses)} poses")
+    ea, ba = es(55 * m + 3), bs(825 + 55 * m + 3)
+    rows = eye_rows(ea, EYEPAL, 40)
+    w, de = px(ea)
+    _, db = px(ba)
+    foot = {(x, y) for y, (x0, x1) in rows.items() for x in range(x0, x1 + 1)}
+    poses.add(frozenset(foot))
+    if any(role_at(de, w, EYEPAL, x, 40 + y) != role_at(db, w, PAL[:6], x, 92 + y) for x, y in foot if y not in (27, 28)):
+        bad_px.append(m)
+    ring = {(x + dx, y + dy) for x, y in foot for dx in range(-2, 3) for dy in range(-2, 3)} - foot
+    if any(role_at(db, w, PAL[:6], x, 92 + y) != 0 for x, y in ring if y not in (27, 28) and 0 <= y < 52 and 0 <= x < 240):
+        bad_ring.append(m)
+check(f"the eye in the door is EYE's, frame for frame: {len(ME)} frames (3.4 s of it: shut, a flutter, startled wide open, looking round, the blink): every pixel of its shape (the mid grey, "
+      f"the lids, white, red, the pupil) is EYE's own in every one ({len(poses)} different shapes); the two seam rows left out",
+      not bad_px and len(poses) >= 8, f"differs at frames {bad_px[:8]}, {len(poses)} shapes")
+check("and a 2 px black outline round every pixel of the eye's edge, following its shape in all those frames (the blink included): the ring round it is black, none of it concrete",
+      not bad_ring, f"ring not black at frames {bad_ring[:8]}")
+check("the outline on concrete, to look at (2.5 s, the eye open): black 2 px over its top (rows 98 .. 99), 2 px left of its second row (x 88 .. 89), concrete beyond that",
+      P(d25, 120, 98) == BK and P(d25, 120, 99) == BK and P(d25, 120, 97) == C1 and P(d25, 88, 107) == BK and P(d25, 89, 107) == BK and P(d25, 87, 107) == C1,
+      str([P(d25, 120, 98), P(d25, 120, 97), P(d25, 88, 107), P(d25, 87, 107)]))
 
 # ---- the theme switch: the whole panel cleared and drawn again: no pixel of the other theme left, on any page, both ways (the switch with the page shown, as the editor makes it)
 EYEC = set(PAL_E := rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))

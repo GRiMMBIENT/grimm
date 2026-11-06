@@ -2246,14 +2246,38 @@ static void bd_reveal(void)                     /* HOME as it is, as ui_update w
         br_knob_draw();
     }
 }
-static void bd_slab(int32_t y0, int32_t y1, int32_t edge)   /* a slab, rows y0 .. y1 - 1: concrete, faint lines (the mockup's picture ground), a red edge row */
+#define BD_H 120                                /* a slab's height: half the screen, so its outer edge is at the screen's edge when the door is shut */
+static void bd_slab(int32_t top)                /* a slab: the top one (rows 0 .. yt - 1, its closing edge the lower) or the bottom one (yb .. 239, its closing edge the upper): concrete, the faint
+                                                 * lines (the mockup's picture ground), a heavy closing edge (a 6 px black band, the darker concrete's 2 px line just inside it), the thin red
+                                                 * seam in the band's edge row (from the slam on: shut, the two bands are one, the red line in the middle), a 2 px dark line along the outer edge
+                                                 * where that is on the screen */
 {
-    int32_t y;
+    bd_t *s = &bd_cur;
+    int32_t y0 = top ? 0 : s->yb, y1 = top ? s->yt : 240, y, e = top ? s->yt : s->yb;   /* e: the closing edge's row (the first past a top slab, the first of a bottom one) */
+    int32_t band = top ? e - 6 : e, line = top ? e - 8 : e + 6, outer = top ? e - BD_H : e + BD_H - 2;
     if (y1 <= y0) return;
     ui_rect(0, y0, 240, y1 - y0, BR_C1);
     for (y = 10; y < 240; y += 11)
-        if (y >= y0 && y < y1) ui_rect(0, y, 240, 1, BR_C2);
-    if (edge >= y0 && edge < y1 && bd_e >= BD_SLAM) ui_rect(0, edge, 240, 1, ui_acc);
+        if (y >= y0 && y < y1 && (y < line || y >= line + 2) && (y < band || y >= band + 6)) ui_rect(0, y, 240, 1, BR_C2);
+    ui_rect(0, line, 240, 2, UI_M);
+    ui_rect(0, band, 240, 6, UI_K);
+    if (bd_e >= BD_SLAM) ui_rect(0, top ? e - 1 : e, 240, 1, ui_acc);
+    if (outer >= 0 && outer + 2 <= 240) ui_rect(0, outer, 240, 2, UI_M);
+}
+static void bd_eye_outline(int32_t x, int32_t y, int32_t k)   /* a 2 px black outline round the eye as ui_eye draws it at (x, y), lids k open: a row of cells at a time, 2 px wider each way and
+                                                 * 2 px higher and lower (the eye's own pixels are drawn over it, as they are) */
+{
+    int32_t r, c0, c1;
+    if (!ui_in(x - 2, y - 2, 84, 44)) return;
+    for (r = 0; r < 8; r++) {
+        int32_t d = r < 4 ? 3 - r : r - 4;
+        if (d > k) continue;
+        for (c0 = 0; EYE[r][c0] == '.'; c0++)
+            ;
+        for (c1 = 15; EYE[r][c1] == '.'; c1--)
+            ;
+        ui_rect(x + c0 * 5 - 2, y + r * 5 - 2, (c1 - c0 + 1) * 5 + 4, 9, UI_K);
+    }
 }
 static void bd_draw(void)                      /* the whole picture at bd_e, as far as the region being drawn reaches */
 {
@@ -2261,13 +2285,14 @@ static void bd_draw(void)                      /* the whole picture at bd_e, as 
     int32_t wx = 120 - br_len(&BRF24, APP_NAME, 1) / 2;
     if (bd_e >= BD_OPEN) bd_reveal();
     ui_dy = s.sh;                               /* (the shake: the door, not what is behind it) */
-    bd_slab(0, s.yt, s.yt - 1);
-    bd_slab(s.yb, 240, s.yb);
+    bd_slab(1);
+    bd_slab(0);
     if (s.eye) {
+        bd_eye_outline(80 + s.ey.jx, 100 + s.ey.jy, s.ey.k);
         ui_eye_tiny = s.ey.tiny;
         ui_eye(80 + s.ey.jx, 100 + s.ey.jy, s.ey.k, s.ey.dx, s.ey.dy);
         ui_eye_tiny = 0;
-        if (!s.ey.k) ui_rect(80, 119, 80, 2, ui_acc);   /* (shut: the seam again over the lid) */
+        if (!s.ey.k) ui_rect(0, 119, 240, 2, ui_acc);   /* (shut: the seam all the way, over the lid and its outline) */
     }
     if (s.wm && ui_in(wx, 150 + s.wo, br_len(&BRF24, APP_NAME, 1), 22))
         br_text(wx, 170 + s.wo - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, s.wm == 1 ? ui_acc : UI_K);   /* (GR!MM stamped: red a moment, then black) */
@@ -2302,14 +2327,15 @@ static void bd_frame(uint32_t e)                /* a frame at e: where it moved 
     if (a.sh || b.sh) ui_region(0, 0, 240, 240, UI_K, bd_draw);
     else {
         if (a.yt != b.yt) {                     /* the top slab's edge: from where it was to where it is */
-            lo = (a.yt < b.yt ? a.yt : b.yt) - 2, hi = (a.yt < b.yt ? b.yt : a.yt) + 2;
+            lo = (a.yt < b.yt ? a.yt : b.yt) - 10, hi = (a.yt < b.yt ? b.yt : a.yt) + 2;
             ui_region(0, lo < 0 ? 0 : lo, 240, (hi > 240 ? 240 : hi) - (lo < 0 ? 0 : lo), UI_K, bd_draw);
         }
         if (a.yb != b.yb) {
-            lo = (a.yb < b.yb ? a.yb : b.yb) - 2, hi = (a.yb < b.yb ? b.yb : a.yb) + 2;
+            lo = (a.yb < b.yb ? a.yb : b.yb) - 2, hi = (a.yb < b.yb ? b.yb : a.yb) + 10;
             ui_region(0, lo < 0 ? 0 : lo, 240, (hi > 240 ? 240 : hi) - (lo < 0 ? 0 : lo), UI_K, bd_draw);
         }
-        if (a.eye != b.eye || !bt_eye_same(a.ey, b.ey)) ui_region(66, 92, 108, 56, UI_K, bd_draw);   /* (the eye, wherever it jolts and trembles) */
+        if (a.eye != b.eye || !bt_eye_same(a.ey, b.ey)) ui_region(66, 90, 108, 62, UI_K, bd_draw);   /* (the eye and its outline, wherever it jolts and trembles) */
+        if ((a.yt == BD_H) != (b.yt == BD_H)) ui_region(0, 0, 240, 3, UI_K, bd_draw), ui_region(0, 237, 240, 3, UI_K, bd_draw);   /* (the outer edges: on the screen when the door is shut) */
         if (a.wm != b.wm || a.wo != b.wo) {     /* the stamp (and the line), where it was and is */
             lo = 148 + (a.wo < b.wo ? a.wo : b.wo), hi = 198 + (a.wo < b.wo ? b.wo : a.wo);
             ui_region(16, lo < 0 ? 0 : lo, 208, (hi > 240 ? 240 : hi) - (lo < 0 ? 0 : lo), UI_K, bd_draw);
