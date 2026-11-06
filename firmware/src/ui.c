@@ -882,12 +882,11 @@ static void fm_place(const uint8_t *tg, int32_t *x2, uint32_t o)   /* operator o
     }
     x2[o] = hi < 0 ? 2 * fm_slot++ : (lo + hi) / 2;
 }
-static void fm_algo_draw(uint32_t alg, int32_t sel_op)
+static int32_t fm_layout(uint32_t alg, uint8_t *tg, uint32_t *car, int32_t *fbin, int32_t *fbout, int32_t *x2, int32_t *dep)   /* the operators' places: x2 (half
+                                                 * columns), dep (the rows above the carriers); -> the columns */
 {
-    uint8_t tg[6];
-    uint32_t car, o, j, r;
-    int32_t fbin, fbout, x2[6], dep[6], w, bw, lo = 999, hi = -1;
-    fm_wiring(alg, tg, &car, &fbin, &fbout);
+    uint32_t o, j, r;
+    fm_wiring(alg, tg, car, fbin, fbout);
     for (o = 0; o < 6u; o++) x2[o] = -1, dep[o] = 0;
     for (r = 0; r < 6u; r++)                    /* (a modulator a row above the highest it modulates) */
         for (o = 0; o < 6u; o++)
@@ -895,7 +894,7 @@ static void fm_algo_draw(uint32_t alg, int32_t sel_op)
                 if (tg[o] >> j & 1u && dep[j] + 1 > dep[o]) dep[o] = dep[j] + 1;
     fm_slot = 0;
     for (o = 0; o < 6u; o++)
-        if (car >> o & 1u) fm_place(tg, x2, o);
+        if (*car >> o & 1u) fm_place(tg, x2, o);
     for (o = 0; o < 6u; o++) {                  /* (one over several: between them) */
         int32_t a = 999, b = -1, n = 0;
         for (j = 0; j < 6u; j++)
@@ -903,7 +902,14 @@ static void fm_algo_draw(uint32_t alg, int32_t sel_op)
         if (n > 1) x2[o] = (a + b) / 2;
         if (x2[o] < 0) x2[o] = 2 * fm_slot++;
     }
-    w = 216 / (fm_slot ? fm_slot : 1), bw = w - 6 < 28 ? w - 6 : 28;
+    return fm_slot ? fm_slot : 1;
+}
+static void fm_algo_draw(uint32_t alg, int32_t sel_op)
+{
+    uint8_t tg[6];
+    uint32_t car, o, j;
+    int32_t fbin, fbout, x2[6], dep[6], w, bw, lo = 999, hi = -1;
+    w = 216 / fm_layout(alg, tg, &car, &fbin, &fbout, x2, dep), bw = w - 6 < 28 ? w - 6 : 28;
 #define FMX(o) (PX0 + w / 2 + x2[o] * w / 2)
 #define FMY(o) (106 - dep[o] * 22)
     for (o = 0; o < 6u; o++)                    /* the lines: down, across, down */
@@ -1304,6 +1310,7 @@ static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its
 }
 static void bp_meter_region(uint32_t t);        /* (brutalp.c: where a meter moved, BRUTAL's) */
 static void bp_dot_region(uint32_t col);        /* (.. and the LFO's dot) */
+static void bp_sys2_region(void);               /* (.. and SYSTEM 2's rows) */
 static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
 {
     uint32_t t;
@@ -2482,7 +2489,8 @@ static void ui_update(int32_t oct)
 #endif
         if (st != stat_key) {
             stat_key = st;
-            ui_regionp(PX0, 110, 216, 49, UI_K, ui_th->pic);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
+            if (ui_th->bfin) bp_sys2_region();
+            else ui_regionp(PX0, 110, 216, 49, UI_K, ui_th->pic);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
         }
     }
     ui_dx = ui_dy = 0;                          /* (the knob blocks, the header: the theme's own) */

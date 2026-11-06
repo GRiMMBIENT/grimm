@@ -537,6 +537,402 @@ static void bp_drive(void)                      /* (V2) a sine through it (AMOUN
     bp_tt(10, 146, m, &BRT12, e > m + 7 && a && dr_mix > 0 ? UI_K : UI_M);
 }
 
+/* ---- stage 2c: the sources' pictures (FM, SAMPLE, VOICE, WHEEL, PHYS), SCALE, CHORD, ARP, GRID, SYSTEM, SYSTEM 2 */
+static void bp_algo(int32_t so, const char *r)  /* FM: the algorithm's operators as wired: a block each (a modulator above what it modulates, a line to each), the OUT bracket under the carriers (red),
+                                                 * the operator `so` black with a red frame, the feedback a red hook on the operator it comes into */
+{
+    uint8_t tg[6];
+    uint32_t car, o, j;
+    int32_t fbin, fbout, x2[6], dep[6], sl, w, bw, h, pit, yb = 116, nr = 1, lo = 999, hi = -1, n = clamp(trk[sel].fm_alg, 0, 31) + 1;
+    char t[10] = "ALGO ";
+    sl = fm_layout((uint32_t)clamp(trk[sel].fm_alg, 0, 31), tg, &car, &fbin, &fbout, x2, dep);
+    for (o = 0; o < 6u; o++) nr = dep[o] + 1 > nr ? dep[o] + 1 : nr;
+    w = 210 / sl, bw = w - 6 < 40 ? w - 6 : 40, h = nr < 4 ? 22 : 20, pit = nr > 1 ? (yb - 36) / (nr - 1) : 0, pit = pit > 37 ? 37 : pit;
+    t[5] = (char)('0' + n / 10), t[6] = (char)('0' + n % 10), t[7] = 0;
+    bp_ground(1);
+    bp_head(t, r, UI_M);
+#define FMX(o) (12 + w / 2 + x2[o] * w / 2)
+#define FMY(o) (yb - dep[o] * pit)
+    for (o = 0; o < 6u; o++)                    /* the lines: down, across, down */
+        for (j = 0; j < 6u; j++)
+            if (tg[o] >> j & 1u) {
+                int32_t xa = FMX(o), xb = FMX(j), ym = FMY(j) - 3, xl = xa < xb ? xa : xb;
+                bp_r(xa - 1, FMY(o) + h, 3, ym - FMY(o) - h + 3, UI_K);
+                bp_r(xl - 1, ym, (xa > xb ? xa - xb : xb - xa) + 3, 3, UI_K);
+                bp_r(xb - 1, ym, 3, 4, UI_K);
+            }
+    for (o = 0; o < 6u; o++) {
+        int32_t x = FMX(o) - bw / 2, y = FMY(o), s = (int32_t)o == so;
+        char d[2] = {(char)('1' + o), 0};
+        if (car >> o & 1u) {
+            lo = FMX(o) < lo ? FMX(o) : lo, hi = FMX(o) > hi ? FMX(o) : hi;
+            bp_r(FMX(o) - 1, y + h, 3, 6, ui_acc);
+        }
+        bp_box(x, y, bw, h, BR_C3, s);
+        bp_a(FMX(o) - br_len(&BRF16, d, 1) / 2, y + (h - br_cap(&BRF16)) / 2, d, &BRF16, 1, s ? ui_acc : UI_K);
+        if ((int32_t)o == fbin) {               /* (the feedback: a hook on its right) */
+            bp_r(x + bw, y + h / 2 - 1, 6, 3, ui_acc);
+            bp_r(x + bw + 3, y - 5, 3, h / 2 + 5, ui_acc);
+            bp_r(FMX(o), y - 5, x + bw + 6 - FMX(o), 3, ui_acc);
+            bp_r(FMX(o) - 1, y - 5, 3, 5, ui_acc);
+        }
+    }
+    bp_r(lo - 1, yb + h + 6, hi - lo + 3, 3, ui_acc);   /* OUT */
+    bp_ttc(120, yb + h + 11, "OUT", &BRT12, UI_M);
+#undef FMX
+#undef FMY
+}
+static void bp_fmalgo(void)                     /* FM ALGO: the algorithm, the operator OP selects; the feedback */
+{
+    uint8_t tg[6];
+    uint32_t car;
+    int32_t fbin, fbout;
+    char s[24], *e;
+    fm_wiring((uint32_t)clamp(trk[sel].fm_alg, 0, 31), tg, &car, &fbin, &fbout);
+    if (!trk[sel].fm_fb || fbin < 0) put_s(s, "NO FB");
+    else {
+        e = put_u(put_s(s, "FB "), (uint32_t)clamp(trk[sel].fm_fb, 0, 7));
+        if (fbout >= 0 && fbout != fbin) e = put_s(put_u(put_s(e, " OP"), (uint32_t)fbout + 1u), ">OP");
+        else e = put_s(e, " ON OP");
+        put_u(e, (uint32_t)fbin + 1u);
+    }
+    bp_algo(clamp(fm_op, 0, 5), s);
+}
+static void bp_fmop(void)                       /* FM OP: the operator's envelope (ATTACK, DECAY; the rest the PATCH's), scaled by LEVEL, a red square at its peak; its ratio */
+{
+    const uint8_t *op = FM_PATCH[clamp(trk[sel].p[ENG_FM][0], 0, FM_NPATCH - 1)] + (5u - (uint32_t)clamp(fm_op, 0, 5)) * FP_OP;
+    const volatile int32_t *f = trk[sel].fmo[clamp(fm_op, 0, 5)];
+    uint8_t tg[6];
+    uint32_t car;
+    int32_t fbin, fbout, lv = clamp(f[FO_LEVEL], 0, 99), wa = 2 + clamp(f[FO_ATK], 0, 99) * 16 / 99, wd = 2 + clamp(f[FO_DEC], 0, 99) * 14 / 99;
+    int32_t wr = 2 + (99 - op[FP_R1 + 3] % 100) * 12 / 99, ws = 53 - wa - wd - wr;
+    int32_t y1 = clamp(28 - op[FP_L1] % 100 * 25 * lv / 9801, 3, 28), y2 = clamp(28 - op[FP_L1 + 2] % 100 * 25 * lv / 9801, 3, 28);
+    int32_t y4 = clamp(28 - op[FP_L1 + 3] % 100 * 25 * lv / 9801, 3, 28);
+    int16_t q[10];
+    char s[20] = "OP ", r[20];
+    fm_wiring((uint32_t)clamp(trk[sel].fm_alg, 0, 31), tg, &car, &fbin, &fbout);
+    put_u(s + 3, (uint32_t)clamp(fm_op, 0, 5) + 1u);
+    fm_ratio_text(put_s(r, "RATIO "), (uint32_t)clamp(fm_op, 0, 5));
+    bp_ground(1);
+    bp_head(s, r, UI_K);
+    bp_ttr(224, 25, car >> clamp(fm_op, 0, 5) & 1u ? "CARRIER" : "MODULATOR", &BRT12, UI_M);
+#define EVY(e) (36 + ((e) - 3) * 112 / 25)
+    q[0] = 10, q[1] = 148, q[2] = (int16_t)(10 + wa * 4), q[3] = (int16_t)EVY(y1), q[4] = (int16_t)(10 + (wa + wd) * 4), q[5] = (int16_t)EVY(y2);
+    q[6] = (int16_t)(10 + (wa + wd + ws) * 4), q[7] = q[5], q[8] = 222, q[9] = (int16_t)EVY(y4);
+    bp_pl(q, 5, 5, UI_K);
+    bp_r(10 + wa * 4 - 4, EVY(y1) - 4, 9, 9, ui_acc);
+#undef EVY
+}
+static void bp_fm(void)                         /* FM (SOUND): the algorithm as wired, the PATCH it is from */
+{
+    bp_algo(-1, FM_PATCH_NAME[clamp(trk[sel].p[ENG_FM][0], 0, FM_NPATCH - 1)]);
+}
+
+static void bp_sample(void)                     /* the slot's sample (a bar a column, the loop's in black), the loop's ends in red with START and END */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_SAMPLE];
+    uint32_t slot = sp_slot(p);
+    sp_loop_t L;
+    char s[32], r[12];
+    int32_t x, x0, x1;
+    put_u(put_s(s, "SLOT "), slot + 1u);
+    bp_ground(1);
+    if (!smp[slot].ready) {
+        bp_head(s, smp[slot].state == SS_SCAN ? "CHECKING" : "EMPTY", UI_M);
+        bp_ttc(117, 75, smp[slot].state == SS_SCAN ? "CHECKING" : "EMPTY", &BRT16, UI_M);
+        return;
+    }
+    if (smp[slot].name[0]) put_s(put_s(s + ui_len(s), " / "), smp[slot].name);
+    sp_loop(p, &L);
+    x = (int32_t)(L.len * 100u / 22050u);
+    put_s(put_s(put_x10(r, (uint32_t)(x + 5) / 10u), " S"), L.rev ? " REV" : "");
+    bp_head(s, r, UI_M);
+    smp_peaks(slot);
+    x0 = (int32_t)((uint64_t)L.l0 * 54u / smp[slot].n);
+    x1 = (int32_t)((uint64_t)(L.l0 + L.len) * 54u / smp[slot].n);
+    x1 = x1 > 53 ? 53 : x1;
+    for (x = 0; x < 54; x++) {
+        int32_t a = (smp_pk[slot][x] ? smp_pk[slot][x] : 1) * 4;
+        bp_r(12 + x * 4, 94 - a, 3, 2 * a + 1, x >= x0 && x <= x1 ? UI_K : UI_M);
+    }
+    bp_r(12 + x0 * 4 - 2, 30, 3, 122, ui_acc);
+    bp_r(12 + x1 * 4 + 2, 30, 3, 122, ui_acc);
+    bp_tt(12 + x0 * 4 + 3, 33, "START", &BRT12, ui_acc);
+    bp_ttr(12 + x1 * 4 + 1, 33, "END", &BRT12, ui_acc);
+}
+
+static void bp_voice(void)                      /* the vowel (the nearest of A E I O U) big, the five as buttons (the one sung black with a red frame), the formants' SHIFT */
+{
+    static const char *const VW[5] = {"A", "E", "I", "O", "U"};
+    const volatile int32_t *p = trk[sel].p[ENG_VOICE];
+    int32_t v = (clamp(p[0], 0, 127) * 4 + 63) / 127, i;
+    char t[16], s[24];
+    bp_ground(1);
+    bp_a(86 - br_len(&BRF24, VW[v], 5) / 2, 20, VW[v], &BRF24, 5, UI_K);
+    for (i = 0; i < 5; i++) {
+        bp_box(165, 9 + i * 29, 59, 25, BP_TILE((uint32_t)i), i == v);
+        bp_a(194 - br_len(&BRF16, VW[i], 1) / 2, 9 + i * 29 + (25 - br_cap(&BRF16)) / 2, VW[i], &BRF16, 1, i == v ? ui_acc : UI_K);
+    }
+    formant_text(p, 0, t);
+    put_s(put_s(s, "VOWEL "), t);
+    bp_tt(10, 128, s, &BRT12, UI_K);
+    formant_text(p, 1, t);
+    put_s(put_s(s, "SHIFT "), t);
+    bp_tt(10, 142, s, &BRT12, UI_M);
+}
+
+static void bp_wheel(void)                      /* the nine drawbars of the registration (the footages' colours: brown, white, black; PERC: its bar's end in red; the 1' bar off), the levels under them */
+{
+    static const char FOOT[9] = {'M', 'M', 'L', 'L', 'D', 'L', 'D', 'D', 'L'};
+    const volatile int32_t *p = trk[sel].p[ENG_WHEEL];
+    uint32_t reg = (uint32_t)clamp(p[0], 0, 15), perc = (uint32_t)clamp(p[1], 0, 6), k;
+    int32_t pk = perc ? (int32_t)(3u + ((perc - 1u) & 1u)) : -1;
+    bp_ground(1);
+    for (k = 0; k < 9u; k++) {
+        int32_t lv = DRW_REG[reg][k] - '0', x = 12 + (int32_t)k * 24;
+        char d[2];
+        if (perc && k == 8u) lv = 0;
+        bp_r(x, 6, 20, 14 + lv * 12, FOOT[k] == 'M' ? UI_M : FOOT[k] == 'L' ? UI_W : UI_K);
+        bp_r(x, 6 + lv * 12, 20, 14, (int32_t)k == pk ? ui_acc : UI_K);
+        d[0] = (char)('0' + lv), d[1] = 0;
+        bp_ttc(x + 10, 126, d, &BRT14, UI_K);
+    }
+    bp_tt(10, 146, N_DRW_REG[reg], &BRT12, UI_K);
+    bp_ttr(224, 146, perc ? N_DRW_PERC[perc] : "PERC OFF", &BRT12, perc ? ui_acc : UI_M);
+}
+
+static void bp_ell(int32_t cx, int32_t cy, int32_t rx, int32_t ry, uint16_t c)   /* a filled ellipse */
+{
+    int32_t dy;
+    for (dy = -ry; dy <= ry; dy++) {
+        int32_t xh = rx * br_isqrt((ry * ry - dy * dy) * 256) / (ry * 16);
+        bp_r(cx - xh, cy + dy, 2 * xh + 1, 1, c);
+    }
+}
+static void bp_phys(void)                       /* the model's body: a string (and the sympathetic ones), a bar on two cords, a drum head; the red block where it is struck or bowed */
+{
+    const volatile int32_t *p = trk[sel].p[ENG_PHYS];
+    uint32_t md = phys_model(p);
+    int32_t i, st = clamp(p[1], 0, 127), bw = clamp(p[3], 0, 127);
+    int16_t q[2 * 15];
+    char r[16];
+    phys_text(p, 3, r);
+    bp_ground(1);
+    bp_head(N_PHYS_MODEL[md], r, UI_M);
+    if (md == PM_MODAL) {                       /* a bar on two cords (its nodes), struck or bowed at its end */
+        bp_r(12, 80, 210, 14, UI_K);
+        bp_r(60, 94, 3, 24, UI_K), bp_r(171, 94, 3, 24, UI_K);
+        for (i = 0; i < 3; i++) bp_r(40 + i * (26 + st / 6), 66, 5, 10, UI_M);   /* (STRUCTURE spreads the partials) */
+        bp_r(214, bw ? 64 : 100, 12, 12, ui_acc);
+    } else if (md == PM_MEMB) {                 /* a drum head and its rings */
+        bp_ell(117, 92, 92, 50, UI_K);
+        bp_ell(117, 92, 85, 43, BR_C3);
+        bp_ell(117, 92, 56, 29, UI_M);
+        bp_ell(117, 92, 51, 25, BR_C3);
+        bp_ell(117, 92, 9, 5, UI_K);
+        bp_r(117 + st * 70 / 127 - 5, 87, 11, 11, ui_acc);
+    } else {                                    /* a string between two posts, its swing; SYMPATH: two more under it */
+        bp_r(12, 60, 14, 56, UI_K), bp_r(208, 60, 14, 56, UI_K);
+        if (md == PM_SYMP) {
+            bp_r(26, 104, 182, 3, UI_M);
+            bp_r(26, 112, 182, 3, UI_M);
+        }
+        for (i = 0; i < 15; i++) {
+            int32_t a = (sine_i((uint32_t)i * 153391689u) * (3 + bw / 8)) >> 15;   /* (half a sine over 15 points) */
+            q[2 * i] = (int16_t)(26 + i * 13), q[2 * i + 1] = (int16_t)(88 - (a < 0 ? -a : a));
+        }
+        bp_pl(q, 15, 5, UI_K);
+        bp_r(26 + st * 170 / 127, 60, 14, 56, ui_acc);
+    }
+}
+
+static void bp_sel(void)                        /* SCALE, CHORD: the keys from the octave's F (27 of them; the white ones as tiles, the black ones over them), a square on each key in the scale (black; white on a black
+                                                 * key) and in the chord of the note last played (red), the chord's name and its notes under */
+{
+    static const int8_t WI[12] = {0, -1, 1, -1, 2, -1, 3, 4, -1, 5, -1, 6};
+    uint32_t base = KEY0 + (uint32_t)(12 * ui_oct), r, n, i, k, lit = 0;
+    uint8_t ns[CH_MAX];
+    char sc[24], cn[24], rg[12], in[24], *e;
+    r = ch_last >= (int32_t)base && ch_last < (int32_t)base + 27 ? (uint32_t)ch_last : base + (uint32_t)(clamp(sc_root, 0, 11) + 12 - (int32_t)(base % 12u)) % 12u;
+    n = chord_notes(sel, r, ns);
+    for (i = 0; i < n; i++)
+        if (ns[i] >= base && ns[i] < base + 27u) lit |= 1u << (ns[i] - base);
+    e = put_s(put_s(sc, SC_NOTE[clamp(sc_root, 0, 11)]), " ");
+    put_s(e, SC_NAME[clamp(sc_scale, 0, NSCALE - 1)]);
+    ui_note(put_s(ui_note(rg, base), "-"), base + 26u);
+    chord_name(sel, r, cn);
+    if (!trk[sel].chord) put_s(in, "CHORD OFF: HOLD SEL");
+    else {
+        for (i = 0, k = 1; i < n; i++) k &= (uint32_t)sc_in(ns[i]);
+        put_s(put_s(put_u(in, n), n == 1u ? " NOTE" : " NOTES"), k && sc_scale > 0 ? " IN KEY" : "");
+    }
+    bp_ground(1);
+    if (page == PG_CHORD) bp_head(cn, rg, UI_M);
+    else bp_head(sc, rg, UI_M);
+    for (k = 0; k < 27u; k++)                   /* the white keys, then the black ones over them */
+        if (WI[k % 12u] >= 0) {
+            int32_t ix = (int32_t)(k / 12u) * 7 + WI[k % 12u], x = 13 + ix * 13;
+            bp_r(x, 30, 12, 80, ix & 1 ? BR_C2 : BR_C3);
+            if (lit >> k & 1u) bp_r(x + 1, 94, 10, 10, ui_acc);
+            else if (sc_in((int32_t)(base + k))) bp_r(x + 1, 94, 10, 10, UI_K);
+        }
+    for (k = 0; k < 27u; k++)
+        if (WI[k % 12u] < 0) {
+            int32_t x = 13 + ((int32_t)(k / 12u) * 7 + WI[(k - 1u) % 12u] + 1) * 13 - 5;
+            bp_r(x, 30, 8, 48, UI_K);
+            if (lit >> k & 1u) bp_r(x + 2, 64, 4, 4, ui_acc);
+            else if (sc_in((int32_t)(base + k))) bp_r(x + 2, 64, 4, 4, UI_W);
+        }
+    bp_val(12, 140, page == PG_CHORD ? sc : cn, 110, page == PG_CHORD ? UI_K : trk[sel].chord ? ui_acc : UI_M, 0);
+    bp_ttr(224, 131, in, &BRT12, UI_M);
+}
+
+static void bp_arp(void)                        /* what the arpeggiator holds (OCTAVES), its steps (13 at most) as bars, their height the note, the step playing red */
+{
+    const arp_t *A = &arp[sel];
+    uint8_t p[ARP_PN];
+    uint32_t oct = (uint32_t)clamp(trk[sel].arp_oct, 1, 4), n, i, k, ids = 0, un = 0, lo = 127, hi = 0, from = 0, cnt;
+    int32_t now = A->last, chord = clamp(trk[sel].arp_mode, 0, NARPMODE - 1) == ARP_CHORD;
+    char l[48], *e;
+    n = arp_pattern(sel, p, oct);
+    cnt = A->n < ARP_N ? A->n : ARP_N;
+    for (i = 0; i < cnt; i++) {
+        for (k = 0; k < i && A->id[k] != A->id[i]; k++)
+            ;
+        ids += k == i;
+        for (k = 0; k < i && A->note[k] != A->note[i]; k++)
+            ;
+        un += k == i;
+    }
+    e = put_s(l, "HELD: ");
+    if (!trk[sel].arp) e = put_s(e, "ARP OFF");
+    else if (!ids) e = put_s(e, "-");
+    else if (ids == 1u) e = trk[sel].chord ? chord_name(sel, A->root[0], e) : ui_note(e, A->root[0]);
+    else e = put_s(put_u(e, un), " NOTES");
+    put_s(put_u(put_s(e, " / "), oct), oct == 1u ? " OCTAVE" : " OCTAVES");
+    bp_ground(1);
+    bp_head(ARP_MODE_NAME[clamp(trk[sel].arp_mode, 0, NARPMODE - 1)], l, UI_M);
+    if (!trk[sel].arp || !n) {
+        bp_ttc(117, 75, trk[sel].arp ? "PLAY KEYS" : "HOLD ARP: ON", &BRT16, UI_M);
+        return;
+    }
+    if (chord) n = oct;
+    for (i = 0; i < n; i++) {
+        uint32_t v = chord ? i : p[i];
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    if (now >= (int32_t)n) now = -1;
+    if (n > 13u && now > 6) from = (uint32_t)now - 6u < n - 13u ? (uint32_t)now - 6u : n - 13u;
+    for (i = 0; i < 13u && from + i < n; i++) {
+        uint32_t v = chord ? from + i : p[from + i], lv = hi > lo ? (v - lo) * 7u / (hi - lo) : 3u, h = 24u + lv * 12u;
+        bp_r(12 + (int32_t)i * 16, 150 - (int32_t)h, 13, (int32_t)h, (int32_t)(from + i) == now ? ui_acc : UI_K);
+    }
+}
+
+static void bp_grid(void)                       /* the 64 steps of the track's pattern, 8 rows of 8: a note black (a chord red; a CHANCE one grey; a RATCHET one cut in two; LOCKS a white mark), a tie a bar,
+                                                 * past STEPS dark, NOW white, the cursor a 2 px frame */
+{
+    const seq_trk_t *S = &seq[sel];
+    const seq_pat_t *P = &S->pat[clamp(S->cur, 0, SEQ_NPAT - 1)];
+    int32_t n = seq_steps(S), cur = clamp(S->cursor, 0, SEQ_N - 1), pos = S->pos, i, j;
+    uint8_t tie[SEQ_N];
+    for (i = 0; i < (int32_t)SEQ_N; i++) tie[i] = 0;
+    for (i = 0; i < n; i++)
+        if (P->st[i].note)
+            for (j = 1; j < clamp(P->st[i].len, 1, SEQ_N) && i + j < n; j++) tie[i + j] = 1;
+    for (i = 0; i < (int32_t)SEQ_N; i++) {
+        const seq_step_t *s = &P->st[i];
+        int32_t x = (i & 7) * 29, y = (i >> 3) * 20, bar = !s->note && tie[i] && i < n;
+        uint16_t f = ((i >> 3) + i) & 1 ? BR_C2 : BR_C1;
+        if (i >= n) f = UI_D;
+        else if (s->note) f = s->chord ? ui_acc : s->chance < 100 ? UI_M : UI_K;
+        if (i == pos && seq_on) f = UI_W;
+        bp_r(x, y, 27, 18, f);
+        if (bar) bp_r(x, y + 6, 29, 6, UI_K);
+        if (s->note && i < n && s->ratchet > 1 && f != UI_W) bp_r(x + 12, y, 3, 18, BR_C1);
+        if (s->lmask && s->note && i < n) bp_r(x + 21, y + 3, 4, 4, UI_W);
+        if (i == cur) {
+            uint16_t c = f == UI_K || f == ui_acc || f == UI_D ? UI_W : UI_K;
+            bp_r(x, y, 27, 2, c), bp_r(x, y + 16, 27, 2, c), bp_r(x, y, 2, 18, c), bp_r(x + 25, y, 2, 18, c);
+        }
+    }
+}
+
+static void bp_row(int32_t y, int32_t h, int32_t i, const char *l, const char *v, uint16_t vc)   /* a row of SYSTEM: its name small at the left, its setting big at the right */
+{
+    bp_box(0, y, 234, h, BP_TILE((uint32_t)i), 0);
+    bp_tt(8, y + (h - BRT12.cap) / 2, l, &BRT12, UI_K);
+    if (br_len(&BRF16, v, 1) <= 150) bp_a(226 - br_len(&BRF16, v, 1), y + (h - br_cap(&BRF16)) / 2, v, &BRF16, 1, vc);
+    else bp_ttr(226, y + (h - BRT14.cap) / 2, v, &BRT14, vc);
+}
+static void bp_system(void)                     /* COLOUR (the four, the one set underlined in black), then MIDI CHANNEL, TUNE, SCREEN OFF, MIDI LEARN, SEQ MIDI OUT as rows */
+{
+    int32_t i;
+    char v[24];
+    bp_ground(1);
+    for (i = 0; i < 4; i++) {
+        int32_t x = 3 + i * 58;
+        bp_r(x, 4, 54, 36, UI_ACCENTS[i]);
+        bp_tt(x + 5, 8, COL_NAME[i], &BRT12, UI_W);
+        if (i == (int32_t)set.col) bp_r(x, 42, 54, 4, UI_K);
+    }
+    mch_text(v, set.mch);
+    bp_row(50, 20, 0, "MIDI CHANNEL", v, UI_K);
+    tune_text(v, set.tune);
+    bp_row(72, 20, 1, "TUNE", v, UI_K);
+    bp_row(94, 20, 0, "SCREEN OFF", SCR_NAME[set.scr % 5u], UI_K);
+    put_s(put_u(v, set.nlk), set.nlk == 1u ? " LINK" : " LINKS");
+    bp_row(116, 20, 1, "MIDI LEARN", v, UI_K);
+    bp_row(138, 20, 0, "SEQ MIDI OUT", set.out ? "ON" : "OFF", set.out ? ui_acc : UI_K);
+}
+
+static void bp_sys2_region(void)                /* SYSTEM 2's rows under the links (the voices, USB's drops, the CPU): redrawn when they change */
+{
+    ui_region(BP_X, BP_Y + 84, 234, 76, UI_K, ui_th->pic);
+}
+static void bp_sys2(void)                       /* MIDI LEARN's links (four, "+n MORE"), then the VOICES in use, USB REC DROPS, CPU NOW and PEAK (their bars; red over 60 %) */
+{
+    int32_t i, n = set.nlk, j;
+    char l[24], v[24];
+    put_s(put_u(v, (uint32_t)n), "/32");
+    bp_ground(1);
+    bp_head("MIDI LEARN", v, UI_M);
+    if (!n) bp_ttc(117, 50, "NO LINKS", &BRT14, UI_M);
+    for (i = 0; i < 4 && i < n; i++) {
+        const uint8_t *L = set.lk[n - 1 - i];
+        int32_t y = 24 + i * 15;
+        bp_box(0, y, 234, 13, BP_TILE((uint32_t)i), 0);
+        if (i == 3 && n > 4) {
+            put_s(put_u(put_s(v, "+"), (uint32_t)(n - 3)), " MORE");
+            bp_tt(8, y + 2, v, &BRT12, UI_M);
+            break;
+        }
+        put_u(put_s(l, "CC "), L[0]);
+        bp_tt(8, y + 2, l, &BRT12, UI_K);
+        link_name(v, L);
+        bp_ttr(226, y + 2, v, &BRT12, UI_K);
+    }
+    bp_box(0, 86, 234, 15, BR_C3, 0);           /* the voices: six segments */
+    bp_tt(8, 90, "VOICES", &BRT12, UI_K);
+    for (j = 0; j < (int32_t)NV; j++) bp_r(226 - ((int32_t)NV - j) * 14, 90, 12, 8, j < (int32_t)voices_used() ? UI_K : BR_TRACK);
+    bp_box(0, 103, 234, 15, BR_C3, 0);
+    bp_tt(8, 107, "USB REC DROPS", &BRT12, UI_K);
+    put_u(l, sys2_drops());
+    bp_ttr(226, 107, l, &BRT12, sys2_drops() ? ui_acc : UI_K);
+    for (i = 0; i < 2; i++) {
+        uint32_t pc = pct10(i ? cpu_peak : cpu_now);
+        int32_t y = 120 + i * 19;
+        char s[16];
+        bp_box(0, y, 234, 17, BR_C3, 0);
+        bp_tt(8, y + 2, i ? "CPU PEAK" : "CPU NOW", &BRT12, UI_K);
+        put_s(put_x10(s, pc), "%");
+        bp_ttr(226, y + 2, s, &BRT12, UI_K);
+        bp_r(8, y + 12, 218, 3, BR_TRACK);
+        bp_r(8, y + 12, (int32_t)(218u * (pc > 1000u ? 1000u : pc) / 1000u), 3, pc > 600u ? ui_acc : UI_K);
+    }
+}
+
 #ifdef DINGHY_HOST
 static void br_prim_demo(void)                  /* (tests/brutal_test.py: a triangle, a line, a V, a slant, each of a known size) */
 {
@@ -559,8 +955,8 @@ static int br_native(void)
     case PG_HOME: case PG_SOURCE: case PG_PERFORM: case PG_MIX1: case PG_MIX2: case PG_LEVELS: case PG_SOUNDS: case PG_PROJECTS: case PG_PATTERN: case PG_SONG: case PG_SYS3:
     case PG_ENV: case PG_LFO: case PG_PDLINE: case PG_PDENV: case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: case PG_MASTER: case PG_DRIVE:
         return 1;
-    case PG_SOUND:                              /* (the sources one by one: VA, PHASE so far) */
-        return sel_eng() == ENG_VA || sel_eng() == ENG_PHASE;
+    case PG_SOUND: case PG_FMALGO: case PG_FMOP: case PG_SCALE: case PG_CHORD: case PG_ARP: case PG_GRID: case PG_SYSTEM: case PG_SYS2:
+        return 1;                               /* (all but TRACK, a page there is no longer) */
     default:
         return 0;
     }
@@ -592,11 +988,23 @@ static void br_pic(void)
     case PG_SPACE: bp_space(); return;
     case PG_MASTER: bp_master(); return;
     case PG_DRIVE: bp_drive(); return;
+    case PG_FMALGO: bp_fmalgo(); return;
+    case PG_FMOP: bp_fmop(); return;
+    case PG_SCALE: case PG_CHORD: bp_sel(); return;
+    case PG_ARP: bp_arp(); return;
+    case PG_GRID: bp_grid(); return;
+    case PG_SYSTEM: bp_system(); return;
+    case PG_SYS2: bp_sys2(); return;
     case PG_SOUND:
-        if (sel_eng() == ENG_VA) { bp_va(); return; }
-        if (sel_eng() == ENG_PHASE) { bp_phase(); return; }
-        ui_pic_draw();
-        return;
+        switch (sel_eng()) {
+        case ENG_VA: bp_va(); return;
+        case ENG_FM: bp_fm(); return;
+        case ENG_SAMPLE: bp_sample(); return;
+        case ENG_VOICE: bp_voice(); return;
+        case ENG_WHEEL: bp_wheel(); return;
+        case ENG_PHYS: bp_phys(); return;
+        default: bp_phase(); return;
+        }
     default: ui_pic_draw();
     }
 }

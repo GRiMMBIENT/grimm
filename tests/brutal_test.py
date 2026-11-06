@@ -302,7 +302,8 @@ check(f"THEME switched with each of the {N} pages shown (EYE to BRUTAL, back to 
 psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
 PGN = [n.lower() for n in re.findall(r"PG_(\w+)", re.search(r"enum \{ (PG_SOUND.*?)NPAGE \}", Path("firmware/src/grimm.c").read_text(encoding="utf-8"), re.S).group(1))]
 NATIVE = {"home", "source", "perform", "mix1", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3",
-          "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound"}      # (stages 2a, 2b: SOUND for VA, PHASE)
+          "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound",
+          "fmalgo", "fmop", "scale", "chord", "arp", "grid", "system", "sys2"}      # (stages 2a, 2b, 2c)
 in_src = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int br_native"):psrc.index("static void br_pic")])}
 check("the pages BRUTAL draws itself (brutalp.c's br_native) are the ones this test knows: " + " ".join(sorted(NATIVE)), in_src == NATIVE, f"{sorted(in_src ^ NATIVE)}")
 
@@ -383,7 +384,7 @@ def moves(name, page, pre, knob, lo, box=(3, 32, 237, 192)):
     s = shots("m_" + name, [6700 + 3, 7700 + 3], 8500, ENVB, list(pre) + [(6100, f"page {pg(page)}"), (7000, knob)])
     a, b = s(6703), s(7703)
     d = diffpx(a, b, box)
-    check(f"{page.upper()}{' (source PHASE)' if pre else ''}: {knob} changes the picture ({d} px differ, at least {lo})", d >= lo, str(d))
+    check(f"{page.upper()}{' (source set first)' if pre else ''}: {knob} changes the picture ({d} px differ, at least {lo})", d >= lo, str(d))
 
 
 moves("env", "env", [], "enc 2 -60", 200)
@@ -421,5 +422,57 @@ check("SOUND, LINE 2 and PHASE ENV with the source PHASE: none of EYE's pixel fo
 lp = subprocess.run([EXE, str(OUT / "lfodot"), str(OUT / "lfodot.txt")], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
 lx = [int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in lp.splitlines() if ln.startswith("slabvals ")]
 check(f"LFO: while the dot moves (a probe 100 ms apart) the strips it was in and is in are redrawn, not the picture ({lx[2] - lx[1]} px; the picture is 37,440)", 0 < lx[2] - lx[1] < 30000, str(lx))
+
+
+# ---- stage 2c: the sources' pictures, SCALE, CHORD, ARP, GRID, SYSTEM, SYSTEM 2
+FM_PRE = [(6000, f"page {pg('source')}"), (6050, "enc 2 1")]
+moves("fmalgo", "fmalgo", FM_PRE, "enc 2 4", 150)
+moves("fmop", "fmop", FM_PRE, "enc 4 40", 100)
+moves("fm", "sound", FM_PRE, "enc 2 1", 20)
+moves("sample", "sound", [(6000, f"page {pg('source')}"), (6050, "enc 2 2")], "enc 2 1", 20)
+moves("voice", "sound", [(6000, f"page {pg('source')}"), (6050, "enc 2 3")], "enc 2 100", 500)
+moves("wheel", "sound", [(6000, f"page {pg('source')}"), (6050, "enc 2 4")], "enc 2 3", 300)
+moves("phys", "sound", [(6000, f"page {pg('source')}"), (6050, "enc 2 5")], "enc 2 1", 100)
+moves("scale", "scale", [], "enc 3 2", 50)
+moves("chord", "chord", [], "enc 3 2", 50)
+moves("arp", "arp", [], "enc 2 1", 30)
+moves("grid", "grid", [], "enc 2 5", 100)
+moves("system", "system", [], "enc 2 1", 100)
+
+# SOUND for each source, and the rest of the pages: none of EYE's pixel font
+steps = ["probe"]
+for e in range(7):
+    steps += [f"page {pg('source')}", f"enc 2 {e if e == 0 else 1}", f"page {pg('sound')}", "probe"]
+steps += ["probe"] + [x for n in ("fmalgo", "fmop", "scale", "chord", "arp", "grid", "system", "sys2") for x in (f"page {pg(n)}", "probe")]
+pp = ptext_run(steps)
+check(f"SOUND with each of the 7 sources, FM ALGO, FM OP, SCALE, CHORD, ARP, GRID, SYSTEM, SYSTEM 2: none of EYE's pixel font drawn ({len(pp)} intervals)", not any(pp), str(pp))
+
+# every page but TRACK (a page there is none of) is BRUTAL's own
+check("every page is BRUTAL's own but TRACK: NATIVE has all the pages in grimm.c's list except track", set(PGN) - NATIVE == {"track"}, str(sorted(set(PGN) - NATIVE)))
+
+# FM ALGO: all 32 algorithms, six blocks each, the OUT bracket red, nothing outside the picture
+ev = [(6000, f"page {pg('source')}"), (6050, "enc 2 1"), (6100, f"page {pg('fmalgo')}"), (6150, "enc 2 -40")]
+ts = []
+for k in range(32):
+    t = 6600 + k * 400
+    ts.append(t)
+    if k:
+        ev.append((t - 300, "enc 2 1"))
+sa = shots("algo32", ts, ts[-1] + 300, ENVB, ev)
+imgs = [sa(t) for t in ts]
+okc = []
+for k, im in enumerate(imgs):
+    c3 = count(im, C3, (3, 40, 237, 190))
+    rd = count(im, RED, (3, 40, 237, 190))
+    kk = count(im, BK, (3, 40, 237, 190))
+    okc.append(c3 > 800 and rd > 40 and kk > 100 and all(P(im, x, y) == BK for x in (5, 120, 200) for y in (193, 194)))
+check("FM ALGO: all 32 algorithms drawn (blocks, lines, the red OUT bracket, nothing below the picture); each different from the others",
+      all(okc) and len(set(imgs)) == 32, f"{[k + 1 for k, v in enumerate(okc) if not v]} distinct {len(set(imgs))}")
+
+# SYSTEM 2: the VOICES row follows the voices (a key held: segments in black), redrawn when it changes
+sv = shots("l_sys2v", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('sys2')}"), (7000, "keys 1")])
+a, b = sv(6703), sv(7703)
+check("SYSTEM 2: the VOICES row (six segments) shows a voice in use when a key is held (black segments appear)", count(b, BK, (145, 122, 232, 131)) > count(a, BK, (145, 122, 232, 131)) + 50,
+      f"{count(a, BK, (145, 122, 232, 131))} {count(b, BK, (145, 122, 232, 131))}")
 
 sys.exit(1 if bad else 0)
