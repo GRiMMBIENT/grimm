@@ -353,6 +353,11 @@ static void read_script(const char *path)
             sscanf(line, "%*u %*s %u", &e.a);
             e.kind = HK_THEME;
         }
+        else if (!strcmp(what, "glow")) {       /* (V3.0 themes, tests/minimal_test.py: "T glow N": GLOW N, as SYSTEM 3's knob sets it) */
+            sscanf(line, "%*u %*s %u", &e.a);
+            e.a |= 0x100u;
+            e.kind = HK_THEME;
+        }
         else if (!strcmp(what, "prim")) e.kind = HK_PRIM;   /* (V3.0 themes, tests/theme_test.py: "T prim": BRUTAL's polygon and line demo in place of its pictures) */
         else if (!strcmp(what, "page")) {       /* (V3.0 themes, tests/theme_test.py: "T page N": the page N shown, as the main loop takes it up) */
             sscanf(line, "%*u %*s %u", &e.a);

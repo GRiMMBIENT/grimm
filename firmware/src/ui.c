@@ -56,11 +56,11 @@ typedef struct {
     const ui_pal_t *pal;
     int16_t hh;                                 /* the header: the top hh rows */
     int16_t px, pw, py, ph, pyf, phf;           /* the picture's region: x, width, y, height (pyf, phf: MIXER 1's, the whole page) */
-    int16_t sy, sh;                             /* the knob blocks: their top and height (x: 3 + 59 k, 56 wide) */
+    int16_t sy, sh, kw;                         /* the knob blocks: their top and height (x: 3 + 59 k), their width (56; MINIMAL's 59: the rules run on) */
     int16_t dx, dy, dyf;                        /* a borrowed picture moved this far (MIXER 1's: dyf) */
     uint8_t anim;                               /* HOME's own moving picture (the eye, the candles) */
     uint8_t fit8;                               /* the header's text cut to fit in 8 px characters (ui_head_text) */
-    uint8_t bfin;                               /* the boot screen's finish: 0 EYE's, 1 BRUTAL's (hard edges, no glow, its font) */
+    uint8_t bfin;                               /* the theme's kind: 0 EYE (the pixfont, the eye and the bats), 1 BRUTAL (hard edges, its fonts, the door), 2 MINIMAL (thin lines, Terminus, the outline eye) */
     uint8_t tiles;                              /* HOME's picture shows the four tracks and its knob blocks the knobs (EYE: the slabs are the tracks) */
     void (*head)(void);
     void (*slab)(void);
@@ -83,9 +83,10 @@ static int32_t ui_dx, ui_dy;                    /* (V3.0) a picture of another t
 static void ui_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) { cv_rect(x + ui_dx - ui_ox, y + ui_dy, w, h, c); }
 static void ui_cell(int32_t x, int32_t y, uint16_t c) { ui_rect(PX0 + x * 4, PY0 + y * 4, 4, 4, c); }
 static int32_t br_ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c);   /* (brutal.c) */
+static int32_t mn_ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c);   /* (minimal.c) */
 static int32_t ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c)   /* pixfont x sc; the end */
 {
-    if (ui_th && ui_th->bfin) return br_ui_text(x, y, s, sc, c);   /* (V3.0: a picture borrowed from EYE in BRUTAL: its text in BRUTAL's fonts) */
+    if (ui_th && ui_th->bfin) return ui_th->bfin == 2 ? mn_ui_text(x, y, s, sc, c) : br_ui_text(x, y, s, sc, c);   /* (V3.0: a picture borrowed from EYE: its text in the theme's fonts) */
 #ifdef DINGHY_HOST
     if (ui_th && ui_th->bfin) host_ptext++;     /* (tests/brutal_test.py: BRUTAL draws none of EYE's pixfont) */
 #endif
@@ -139,7 +140,7 @@ static char ui_hb[12], ui_hl[24], ui_hr[12];    /* the button, the left, the rig
 static uint32_t ui_hmsg;                        /* (V3.0) the left is a message (a moment: SAVED, a sound's name, MIDI LEARN, ..) */
 static int32_t ui_bat;                          /* the battery as the header shows it (beside the tempo): bat_lvl x 2 +
                                                  * its blink (lowest: on, off), -1 none */
-static const char *const THEME_NAME[] = {"EYE", "BRUTAL"};   /* (V3.0) SYSTEM 3's THEME */
+static const char *const THEME_NAME[] = {"EYE", "BRUTAL", "MINIMAL"};   /* (V3.0) SYSTEM 3's THEME */
 static void ui_head_text(void)
 {
     const page_t *P = &PAGES[page];
@@ -356,6 +357,7 @@ static void ui_slab_make(uint32_t k, slab_t *S)
     S->sel = ui_kn_pg == page && ui_kn_last == k;   /* (BRUTAL's selected block: the knob turned last on this page) */
     S->val[0] = 0;
     ui_label(S->lab, name[0] ? name : "-");
+    if (page == PG_SYS3 && k == 3u && p) put_s(S->lab, "GLOW");   /* (V3.0: MINIMAL's: the knob is there only in it) */
     if (page == PG_GRID && k == 3u) put_s(S->lab, "LEN");   /* (Seq's; SAMPLE keeps its LENGTH) */
     if (!PAGES[page].built) {                   /* (named, nothing behind it yet) */
         S->fill = 0;
@@ -585,11 +587,10 @@ static int ui_in(int32_t x, int32_t y, int32_t w, int32_t h)   /* does (x, y, w,
 /* the eye at (x, y), 5 px a cell: its lids k open (4: wide, 0: shut; the lid's edge a light row), the iris dx, dy cells
  * off the middle (inside the white only) */
 static int32_t ui_eye_tiny;                     /* (V2: the boot's startled eye: its pupil shrunk to a point) */
+static const char *const ui_iris[2][4] = {{".aaaa.", "aawkaa", "aakkaa", ".aaaa."}, {".aaaa.", "aawaaa", "aaakaa", ".aaaa."}};   /* the iris, a pupil and a startled one */
 static void ui_eye(int32_t x, int32_t y, int32_t k, int32_t dx, int32_t dy)
 {
-    static const char *const IRIS_N[4] = {".aaaa.", "aawkaa", "aakkaa", ".aaaa."}, *const IRIS_T[4] = {".aaaa.", "aawaaa",
-                                                                                                     "aaakaa", ".aaaa."};
-    const char *const *IRIS = ui_eye_tiny ? IRIS_T : IRIS_N;
+    const char *const *IRIS = ui_iris[ui_eye_tiny ? 1 : 0];
     int32_t r, c;
     if (!ui_in(x, y, 80, 40)) return;
     for (r = 0; r < 8; r++) {
@@ -1318,7 +1319,7 @@ static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL co
     uint32_t t;
     for (t = 0; t < NT; t++)
         if (ui_meter_step(t) && draw && t == sel) {
-            if (ui_th->bfin) bp_meter_region(t);
+            if (ui_th->bfin == 1) bp_meter_region(t);
             else ui_regionp(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_th->pic);
         }
 }
@@ -1333,7 +1334,7 @@ static void ui_levels_frame(int draw)
     uint32_t t;
     for (t = 0; t < NT; t++)
         if (ui_meter_step(t) && draw) {
-            if (ui_th->bfin) bp_meter_region(t);
+            if (ui_th->bfin == 1) bp_meter_region(t);
             else ui_regionp(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_th->pic);
         }
 }
@@ -2037,6 +2038,12 @@ static uint32_t ui_pic_key(void)
     uint32_t h = 2166136261u, k, t;
 #define UI_H(v) (h = (h ^ (uint32_t)(v)) * 16777619u)
     UI_H(page), UI_H(sel), UI_H(sel_eng()), UI_H(ge_freeze), UI_H(ui_acc), UI_H(mx_sq);
+    if (page == PG_HOME && ui_th->bfin == 2)    /* (MINIMAL's HOME: each track's first 16 steps, and the one playing) */
+        for (t = 0; t < NT; t++) {
+            const seq_pat_t *Pt = &seq[t].pat[clamp(seq[t].cur, 0, SEQ_NPAT - 1)];
+            UI_H(seq_on ? seq[t].pos : -1), UI_H(seq_steps(&seq[t]));
+            for (k = 0; k < 16u; k++) UI_H(Pt->st[k].note != 0);
+        }
     for (k = 0; k < 4u; k++) {
         volatile int32_t *p = knob_param(page, k);
         UI_H(p ? *p : -1);
@@ -2370,10 +2377,12 @@ static void bd_end(void)                        /* the door out: HOME alone (the
     ui_region(0, 0, 240, 240, UI_K, bd_draw);
     br_boot_run = 0, br_boot_keep = 1;
 }
+#include "minimal.c"                          /* (V3.0) the MINIMAL theme, and its boot */
 static void ui_boot(void)
 {
     ui_boot_t = fm1_ms, bt_d = bt_e = 0;
-    if (ui_th->bfin) { bd_start(); return; }
+    if (ui_th->bfin == 1) { bd_start(); return; }
+    if (ui_th->bfin == 2) { mb_start(); return; }
     bs_init();
     ui_region(0, 0, 240, 240, UI_K, ui_boot_draw);
 }
@@ -2383,7 +2392,8 @@ static void ui_boot_frame(void)
     uint32_t e = fm1_ms - ui_boot_t, e0 = bt_e, x, i, was = 0, now = 0;   /* (e0: the time last drawn) */
     if (fm1_ms - t < UI_ANIM_MS) return;
     t = fm1_ms;
-    if (ui_th->bfin) { bd_frame(e); return; }
+    if (ui_th->bfin == 1) { bd_frame(e); return; }
+    if (ui_th->bfin == 2) { mb_frame(e); return; }
     bt_e = e / 2u;                              /* (what each region shows: as at e; V2: at half speed) */
     if (!bt_eye_same(bt_eye(e0), bt_eye(e)))
         ui_region(72, 40, 96, 52, UI_K, ui_boot_draw);   /* (the eye, wherever it jolts and trembles) */
@@ -2407,8 +2417,9 @@ static void ui_boot_frame(void)
 #include "brutalp.c"                          /* (V3.0) BRUTAL's pictures */
 static int ui_native_all(void) { return 1; }   /* (EYE: every picture is its own) */
 static const ui_theme_t UI_THEMES[] = {         /* (THEME 0, 1 ..: SYSTEM 3's knob; firmware/src/grimm.c sys_sync) */
-    {&UI_PAL_EYE, 24, 0, 240, 24, 141, 24, 216, 165, 72, 0, 0, 0, 1, 1, 0, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
-    {&UI_PAL_BRUTAL, 29, 0, 240, 32, 160, 29, 211, 195, 42, 0, 8, 3, 0, 0, 1, 1, br_head_draw, br_knob_draw, br_pic, br_native},   /* BRUTAL (the header: the top 29 rows: the bar's 3 + 26) */
+    {&UI_PAL_EYE, 24, 0, 240, 24, 141, 24, 216, 165, 72, 56, 0, 0, 0, 1, 1, 0, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
+    {&UI_PAL_BRUTAL, 29, 0, 240, 32, 160, 29, 211, 195, 42, 56, 0, 8, 3, 0, 0, 1, 1, br_head_draw, br_knob_draw, br_pic, br_native},   /* BRUTAL (the header: the top 29 rows: the bar's 3 + 26) */
+    {&UI_PAL_MINIMAL, 29, 0, 240, 32, 160, 29, 211, 195, 42, 59, 0, 8, 3, 0, 0, 2, 1, mn_head_draw, mn_knob_draw, mn_pic, mn_native},   /* MINIMAL (BRUTAL's frame: the header's rule at row 27) */
 };
 #define NTHEME (sizeof UI_THEMES / sizeof UI_THEMES[0])
 static void ui_theme_set(uint32_t i)            /* the theme i on (its palette; the accent: sys_sync, after it) */
@@ -2424,9 +2435,10 @@ static void ui_update(int32_t oct)
     static char hb[12], hl[24], hr[12];
     uint32_t k, key, st;
     static uint32_t an_t;
+    static uint32_t shown_glow;
     int all, nat;
     if (!ui_th) ui_theme_set(0);
-    all = page != shown_page || ui_acc != shown_acc || ui_th != shown_th;   /* (a new COLOUR, THEME: everything again) */
+    all = page != shown_page || ui_acc != shown_acc || ui_th != shown_th || (uint32_t)MN_GLOW != shown_glow;   /* (a new COLOUR, THEME, GLOW: everything again) */
     if (fm1_ms - ui_boot_t < UI_BOOT_MS) {      /* (the boot screen still) */
         ui_boot_frame();
         return;
@@ -2441,7 +2453,7 @@ static void ui_update(int32_t oct)
             if (ui_th->sy > ui_th->py + ui_th->ph) lcd_fill(0, ui_th->py + ui_th->ph, 240, (int32_t)(ui_th->sy - ui_th->py - ui_th->ph), UI_K);   /* (.. and the gap above the blocks) */
         }
         br_boot_keep = 0;
-        shown_page = page, shown_acc = ui_acc, shown_th = ui_th;
+        shown_page = page, shown_acc = ui_acc, shown_th = ui_th, shown_glow = (uint32_t)MN_GLOW;
         for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '\x01';
         pic_key = ~ui_pic_key();
     }
@@ -2477,11 +2489,11 @@ static void ui_update(int32_t oct)
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
         if (dot_shown < 54u) {
-            if (ui_th->bfin) bp_dot_region(dot_shown);
+            if (ui_th->bfin == 1) bp_dot_region(dot_shown);
             else ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
         }
         dot_shown = lfo_dot();
-        if (ui_th->bfin) bp_dot_region(dot_shown);
+        if (ui_th->bfin == 1) bp_dot_region(dot_shown);
         else ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
@@ -2491,7 +2503,7 @@ static void ui_update(int32_t oct)
 #endif
         if (st != stat_key) {
             stat_key = st;
-            if (ui_th->bfin) bp_sys2_region();
+            if (ui_th->bfin == 1) bp_sys2_region();
             else ui_regionp(PX0, 110, 216, 49, UI_K, ui_th->pic);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
         }
     }
@@ -2503,7 +2515,7 @@ static void ui_update(int32_t oct)
             ui_sl[k].warn != ui_slab_shown[k].warn || ui_sl[k].sel != ui_slab_shown[k].sel) {
             ui_slab_shown[k] = ui_sl[k];
             ui_k = k;
-            ui_region(3 + (int32_t)k * 59, ui_th->sy, 56, ui_th->sh, UI_K, ui_th->slab);
+            ui_region(3 + (int32_t)k * 59, ui_th->sy, ui_th->kw, ui_th->sh, UI_K, ui_th->slab);
         }
     }
 }

@@ -4,7 +4,7 @@
 # The stress test: firmware/src/grimm.c in host mode (firmware/src/host.c) with address and undefined-behaviour checking and
 # the checks of firmware/src/stress_check.c, played by tests/stress_gen.py's script (every source on every track, chords,
 # voicings, SCALE, LATCH, the octaves, fast keys, MIDI in, every page and hold combo while notes sound and the sequencer
-# plays and records, slots, undo / redo, PRESETS; first a project come back from as at power-on; V3.0: once with THEME EYE, once BRUTAL), after
+# plays and records, slots, undo / redo, PRESETS; first a project come back from as at power-on; V3.0: once with THEME EYE, once BRUTAL, once MINIMAL with GLOW), after
 # tests/device_names.py (no two variables made one in the device build). Prints "stress test: passed", or what failed (exit 1).
 #   tests/stress.sh [SEED]
 set -e
@@ -28,6 +28,16 @@ if [ $rc -eq 0 ] && grep -q "^STRESS OK" build/stress/log.txt; then
     if [ $rc -ne 0 ] || ! grep -q "^STRESS OK" build/stress/log_brutal.txt; then
         echo "stress test: FAILED with THEME BRUTAL (exit $rc; build/stress/log_brutal.txt)"
         grep -m 5 -E "STRESS FAIL|ERROR|runtime error|SUMMARY" build/stress/log_brutal.txt || tail -5 build/stress/log_brutal.txt
+        exit 1
+    fi
+    set +e                                      # (and with THEME MINIMAL, GLOW on: its drawing and its halos)
+    GRIMM_THEME=2 GRIMM_GLOW=1 UBSAN_OPTIONS=print_stacktrace=1 STRESS_CHECKS=build/stress/checks.txt build/stress/grimm build/stress/out build/stress/script.txt \
+        > build/stress/log_minimal.txt 2>&1
+    rc=$?
+    set -e
+    if [ $rc -ne 0 ] || ! grep -q "^STRESS OK" build/stress/log_minimal.txt; then
+        echo "stress test: FAILED with THEME MINIMAL (exit $rc; build/stress/log_minimal.txt)"
+        grep -m 5 -E "STRESS FAIL|ERROR|runtime error|SUMMARY" build/stress/log_minimal.txt || tail -5 build/stress/log_minimal.txt
         exit 1
     fi
     echo "stress test: passed"

@@ -1177,8 +1177,9 @@ static struct {
 #define SET_VER 3u
 static uint32_t set_dirty, set_t;               /* the settings changed, when */
 static volatile int32_t sy_vel;                 /* (V2) SYSTEM 3's VELOCITY (its knob) */
-#define THEME_N 2u                              /* (V3.0 THEMES) the themes there are (ui.c UI_THEMES): EYE, BRUTAL; set.latch bits 4, 5 hold the one on */
+#define THEME_N 3u                              /* (V3.0 THEMES) the themes there are (ui.c UI_THEMES): EYE, BRUTAL, MINIMAL; set.latch bits 4, 5 hold the one on, bit 6 GLOW */
 static volatile int32_t sy_theme;               /* (V3.0) SYSTEM 3's THEME (its knob 3) */
+static volatile int32_t sy_glow;                /* (V3.0) its GLOW (knob 4; MINIMAL's: the halo round lines and text) */
 static volatile int32_t sy_col, sy_mch, sy_tune, sy_scr, sy_learn, sy_out, sy_fac, sy_clk, sy_latch;   /* SYSTEM's,
                                                  * SYSTEM 2's, SYSTEM 3's knobs (sy_fac: SAMPLES, 1 RESTORE: OCT+
                                                  * writes the factory ones) */
@@ -1407,7 +1408,7 @@ static volatile int32_t *knob_param(uint32_t pg, uint32_t k)   /* what KNOB k + 
     case PG_PROJECTS: return k == 0u ? &pj_slot : k == 3u ? &pj_act : 0;   /* (CATEGORY, TYPE: "-") */
     case PG_SYSTEM: return k == 0u ? &sy_col : k == 1u ? &sy_mch : k == 2u ? &sy_tune : &sy_scr;
     case PG_SYS2: return k == 0u ? &sy_learn : k == 1u ? &sy_out : k == 2u ? &sy_fac : &sy_clk;
-    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : k == 2u ? &sy_theme : 0;   /* (V2: LATCH, VELOCITY; V3.0: THEME) */
+    case PG_SYS3: return k == 0u ? &sy_latch : k == 1u ? &sy_vel : k == 2u ? &sy_theme : k == 3u && sy_theme == 2 ? &sy_glow : 0;   /* (V2: LATCH, VELOCITY; V3.0: THEME; GLOW in MINIMAL) */
     default: return 0;                          /* (not built yet: the knobs do nothing) */
     }
 }
@@ -1969,8 +1970,8 @@ static void sys_sync(void)
     int8_t tn = (int8_t)clamp(sy_tune, -50, 50);
     uint8_t col = (uint8_t)clamp(sy_col, 0, 3), mch = (uint8_t)clamp(sy_mch, 0, MCH_MAX), scr = (uint8_t)clamp(sy_scr, 0, 4);
     uint8_t out = (uint8_t)clamp(sy_out, 0, 1), clk = (uint8_t)clamp(sy_clk, 0, CK_N - 1);
-    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1 | clamp(sy_theme, 0, (int32_t)THEME_N - 1) << 4);   /* (V2: LATCH,
-                                                 * VELOCITY; V3.0: THEME, bits 4, 5) */
+    uint8_t la = (uint8_t)(clamp(sy_latch, 0, 1) | clamp(sy_vel, 0, 1) << 1 | clamp(sy_theme, 0, (int32_t)THEME_N - 1) << 4 | clamp(sy_glow, 0, 1) << 6);   /* (V2: LATCH,
+                                                 * VELOCITY; V3.0: THEME, bits 4, 5; GLOW, bit 6) */
     uint32_t n, t;
     if (mch != set.mch || (set.out && !out)) mo_flush = 1;
     if (mch != set.mch)
@@ -2011,13 +2012,13 @@ static void sys_load(void)                      /* the settings at power-on into
     }
     if (set.mch > MCH_MAX) set.mch = 0;
     if (set.clk >= CK_N) set.clk = CK_INT;
-    set.latch &= 0x33u;                         /* (V3.0: CLICK is not a setting. A V3.0 test build saved it in bit 2: gone, LATCH and
-                                                 * VELOCITY kept; THEME: bits 4, 5) */
-    if ((set.latch >> 4) >= THEME_N) set.latch &= 3u;   /* (a theme this firmware has not: EYE) */
+    set.latch &= 0x73u;                         /* (V3.0: CLICK is not a setting. A V3.0 test build saved it in bit 2: gone, LATCH and
+                                                 * VELOCITY kept; THEME: bits 4, 5; GLOW: bit 6) */
+    if ((set.latch >> 4 & 3u) >= THEME_N) set.latch &= 0x43u;   /* (a theme this firmware has not: EYE) */
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.nlk > NLINK) set.nlk = 0;
     sy_col = set.col, sy_mch = set.mch, sy_tune = set.tune, sy_scr = set.scr, sy_out = set.out, sy_clk = set.clk;
-    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u, sy_theme = set.latch >> 4 & 3u;
+    sy_latch = set.latch & 1u, sy_vel = set.latch >> 1 & 1u, sy_theme = set.latch >> 4 & 3u, sy_glow = set.latch >> 6 & 1u;
     cl_on = 0;                                  /* (V3.0: CLICK always starts off) */
     sys_sync();
     set_dirty = 0;
@@ -2200,6 +2201,7 @@ static void app_main(void)
 #ifdef DINGHY_HOST
     if (getenv("GRIMM_THEME")) {                /* (host mode, tests/stress.sh: THEME N from the start, as if saved) */
         sy_theme = atoi(getenv("GRIMM_THEME"));
+        if (getenv("GRIMM_GLOW")) sy_glow = atoi(getenv("GRIMM_GLOW"));
         sys_sync();
         set_dirty = 0;
     }
@@ -2250,7 +2252,9 @@ static void app_main(void)
         platform_poll();
 #ifdef DINGHY_HOST
         if (host_theme_set >= 0) {              /* (a test script's "theme N": as the knob or the editor sets it) */
-            sy_theme = host_theme_set, host_theme_set = -1;
+            if (host_theme_set & 0x100) sy_glow = host_theme_set & 1;
+            else sy_theme = host_theme_set;
+            host_theme_set = -1;
             sys_sync();
         }
         if (host_page_set >= 0) {               /* (a test script's "page N") */

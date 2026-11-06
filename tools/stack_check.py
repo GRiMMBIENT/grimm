@@ -63,7 +63,7 @@ for f, ins in funcs.items():
 ENG = [f for f in funcs if re.fullmatch(r"(va|fm|sampler|formant|choir|wheel|phys|phase|pd)_block", f)]
 BEG = [f for f in funcs if re.fullmatch(r"\w+_begin", f) and f != "voice_begin"]
 TXT = [f for f in funcs if re.fullmatch(r"(va|fm|sampler|formant|wheel|phys|phase)_text", f)]
-DRAW = [f for f in funcs if re.search(r"draw|^pic_|^br_|^ui_native", f)]            # (V3.0 themes: BRUTAL's br_ drawing, the themes' native test)
+DRAW = [f for f in funcs if re.search(r"draw|^pic_|^br_|^mn_|^ui_native", f)]            # (V3.0 themes: BRUTAL's br_ and MINIMAL's mn_ drawing, the themes' native test)
 RAMT = [f for f in funcs if f.startswith(("rt_flash", "fl_", "spi_", "flash_")) and not calls[f]]
 TARGETS = {"app_audio": ENG, "voice_begin": BEG, "app_main": TXT, "ui_region": DRAW, "ui_update": DRAW, "ui_slab_make": TXT,   # (ui_update: the theme's header, pictures, blocks)
            "fl_write": RAMT, "st_read": RAMT, "st_write": RAMT, "ota_erase": RAMT, "sample_flash_erase": RAMT,

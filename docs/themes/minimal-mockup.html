@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>GR!MM MINIMAL all pages</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#060707;font-family:'IBM Plex Mono',monospace;color:#6f7378}
+#bar{padding:20px 40px 0;font-size:14px;letter-spacing:1px}
+#bar label{cursor:pointer}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,480px);gap:40px;padding:30px 40px 40px;justify-content:center}
+.lab{height:26px;font-size:14px;letter-spacing:1px;color:#6f7378;display:flex;align-items:flex-end;margin-bottom:10px}
+.scr{width:480px;height:480px;background:#000;color:#d6d6d2;display:flex;flex-direction:column;padding:0 16px;box-sizing:border-box;overflow:hidden}
+.hdr{height:52px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #3a3e42;flex-shrink:0}
+.knobs{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:2px solid #3a3e42}
+</style></head><body>
+<div id="bar"><label><input type="checkbox" id="glow" checked> GLOW</label></div>
+<div id="grid"></div>
+<script>
+function build(GLOW){
+const glow = GLOW;
+const BG = '#000000', K = '#d6d6d2', R = '#e39b2d', W = '#f0f0ec', C1 = '#1e2023', C2 = '#222528', C3 = '#26292d', D = '#6a6e73', S = '#34383c', SEL = '#2c2f33';
+const tsInk = glow ? '0 0 5px rgba(214,214,210,0.55)' : 'none', tsDim = glow ? '0 0 5px rgba(124,128,134,0.45)' : 'none', tsAcc = glow ? '0 0 6px rgba(227,155,45,0.75)' : 'none';
+let seed = 5;
+const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+const sz = (s) => s >= 40 ? Math.round(s * 0.6) : s >= 26 ? Math.round(s * 0.75) : s;
+const mk = () => {
+const g = { r: [], p: [], q: [] };
+g.rect = (x, y, w, h, f) => g.r.push({ x, y, w, h, f });
+g.path = (d, w, c) => g.p.push({ d, w: w || 3, c: c || K });
+g.text = (x, y, t, s, c, light, a) => g.q.push({ x, y, t, s: sz(s), c: c || K, wt: light ? 400 : 500, a: a || 'start' });
+g.box = (x, y, w, h, f, sel) => { g.rect(x, y, w, h, sel ? SEL : f); if (sel) { g.rect(x, y + h - 3, w, 3, R); } };
+g.rect(0, 0, 468, 320, BG);
+return g;
+};
+const fn = (f, a, b, yc, amp) => { let d = ''; for (let i = 0; i <= 107; i++) { const t = i / 107, x = a + t * (b - a); d += (i ? ' L' : 'M') + x.toFixed(1) + ' ' + (yc - f(t) * amp).toFixed(1); } return d; };
+const keys = (marks, label) => {
+const g = mk();
+g.text(4, 30, label, 18);
+const wx = (i) => 4 + i * 66;
+for (let i = 0; i < 7; i++) g.rect(wx(i), 56, 62, 250, C3);
+[0, 1, 3, 4, 5].forEach((i) => g.rect(wx(i) + 42, 56, 42, 150, '#4a4e53'));
+const WN = [0, 2, 4, 5, 7, 9, 11], BN = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+marks.forEach(([n, c]) => { const wi = WN.indexOf(n); if (wi >= 0) g.rect(wx(wi) + 24, 280, 14, 14, c); else g.rect(wx(BN[n]) + 56, 184, 14, 14, c); });
+return g;
+};
+const tiles = (items, cols, rowsH, draw) => { const g = mk(); items.forEach((it, i) => { const w = (468 - (cols - 1) * 8) / cols, x = (i % cols) * (w + 8), y = Math.floor(i / cols) * (rowsH + 8); draw(g, it, i, x, y, w, rowsH); }); return g; };
+const P = {};
+P.home = () => { const g = mk(); [['T1', 'VA', 80, '1000100010001000'], ['T2', 'FM', 45, '1000000010000000'], ['T3', 'VO', 100, '1010001010100010'], ['T4', 'SA', 0, '0000000000000000']].forEach(([n, s, lv, pat], i) => { const y = 6 + i * 78, sel = i === 2; g.text(4, y + 18, n, 16, sel ? R : K); g.text(56, y + 18, s, 14, D, true); g.rect(110, y + 8, 300, 8, S); g.rect(110, y + 8, 300 * lv / 100, 8, sel ? R : '#8a8e93'); g.text(464, y + 18, String(lv), 14, D, true, 'end'); pat.split('').forEach((ch, k) => g.rect(110 + k * 22.2, y + 36, 17, 8, k === 6 ? K : ch === '1' ? (sel ? R : D) : '#2a2d31')); }); return g; };
+P.va = () => { const g = mk(); g.text(4, 30, 'SAW', 18); g.text(464, 30, 'WAVE 2/6', 12, D, true, 'end'); g.rect(4, 190, 460, 1, S); g.path('M8 290 L118 90 L118 290 L230 90 L230 290 L342 90 L342 290 L460 90'); return g; };
+const algo = (selOp) => { const g = mk(); const pos = { 6: [60, 24], 5: [60, 98], 4: [60, 172], 3: [60, 246], 2: [300, 172], 1: [300, 246] }; g.path('M100 72 L100 98 M100 146 L100 172 M100 220 L100 246 M340 220 L340 246', 2, D); g.path('M100 294 L100 306 L340 306 L340 294', 2, R); Object.entries(pos).forEach(([n, [x, y]]) => { const s = +n === selOp; g.rect(x, y, 80, 48, s ? SEL : C3); if (s) g.rect(x, y + 45, 80, 3, R); g.text(x + 40, y + 31, n, 18, s ? R : K, false, 'middle'); }); g.text(464, 40, 'ALGO 05', 18, K, false, 'end'); g.text(464, 64, 'FB 40', 12, D, true, 'end'); return g; };
+P.fm = () => algo(0);
+P.fmalgo = () => algo(3);
+P.sample = () => { const g = mk(); g.text(4, 30, 'SLOT 1  URCHIN', 16); for (let i = 0; i < 54; i++) { const a = 6 + Math.abs(Math.sin(i * 0.7) * 60 + Math.sin(i * 0.23) * 50) * (1 - i / 80), x = 8 + i * 8.5; g.rect(x, 190 - a, 3, a * 2, i >= 9 && i < 41 ? K : D); } g.rect(86, 60, 2, 250, R); g.rect(356, 60, 2, 250, R); return g; };
+P.voice = () => { const g = mk(); g.text(40, 250, 'A', 230); ['A', 'E', 'I', 'O', 'U'].forEach((v, i) => { const s = i === 0; g.text(420, 50 + i * 60, v, 22, s ? R : D, !s, 'middle'); }); g.rect(380, 18, 1, 290, S); return g; };
+P.wheel = () => { const g = mk(); const L = [8, 8, 6, 0, 4, 0, 2, 0, 0]; L.forEach((l, i) => { const x = 14 + i * 50; g.rect(x + 18, 16, 4, 270, S); g.rect(x + 6, 16 + l * 30, 28, 10, i === 2 ? R : K); g.text(x + 20, 314, String(l), 14, D, true, 'middle'); }); return g; };
+P.phys = () => { const g = mk(); g.text(4, 30, 'STRING', 18); g.rect(20, 130, 4, 90, K); g.rect(444, 130, 4, 90, K); g.path('M24 175 L444 175', 3); g.path('M24 150 L444 150 M24 200 L444 200', 1, D); g.rect(300, 140, 6, 70, R); g.text(303, 250, 'BOW', 12, D, true, 'middle'); return g; };
+P.phase = () => { const g = mk(); g.text(4, 30, 'RESO', 18); g.rect(4, 190, 460, 1, S); g.path(fn((t) => { const u = (t * 3) % 1; return Math.cos(2 * Math.PI * Math.pow(u, 0.35)); }, 8, 460, 190, 100)); return g; };
+P.source = () => { const g = tiles(['VA', 'FM', 'SA', 'VO', 'WH', 'PH', 'PD', 'LATCH'], 4, 92, (g, s, i, x, y, w, h) => { const sel = i === 3; g.box(x, y, w, h, C2, sel); if (s === 'LATCH') { g.text(x + 12, y + 28, 'LATCH', 11, D, true); g.text(x + 12, y + 72, 'ON', 18, R); } else g.text(x + w / 2, y + 56, s, 20, sel ? R : K, false, 'middle'); }); g.rect(0, 208, 468, 2, S); g.text(4, 248, 'TYPE', 11, D, true); g.text(4, 290, 'GREGORIAN', 22); g.text(464, 290, 'GLIDE OFF', 12, D, true, 'end'); return g; };
+P.fmop = () => { const g = mk(); g.text(4, 30, 'OP 3', 18); g.text(464, 30, 'RATIO 2.00', 18, K, false, 'end'); g.path('M8 290 L80 80 L270 220 L460 290'); g.rect(76, 76, 8, 8, R); return g; };
+P.line2 = () => { const g = mk(); g.text(4, 30, 'LINE 2', 18); g.text(464, 30, 'RING ON', 12, R, true, 'end'); g.path(fn((t) => Math.sin(t * 6 * Math.PI), 8, 460, 180, 90), 2, D); g.path(fn((t) => Math.sin(t * 6 * Math.PI) * Math.sin(t * 13 * Math.PI), 8, 460, 180, 100)); return g; };
+P.penv = () => { const g = mk(); g.text(4, 30, 'DCW', 16); g.text(464, 30, 'PITCH', 16, D, true, 'end'); g.path(fn((t) => Math.exp(-t * 4), 8, 460, 300, 230)); g.path(fn((t) => Math.exp(-t * 9), 8, 460, 300, 170), 2, D); return g; };
+P.env = () => { const g = mk(); g.path('M8 300 L100 50 L200 150 L350 150 L460 300'); g.path('M350 150 L350 300', 1, D); [['A', 54], ['D', 150], ['S', 275], ['R', 405]].forEach(([l, x]) => g.text(x, 30, l, 14, l === 'R' ? R : D, true, 'middle')); return g; };
+P.lfo = () => { const g = mk(); g.text(4, 30, 'SINE', 18); g.rect(4, 180, 460, 1, S); g.path(fn((t) => Math.sin(t * 4 * Math.PI), 8, 460, 180, 100)); g.rect(141, 76, 10, 10, R); return g; };
+P.tape = () => { const g = mk(); [80, 268].forEach((x) => { g.rect(x, 40, 120, 120, D); g.rect(x + 3, 43, 114, 114, BG); g.rect(x + 54, 94, 12, 12, K); }); g.rect(80, 200, 308, 3, K); g.text(4, 290, 'ON  T1 T3', 22); return g; };
+P.grain = () => { const g = mk(); seed = 9; for (let i = 0; i < 70; i++) { const s = 3 + Math.floor(rnd() * 12); g.rect(8 + rnd() * 440, 20 + rnd() * 280, s, s, rnd() < 0.1 ? R : rnd() < 0.5 ? K : D); } return g; };
+P.delay = () => { const g = mk(); for (let i = 0; i < 8; i++) { const h = 250 * Math.pow(0.75, i); g.rect(8 + i * 58, 300 - h, 3, h, i ? D : K); g.rect(8 + i * 58, 300 - h, 10, 3, i ? D : R); } g.text(464, 30, '3/16', 18, K, false, 'end'); return g; };
+P.space = () => { const g = mk(); for (let i = 0; i < 40; i++) { const h = 260 * Math.exp(-i / 12); g.rect(8 + i * 11.4, 300 - h, 3, h, i < 3 ? K : D); } g.text(464, 30, 'SIZE 90', 16, K, false, 'end'); return g; };
+P.master = () => { const g = mk(); g.text(4, 30, 'LP  PRE', 18); g.path('M8 130 L250 130 C275 130 280 95 290 95 C305 95 320 220 360 300'); g.rect(288, 50, 2, 260, R); return g; };
+P.drive = () => { const g = mk(); g.text(4, 30, 'FUZZ', 18); g.path(fn((t) => Math.sin(t * 4 * Math.PI), 8, 460, 190, 110), 1, D); g.path(fn((t) => Math.max(-0.6, Math.min(0.6, Math.sin(t * 4 * Math.PI) * 2)), 8, 460, 190, 110)); return g; };
+P.perform = () => { const g = tiles([['F3', 'FREEZE'], ['G3', 'REV THROW'], ['A3', 'ECHO THROW'], ['B3', 'TAPE STOP'], ['C4', ''], ['D4', ''], ['E4', ''], ['F4', '']], 4, 92, (g, [k, n], i, x, y, w, h) => { const sel = i === 1; g.box(x, y, w, h, C2, sel); g.text(x + 12, y + 30, k, 16, sel ? R : K); g.text(x + 12, y + 72, n, 10, D, true); }); g.rect(0, 208, 468, 2, S); g.text(4, 240, 'GENERATE', 11, D, true); ['T1', 'T2', 'T3', 'T4'].forEach((t, i) => { const on = i === 2; g.rect(4 + i * 116, 262, 108, 40, on ? SEL : C2); if (on) g.rect(4 + i * 116, 299, 108, 3, R); g.text(58 + i * 116, 288, t, 14, on ? R : K, false, 'middle'); }); return g; };
+P.mix1 = () => tiles([['LEVEL', 100], ['DELAY', 40], ['REVERB', 72], ['TAPE', 0], ['GRAIN', 15], ['DRIVE', 0]], 3, 152, (g, [l, v], i, x, y, w, h) => { const sel = i === 2; g.box(x, y, w, h, C2, sel); g.text(x + 12, y + 26, l, 11, sel ? R : D, true); g.text(x + 12, y + 92, String(v), 40, v || sel ? (sel ? R : K) : D); g.rect(x + 12, y + h - 26, w - 24, 4, S); g.rect(x + 12, y + h - 26, (w - 24) * v / 100, 4, sel ? R : K); });
+P.mix2 = () => tiles([[-20, 'LP', 'PRE'], [0, 'LP', 'PRE'], [35, 'HP', 'POST'], [-50, 'BP', 'PRE']], 4, 312, (g, [pan, t, pos], i, x, y, w, h) => { const sel = i === 2; g.box(x, y, w, h, C2, sel); g.text(x + 12, y + 32, 'T' + (i + 1), 16, sel ? R : K); g.rect(x + 12, y + 70, w - 24, 2, S); g.rect(x + w / 2 - 3 + pan * 0.4, y + 62, 6, 18, sel ? R : K); g.text(x + 12, y + 200, t, 30, K); g.text(x + 12, y + 236, pos, 12, D, true); });
+P.scale = () => keys([[0, R], [2, K], [3, K], [5, K], [7, K], [8, K], [10, K]], 'C MINOR');
+P.chord = () => keys([[0, R], [3, R], [7, R], [10, R]], 'MIN7  CLOSE');
+P.arp = () => { const g = mk(); g.text(4, 30, 'UP', 18); [60, 110, 160, 210, 60, 110, 160, 210, 60, 110, 160, 210, 60].forEach((h, i) => g.rect(8 + i * 35, 300 - h, 22, 3, i === 5 ? R : K)); [60, 110, 160, 210, 60, 110, 160, 210, 60, 110, 160, 210, 60].forEach((h, i) => g.rect(18 + i * 35, 303 - h, 2, h - 3, S)); return g; };
+P.grid = () => { const g = mk(); const pat = 'n...c...n.x.....n...c...n...x...n...c...n.x.....n...c.n.n...x...'; pat.split('').forEach((ch, i) => { const x = 8 + (i % 8) * 57, y = 6 + Math.floor(i / 8) * 39; g.rect(x, y, 48, 30, i === 13 ? K : ch === 'n' ? '#8a8e93' : ch === 'c' ? R : ch === 'x' ? '#4a4e53' : (i % 4 === 0 ? '#33373b' : '#25282b')); }); return g; };
+P.pattern = () => { const g = tiles(['A', 'B', 'C', 'D'], 4, 80, (g, p, i, x, y, w, h) => { const sel = i === 0; g.box(x, y, w, h, C2, sel); g.text(x + w / 2, y + 54, p, 24, sel ? R : K, false, 'middle'); }); g.text(4, 240, '64', 120); g.text(464, 170, 'STEPS', 12, D, true, 'end'); g.text(464, 240, '1/16', 24, K, false, 'end'); return g; };
+P.song = () => { const g = tiles([['A', 'x2'], ['B', 'x4'], ['A', 'x2'], ['C', 'x1'], ['END', '']], 5, 180, (g, [p, r], i, x, y, w, h) => { const sel = i === 1; g.box(x, y, w, h, C2, sel); g.text(x + 10, y + 22, String(i + 1), 11, D, true); g.text(x + w / 2, y + 104, p, p.length > 1 ? 16 : 30, sel ? R : K, false, 'middle'); g.text(x + w / 2, y + 150, r, 14, D, true, 'middle'); }); g.text(4, 280, 'SONG LOOP', 26); return g; };
+P.sounds = () => { const g = mk(); ['01', '02', '03', '04', '05'].forEach((n, i) => { const y = 6 + i * 62, sel = i === 2; g.rect(0, y, 468, 54, sel ? SEL : BG); if (sel) g.rect(0, y + 51, 468, 3, R); g.text(12, y + 34, n, 18, sel ? R : K); g.text(80, y + 33, i < 4 ? 'USED' : 'EMPTY', 12, i < 4 ? K : D, true); g.rect(0, y + 58, 468, 1, S); }); return g; };
+P.projects = () => tiles(['A', 'B', 'C', 'D'], 2, 152, (g, p, i, x, y, w, h) => { const sel = i === 0; g.box(x, y, w, h, C2, sel); g.text(x + 20, y + 90, p, 50, sel ? R : i < 2 ? K : D); g.text(x + w - 16, y + h - 20, sel ? 'IN USE' : i < 2 ? 'SAVED' : 'EMPTY', 11, sel ? R : D, true, 'end'); });
+P.system = () => { const g = mk(); g.text(4, 30, 'COLOUR', 11, D, true); ['#c8321e', '#d08a1c', '#2f8f8a', D].forEach((c, i) => { g.rect(4 + i * 72, 50, 60, 60, c); if (!i) g.rect(4, 118, 60, 3, K); }); g.text(4, 210, 'MIDI', 11, D, true); g.text(4, 270, 'CH 1-4', 40); return g; };
+P.sys2 = () => { const g = mk(); [['CPU NOW', 42, 40], ['CPU PEAK', 67, 140]].forEach(([l, v, y]) => { g.text(4, y, l, 11, D, true); g.text(464, y, v + '%', 18, K, false, 'end'); g.rect(4, y + 20, 460, 6, S); g.rect(4, y + 20, 460 * v / 100, 6, v > 60 ? R : K); }); g.text(4, 270, 'USB REC DROPS', 11, D, true); g.text(464, 278, '0', 30, K, false, 'end'); return g; };
+P.sys3 = () => tiles([['LATCH', 'FROM SOUND'], ['VELOCITY', 'ON']], 1, 152, (g, [l, v], i, x, y, w, h) => { const sel = i === 0; g.box(x, y, w, h, C2, sel); g.text(x + 16, y + 36, l, 11, sel ? R : D, true); g.text(x + 16, y + 110, v, 40, K); });
+const T = ['TRACK', 'T3'], B = ['BPM', '120.0'];
+const pages = [
+['HOME', 'HOME', B, [['VOLUME', '100'], ['CUTOFF', '80'], ['RESONANCE', '20'], ['FX', '100%']], 0, P.home],
+['EDIT · SOUND: VA', 'VA', T, [['WAVE', 'SAW'], ['DETUNE', '24'], ['CUTOFF', '80'], ['RESONANCE', '30']], 0, P.va],
+['EDIT · SOUND: FM', 'FM', T, [['PATCH', '05'], ['BRIGHT', '60'], ['DECAY', '72'], ['DETUNE', '10']], 0, P.fm],
+['EDIT · SOUND: SAMPLE', 'SAMPLE', T, [['SLOT', '1'], ['START', '18'], ['LENGTH', '60'], ['REVERSE', 'OFF']], 1, P.sample],
+['EDIT · SOUND: VOICE', 'VOICE', T, [['VOWEL', 'A'], ['SHIFT', '0'], ['BUZZ', '40'], ['BREATH', '25']], 0, P.voice],
+['EDIT · SOUND: WHEEL', 'WHEEL', T, [['DRAWBARS', '886'], ['PERC', 'ON'], ['CLICK', '30'], ['DRIVE', '15']], 0, P.wheel],
+['EDIT · SOUND: PHYS', 'PHYS', T, [['MODEL', 'STRING'], ['STRUCTURE', '50'], ['DAMP', '35'], ['BOW', '70']], 3, P.phys],
+['EDIT · SOUND: PHASE', 'PHASE', T, [['WAVE', 'RESO'], ['WAVE2', 'SAW'], ['DCW', '65'], ['DETUNE', '8']], 2, P.phase],
+['EDIT · SOURCE', 'SOURCE', T, [['SOURCE', 'VOICE'], ['LATCH', 'ON'], ['TYPE', 'GREG.'], ['GLIDE', 'OFF']], 0, P.source],
+['EDIT · FM ALGO', 'FM ALGO', T, [['ALGO', '05'], ['FEEDBACK', '40'], ['OP', '3'], ['FINE', '0']], 2, P.fmalgo],
+['EDIT · FM OP', 'FM OP 3', T, [['RATIO', '2.00'], ['LEVEL', '90'], ['ATTACK', '12'], ['DECAY', '55']], 0, P.fmop],
+['EDIT · LINE 2', 'LINE 2', T, [['WAVE', 'SAME'], ['DCW', 'OWN'], ['RING', 'ON'], ['NOISE', 'OFF']], 2, P.line2],
+['EDIT · PHASE ENV', 'PHASE ENV', T, [['DCW ENV', '70'], ['DCW DECAY', '40'], ['PITCH ENV', '+5'], ['PITCH DEC', '20']], 0, P.penv],
+['ENV', 'ENV', T, [['ATTACK', '30'], ['DECAY', '50'], ['SUSTAIN', '60'], ['RELEASE', '90']], 3, P.env],
+['LFO', 'LFO', T, [['RATE', '1/4'], ['DEPTH', '40'], ['DEST', 'CUTOFF'], ['SHAPE', 'SINE']], 2, P.lfo],
+['FX · TAPE', 'TAPE', B, [['WOW', '30'], ['SATURATION', '45'], ['TONE', '60'], ['HISS', '10']], 1, P.tape],
+['FX · GRAIN', 'GRAIN', B, [['SIZE', '40'], ['DENSITY', '70'], ['SCATTER', '55'], ['MIX', '35']], 2, P.grain],
+['FX · DELAY', 'DELAY', B, [['TIME', '3/16'], ['FEEDBACK', '72'], ['WEAR', '30'], ['MIX', '40']], 1, P.delay],
+['FX · SPACE', 'SPACE', B, [['SIZE', '90'], ['DAMP', '40'], ['MIX', '50'], ['PRE-DELAY', '20']], 0, P.space],
+['FX · MASTER', 'MASTER', B, [['CUTOFF', '62'], ['RESONANCE', '30'], ['TYPE', 'LP'], ['POSITION', 'PRE']], 0, P.master],
+['FX · DRIVE', 'DRIVE', B, [['AMOUNT', '60'], ['TYPE', 'FUZZ'], ['TONE', '45'], ['MIX', '70']], 1, P.drive],
+['FX (hold) · PERFORM', 'PERFORM', B, [['FILT', '50'], ['REV', '0'], ['ECHO', '0'], ['PITCH', '0']], -1, P.perform],
+['HOME · MIXER 1', 'MIXER 1', T, [['REVERB', '72'], ['', ''], ['', ''], ['', '']], 0, P.mix1],
+['HOME · MIXER 2', 'MIXER 2', T, [['PAN', 'R35'], ['TYPE', 'HP'], ['POS', 'POST'], ['', '']], 0, P.mix2],
+['SEL · SCALE', 'SCALE', T, [['ROOT', 'C'], ['SCALE', 'MINOR'], ['', ''], ['', '']], 1, P.scale],
+['SEL · CHORD', 'CHORD', T, [['CHORD', 'MIN7'], ['VOICING', 'CLOSE'], ['', ''], ['', '']], 0, P.chord],
+['ARP', 'ARP', T, [['MODE', 'UP'], ['RATE', '1/16'], ['OCTAVES', '2'], ['GATE', '60']], 0, P.arp],
+['SEQ · GRID', 'SEQ', T, [['NOTE', 'C4'], ['CHANCE', '100'], ['RATCHET', '1'], ['LENGTH', '1']], 0, P.grid],
+['SEQ · PATTERN SETTINGS', 'PATTERN', T, [['STEPS', '64'], ['DIVISION', '1/16'], ['SWING', '0'], ['PLAY MODE', 'FWD']], 0, P.pattern],
+['GLO · SONG', 'SONG', B, [['SECTION', '2'], ['PATTERN', 'B'], ['REPEATS', '4'], ['MODE', 'LOOP']], 0, P.song],
+['SAVE · SOUNDS', 'SOUNDS', T, [['SLOT', '03'], ['CATEGORY', 'ALL'], ['TYPE', 'VO'], ['ACTION', 'LOAD']], 3, P.sounds],
+['SAVE · PROJECTS', 'PROJECTS', B, [['SLOT', 'A'], ['', ''], ['', ''], ['ACTION', 'LOAD']], 3, P.projects],
+['HOME (hold) · SYSTEM', 'SYSTEM', ['VER', '2.0'], [['COLOUR', 'RED'], ['MIDI CH', '1-4'], ['TUNE', '0'], ['SCREEN OFF', '5 MIN']], 0, P.system],
+['HOME (hold x2) · SYSTEM 2', 'SYSTEM 2', ['VER', '2.0'], [['MIDI LEARN', 'OFF'], ['SEQ OUT', 'OFF'], ['SAMPLES', 'KEEP'], ['CLOCK', 'INT']], 3, P.sys2],
+['HOME (hold x3) · SYSTEM 3', 'SYSTEM 3', ['VER', '2.0'], [['LATCH', 'SOUND'], ['VELOCITY', 'ON'], ['', ''], ['', '']], 0, P.sys3]
+].map(([label, title, tag, kn, sel, pic]) => {
+const g = pic();
+return {
+label, title, tagL: tag[0], tagV: tag[1], r: g.r, p: g.p, q: g.q,
+knobs: kn.map(([l, v], i) => {
+const on = i === sel;
+return {
+l, v,
+boxSt: 'display:flex;flex-direction:column;justify-content:center;gap:12px;padding-left:' + (i ? 10 : 2) + 'px;' + (i < 3 ? 'border-right:2px solid #3a3e42;' : '') + (on ? 'box-shadow:inset 0 -3px 0 #e39b2d;' : ''),
+labSt: 'font-size:10px;letter-spacing:1px;color:' + (on ? '#e39b2d' : '#7c8086') + ';text-shadow:' + (on ? tsAcc : tsDim),
+valSt: 'font-weight:500;line-height:1;font-size:' + (v.length > 5 ? 13 : 18) + 'px;color:' + (on ? '#e39b2d' : '#d6d6d2') + ';text-shadow:' + (on ? tsAcc : tsInk)
+};
+})
+};
+});
+return {pages,tsInk,tsDim,glow};}
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function render(){
+ const {pages,tsInk,tsDim,glow}=build(document.getElementById('glow').checked);
+ const filt='<defs><filter id="glow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.2" result="b"/><feComponentTransfer in="b" result="d"><feFuncA type="linear" slope="0.75"/></feComponentTransfer><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+ document.getElementById('grid').innerHTML=pages.map(pg=>{
+  const svg=pg.r.map(r=>`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${r.f}"/>`).join('')
+   +pg.p.map(p=>`<path d="${p.d}" fill="none" stroke="${p.c}" stroke-width="${p.w}" stroke-linejoin="round" stroke-linecap="round"/>`).join('')
+   +pg.q.map(q=>`<text x="${q.x}" y="${q.y}" font-size="${q.s}" fill="${q.c}" font-family="IBM Plex Mono, monospace" font-weight="${q.wt}" text-anchor="${q.a}" letter-spacing="1">${esc(q.t)}</text>`).join('');
+  const kn=pg.knobs.map(k=>`<div style="${k.boxSt}"><div style="${k.labSt}">${esc(k.l)}</div><div style="${k.valSt}">${esc(k.v)}</div></div>`).join('');
+  return `<div><div class="lab">${esc(pg.label)}</div><div class="scr"><div class="hdr"><div style="font-size:18px;font-weight:500;letter-spacing:2px;text-shadow:${tsInk}">${esc(pg.title)}</div><div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:11px;letter-spacing:1px;color:#7c8086;text-shadow:${tsDim}">${esc(pg.tagL)}</span><span style="font-size:18px;font-weight:500;text-shadow:${tsInk}">${esc(pg.tagV)}</span></div></div><svg width="448" height="306" viewBox="0 0 468 320" style="display:block;flex-shrink:0;margin:8px 0">${filt}<rect x="0" y="0" width="468" height="320" fill="#000"/><g filter="${glow?'url(#glow)':'none'}">${svg}</g></svg><div class="knobs">${kn}</div></div></div>`;
+ }).join('');
+}
+document.getElementById('glow').onchange=render;render();
+</script></body></html>
