@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 GR!MM
 """GR!MM V3.0 THEMES, stage 1: the BRUTAL theme in host mode (tests/run_host.sh; EYE's own pixels: tests/theme_test.py).
-  - SYSTEM 3's THEME (KNOB 3) is saved with the settings, and read before the boot screen, which then follows it
+  - SYSTEM 3's THEME (KNOB 3) is saved with the settings, and read before the boot screen, which then follows it: BRUTAL's is a concrete door (slabs slam shut,
+    the eye opens in the seam, GR!MM is stamped, the door slides open on HOME), its eye EYE's frame for frame; nothing is left of the door after it
   - BRUTAL's HOME: the header (the held button's name a black chip, the grey title bar, the red tag), the four tracks as tiles, the knob blocks with
     their 3 px value bars, the selected block (the knob turned last); the messages over the whole header; the chips CHD, CUT, MUTE
   - every page in BRUTAL's frame (EYE's pictures inside it for now): the margins and gaps black, the blocks in place, none of EYE's red
@@ -89,12 +90,6 @@ check("THEME (SYSTEM 3, KNOB 3) turned to BRUTAL is saved with the settings (170
       len(sb) == 170 and sb[-1] & 0x30 == 0x10 and se[-1] & 0x30 == 0, f"{sb[-3:].hex()} {se[-3:].hex()}")
 ENVB = {"GRIMM_SETTINGS_IN": str(SET)}
 
-bf = film("boot", [], 6500, ENVB, fps=20)
-b2, b4 = bf(2000), bf(4500)
-check("the boot screen follows the saved THEME: BRUTAL's red and white, none of EYE's red; the wordmark in the BRUTAL face (white, 24 px); the eye as in EYE",
-      count(b4, RED) > 100 and count(b4, EYE_RED) == 0 and count(b4, BW, (60, 100, 180, 126)) > 300 and count(b2, RED, (72, 40, 168, 92)) > 40,
-      f"{count(b4, RED)} {count(b4, EYE_RED)} {count(b4, BW, (60, 100, 180, 126))} {count(b2, RED, (72, 40, 168, 92))}")
-
 # ---- HOME: the header, the tiles, the knob blocks and their bars
 hf = film("home", [(6300, "enc 4 1")], 8200, ENVB)
 h1, h2 = hf(6000), hf(7500)
@@ -167,29 +162,87 @@ rows = lambda x0, x1, y0, y1: [y for y in range(y0, y1) if any(tuple(d_[3 * (y *
 lab = rows(8, 55, 196, 215)                                    # (VOLUME: the label's ink, Terminus 8x14 bold: 10 rows from y + 5)
 check("a block's label is Terminus Bold 8x14: its capitals 10 rows tall, from 5 px under the block's top (200 .. 209)", lab[0] == 200 and lab[-1] == 209 and len(lab) == 10, str(lab))
 
-# ---- the boot screen: the eye opens and looks around as in EYE: its box, frame by frame (every 50 ms), the same pixels in the theme's colours; the red of the eye,
-# the bats and the drips in the same places
-ef = film("boot_eye", [], 6500, None, fps=20)
+# ---- the boot screen: BRUTAL's concrete door (EYE's intro is theme_test's). Screenshots at known times: "T shot" (a frame is drawn every 55 ms: the shot 3 ms after one)
+def shots(name, ts, end, env=None, extra=()):
+    for f in OUT.glob(f"{name}-*.ppm"):
+        f.unlink()
+    path = OUT / f"{name}.txt"
+    path.write_text("".join(f"{t} {c}\n" for t, c in sorted(list(extra) + [(t, "shot") for t in ts])) + f"{end} end\n")
+    subprocess.run([EXE, str(OUT / name), str(path)], capture_output=True, check=True, env=dict(os.environ, **(env or {})))
+    return lambda t: (OUT / f"{name}-{t}.ppm").read_bytes()
+
+
+DOORT = [403, 773, 833, 1503, 2503, 4003, 4953, 5393, 5503, 5703]
+dr = shots("door", DOORT, 6500, ENVB)
+d04, d08, dsh, d15, d25, d40, d50, d54, d55, d57 = (dr(t) for t in DOORT)
+check("the door, 0 .. 0.8 s: two concrete slabs (the mockup's picture ground: faint lines) slide in from the top and the bottom, faster and faster (0.4 s: 27 rows each; "
+      "0.77 s: 110), black between; none of EYE's colours",
+      P(d04, 120, 5) == C1 and P(d04, 120, 10) == C2 and P(d04, 120, 60) == BK and P(d04, 120, 236) == C1 and P(d04, 120, 180) == BK and P(d08, 120, 50) in (C1, C2) and
+      P(d08, 120, 115) == BK and P(d08, 120, 104) in (C1, C2) and count(d04, EYE_RED) == 0,
+      str([P(d04, 120, 5), P(d04, 120, 10), P(d04, 120, 60), P(d04, 120, 236), P(d08, 120, 115)]))
+check("the slam: the screen shakes 2 px (the door 2 px down: black rows at the top, the seam at 121 .. 122); then still: a 2 px red seam at 119 .. 120, concrete on both sides",
+      P(dsh, 20, 0) == BK and P(dsh, 20, 1) == BK and P(dsh, 20, 121) == RED and P(dsh, 20, 122) == RED and P(d15, 20, 119) == RED and P(d15, 20, 120) == RED and
+      P(d15, 20, 100) == C1 and P(d15, 20, 140) == C1 and P(d15, 20, 0) in (C1, C2), str([P(dsh, 20, 0), P(dsh, 20, 121), P(d15, 20, 119), P(d15, 20, 100)]))
+check("the eye in the seam (2.5 s: open, a red iris, the seam either side of it); 4.0 s: GR!MM stamped in black (Archivo Black 24 px), the version line under it (Terminus Bold); "
+      "no bats, no stars, no drips (nothing but concrete round them)",
+      count(d25, RED, (80, 100, 160, 140)) > 10 and P(d25, 20, 119) == RED and P(d25, 200, 120) == RED and count(d25, BK, (60, 150, 180, 172)) == 0 and
+      count(d40, BK, (60, 150, 180, 172)) > 150 and count(d40, BK, (40, 184, 200, 196)) > 80 and count(d40, RED, (0, 130, 240, 240)) == 0 and
+      count(d40, BK, (0, 0, 240, 90)) == 0 and count(d40, BD, (0, 0, 240, 240)) == 0 and count(d40, BM, (0, 140, 240, 240)) == 0,
+      str([count(d25, RED, (80, 100, 160, 140)), count(d40, BK, (60, 150, 180, 172)), count(d40, BK, (40, 184, 200, 196))]))
+check("4.6 .. 5.6 s: the door slides open, top up, bottom down, HOME already behind it (5.0 s: the gap shows the tiles' black and red; 5.4 s: T1's black tile; the stamp goes down with the "
+      "bottom slab); at 5.7 s the header is there: the intro lasted 5.6 s",
+      P(d50, 60, 111) == BK and P(d50, 60, 108) == RED and P(d50, 100, 5) in (C1, C2) and P(d54, 60, 60) == BK and P(d54, 100, 5) in (C1, C2) and P(d55, 100, 5) in (C1, C2) and
+      P(d57, 120, 6) == BAR and P(d57, 200, 5) == RED,
+      str([P(d50, 60, 111), P(d50, 60, 108), P(d54, 60, 60), P(d55, 100, 5), P(d57, 120, 6)]))
+# nothing left of the door after it opened: the screen at 5.7 s is the same as HOME drawn from clear (THEME switched off and on, then HOME again), and the margins are black
+rf = shots("doorref", [9003], 10000, ENVB, [(7000, "theme 0"), (7500, "theme 1"), (8000, "page 1"), (8400, "page 7")])(9003)
+same = d57 == rf
+margins = all(P(d57, x, y) == BK for x in (0, 1, 2, 120, 237, 238, 239) for y in (29, 30, 31, 193, 194, 237, 238, 239)) and \
+    all(P(d57, x, y) == BK for x in (0, 1, 2, 238, 239) for y in range(0, 240, 7))
+check("the door leaves nothing behind: the screen 0.1 s after it (5.7 s) is pixel for pixel HOME drawn from clear (THEME off and on again, then HOME), the margins and gaps black",
+      same and margins, f"same {same}, margins {margins}")
+
+# only what moves is drawn: the pixels sent to the panel between two moments of the door (a probe's lcdpx), a frame every 55 ms
+path = OUT / "doorpx.txt"
+path.write_text("".join(f"{t} probe\n" for t in (1100, 3300, 3700, 4300, 4500, 4700, 5600)) + "6500 end\n")
+out = subprocess.run([EXE, str(OUT / "doorpx"), str(path)], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
+lcd = {int(ln.split()[1]): int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")}
+fr_eye, fr_stamp, fr_open = (lcd[3300] - lcd[1100]) / 40, (lcd[4300] - lcd[3700]) / 11, (lcd[5600] - lcd[4700]) / 16
+check("only what moves is drawn: the eye's phase sends the eye's box a frame at most (108 x 56 = 6048 px; the whole screen is 57600), the stamp 3.6 s a few small regions, the door "
+      "opening two strips and the stamp; no frame the whole screen but the slam's shake", fr_eye <= 6048 and fr_stamp <= 6048 and fr_open <= 25000,
+      f"px a frame: eye {fr_eye:.0f}, stamp {fr_stamp:.0f}, opening {fr_open:.0f}")
+
+# the eye: the same frames as EYE's, in the seam: EYE's eye box (74 .. 165, 40 .. 91) at m x 55 ms is BRUTAL's (74 .. 165, 92 .. 143) at 825 + m x 55 ms (the eye's clock starts 15 frames
+# in), pixel for pixel in the eye's own colours (mid grey, white, the iris: the lid's light edge is concrete, as the door is, and the seam's two rows left out)
 EYEPAL = rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")])[:6]
+ME = list(range(3, 63))                                          # (after the shake: 3 frames; to 3.4 s: it opens, trembles, looks, blinks)
+es = shots("doore", [55 * m + 3 for m in ME], 4000, {"GRIMM_BOOT_PLAIN": "1"})   # (EYE's intro without its stars and bats: the eye alone)
+bs = shots("doorb", [825 + 55 * m + 3 for m in ME], 6000, ENVB)
 
 
-def roles(ppm, pal):
+def eyeset(ppm, pal, y0, skip):
     w, d = px(ppm)
-    r = {c: i for i, c in enumerate(pal)}
-    return [r.get(tuple(d[3 * i:3 * i + 3]), 9) for i in range(w * 240)]
+    r = {pal[2]: "m", pal[4]: "w", pal[5]: "a"}
+    out = set()
+    for y in range(y0, y0 + 52):
+        if y - y0 in skip:
+            continue
+        for x in range(74, 166):
+            v = r.get(tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]))
+            if v:
+                out.add((x, y - y0, v))
+    return out
 
 
-diff_eye, diff_red, nf = [], [], 0
-for ms in range(0, 5600, 50):
-    a, b = roles(ef(ms), EYEPAL), roles(bf(ms), PAL[:6])
-    nf += 1
-    if [a[y * 240 + x] for y in range(40, 92) for x in range(74, 166)] != [b[y * 240 + x] for y in range(40, 92) for x in range(74, 166)]:
-        diff_eye.append(ms)
-    if [i for i, v in enumerate(a) if v == 5] != [i for i, v in enumerate(b) if v == 5]:
-        diff_red.append(ms)
-check(f"the BRUTAL boot's eye is EYE's, frame by frame: the eye's box (74 .. 165, 40 .. 91) has the same pixels, in the theme's colours, in all {nf} frames (every 50 ms, 0 .. 5.55 s: "
-      "it opens, trembles, looks around, blinks), and the red (the eye's iris, the bats' eyes, the drips) is in the same places",
-      not diff_eye and not diff_red, f"eye differs {diff_eye[:6]}, red differs {diff_red[:6]}")
+diff, poses = [], set()
+for m in ME:
+    a = eyeset(es(55 * m + 3), EYEPAL, 40, {27, 28})
+    b = eyeset(bs(825 + 55 * m + 3), PAL[:6], 92, {27, 28})
+    poses.add(frozenset(a))
+    if a != b:
+        diff.append(m)
+check(f"the eye in the door is EYE's, frame for frame: {len(ME)} frames (3.4 s of it: shut, a flutter, startled wide open, looking round, the blink): the same mid grey, white and red "
+      f"pixels in the same places in every one ({len(poses)} different poses)", not diff and len(poses) >= 8, f"differs at frames {diff[:8]}, {len(poses)} poses")
 
 # ---- the theme switch: the whole panel cleared and drawn again: no pixel of the other theme left, on any page, both ways (the switch with the page shown, as the editor makes it)
 EYEC = set(PAL_E := rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))

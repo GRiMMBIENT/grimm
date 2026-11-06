@@ -262,7 +262,7 @@ static void app_main(void);
  * T for MS ms, each at its exact time; BPMx10 0: none from T), "T probe" (the clock's and the sequencer's state out:
  * firmware/src/probe.c) */
 typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int enc, steps, kind, src; uint32_t a, b; } host_ev_t;
-enum { HK_PLAIN, HK_CLOCK, HK_PROBE, HK_SX, HK_WORK, HK_PAGE, HK_PRIM, HK_THEME };    /* (kind; V3.0: HK_SX, "T sx BYTE ..": an editor frame in, as from USB; the bytes after F0, in hex; HK_WORK, "T work FILE": a working
+enum { HK_PLAIN, HK_CLOCK, HK_PROBE, HK_SX, HK_WORK, HK_PAGE, HK_PRIM, HK_THEME, HK_SHOT };    /* (kind; V3.0: HK_SX, "T sx BYTE ..": an editor frame in, as from USB; the bytes after F0, in hex; HK_WORK, "T work FILE": a working
                                                  * project (the editor protocol's object 9) loaded as the autosave loads it) */
 static uint8_t host_sxpool[65536];
 static uint32_t host_sxpool_n;
@@ -313,6 +313,7 @@ static const host_ev_t SCRIPT0[] = {
     {7300, CHORD1, -1, 0, 0, 0, 0, 0},
     {7400, 0, -1, 0, 0, 0, 0, 0},
 };
+static int host_boot_plain;                    /* (GRIMM_BOOT_PLAIN: EYE's boot screen without the stars and the bats: ui.c) */
 static volatile int host_prim;                  /* (a script's "prim": brutal.c's br_pic draws its demo of the polygon and line drawing) */
 static volatile int32_t host_theme_set = -1;  /* (a script's "theme N": grimm.c's main loop sets it) */
 static volatile int32_t host_page_set = -1;   /* (the page a script line asked for, -1 none: grimm.c's main loop takes it) */
@@ -345,6 +346,7 @@ static void read_script(const char *path)
             sscanf(line, "%*u %*s %7s %u %u", s, &e.a, &e.b);
             e.kind = HK_CLOCK, e.src = s[0] == 't';
         } else if (!strcmp(what, "probe")) e.kind = HK_PROBE;
+        else if (!strcmp(what, "shot")) e.kind = HK_SHOT;   /* (V3.0 themes, tests/brutal_test.py: "T shot": the screen as it is, OUT-T.ppm) */
         else if (!strcmp(what, "theme")) {      /* (V3.0 themes, tests/brutal_test.py: "T theme N": THEME N, as SYSTEM 3's knob or the editor sets it, whichever page is shown) */
             sscanf(line, "%*u %*s %u", &e.a);
             e.kind = HK_THEME;
@@ -531,6 +533,8 @@ static void platform_poll(void)                 /* one call = one millisecond */
             host_probe();
         else if (script[step].kind == HK_PAGE)
             host_page_set = (int32_t)script[step].a;
+        else if (script[step].kind == HK_SHOT)
+            write_ppm(fm1_ms);
         else if (script[step].kind == HK_PRIM)
             host_prim = 1;
         else if (script[step].kind == HK_THEME)
@@ -627,6 +631,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
 
 int main(int argc, char **argv)
 {
+    host_boot_plain = getenv("GRIMM_BOOT_PLAIN") != 0;
     if (argc > 1) host_out = argv[1];
     if (argc > 2) read_script(argv[2]);
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);

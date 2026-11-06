@@ -2165,9 +2165,7 @@ static void bs_draw(uint32_t e)
     for (i = 0; i < NBSTAR; i++) {
         int32_t x = bs_x[i], y = bs_y[i];
         uint32_t s = bs_st(i, e);
-        if (s == 3u && ui_th->bfin)             /* (BRUTAL: hard edges, no glow: a white square) */
-            ui_rect(x, y, 3, 3, UI_W);
-        else if (s == 3u) {
+        if (s == 3u) {
             ui_rect(x - 3, y, 9, 3, UI_L), ui_rect(x, y - 3, 3, 9, UI_L);
             ui_rect(x, y, 3, 3, UI_W);
         } else
@@ -2181,27 +2179,154 @@ static void ui_boot_draw(void)                  /* Boot: the stars, the eye, the
 {
     int32_t x, y;
     bt_eye_t ey = bt_eye(bt_e);
-    bs_draw(bt_e);
+#ifdef DINGHY_HOST
+    if (!host_boot_plain)                       /* (tests/brutal_test.py: EYE's intro with the eye alone, to hold BRUTAL's eye against) */
+#endif
+        bs_draw(bt_e);
     ui_eye_tiny = ey.tiny;
     ui_eye(80 + ey.jx, 48 + ey.jy, ey.k, ey.dx, ey.dy);
     ui_eye_tiny = 0;
-    bat_draw(bt_e);
-    if (ui_th->bfin) {
-        if (ui_in(20, 94, 200, 36)) br_text(120 - br_len(&BRF24, APP_NAME, 1) / 2, 122 - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, UI_W);   /* (BRUTAL: its face; only
-                                                 * where the region being drawn reaches: the eye and the stars are redrawn a region at a time) */
-    }
-    else ui_text(120 - 12 * 5, 100, APP_NAME, 3, UI_L);
+#ifdef DINGHY_HOST
+    if (!host_boot_plain)
+#endif
+        bat_draw(bt_e);
+    ui_text(120 - 12 * 5, 100, APP_NAME, 3, UI_L);
     for (y = 0; y < 10; y++)
         for (x = 0; x < 30; x++)
             if (!y || y <= bt_len((uint32_t)x)) ui_rect(60 + x * 4, 128 + y * 4, 4, 4, y ? ui_acc : UI_M);
-    if (ui_th->bfin) {
-        if (ui_in(0, 205, 240, 18)) br_tt(120 - br_tlen(&BRT12, bt_note ? bt_note : BOOT_LINE) / 2, 209 - BRT12.capy, bt_note ? bt_note : BOOT_LINE, &BRT12, bt_note ? ui_acc : UI_M);   /* (BRUTAL: Terminus Bold) */
+    ui_text(120 - 4 * ui_len(bt_note ? bt_note : BOOT_LINE), 210, bt_note ? bt_note : BOOT_LINE, 1, bt_note ? ui_acc : UI_M);
+}
+/* ---- (V3.0) BRUTAL's boot: a concrete door (UI_BOOT_MS in all, 5.6 s; EYE's is the eye and the bats above). 0 .. 0.8 s two slabs slide in from the top and the
+ * bottom, faster and faster, and slam shut at the middle, a 2 px shake and a thin red seam where they meet; then EYE's eye opens in the seam (the seam is its eyelid:
+ * shut it is the seam, open it covers it), looks around and blinks with EYE's own motion, frame for frame (its clock starts at BD_EYE, 15 frames in, at EYE's half
+ * speed; so frame n of this is frame n - 15 of EYE's); 3.6 .. 4.6 s GR!MM is stamped onto the door (red a moment, then black), the version line under it; the eye shuts
+ * and the door slides open, top up, bottom down, on HOME already drawn behind it (the stamp goes down with the bottom slab). A frame is drawn only where it moved:
+ * a region each for a slab's edge, the eye, the stamp; the shake the whole screen. No bats, no stars, no drips; no buffer of its own */
+#define BD_SLAM 800u                            /* the slabs meet */
+#define BD_EYE 825u                             /* the eye's own time starts (15 x UI_ANIM_MS: its frames are EYE's) */
+#define BD_SHUT 4350u                           /* the eye half shuts, */
+#define BD_STAMP 3600u                          /* GR!MM is stamped, */
+#define BD_OPEN 4600u                           /* the door opens */
+typedef struct { int32_t yt, yb, sh, wm, wo, eye; bt_eye_t ey; } bd_t;   /* the top slab's edge and the bottom's, the shake, the stamp (0 none, 1 red, 2 black) and its
+                                                 * place, the eye there (and how it is) */
+static bd_t bd_at(uint32_t e)
+{
+    bd_t s;
+    int32_t x, f;
+    s.sh = e < BD_SLAM ? 0 : e < 855u ? 2 : e < 910u ? -2 : e < 965u ? 1 : 0;
+    if (e < BD_SLAM) f = (int32_t)(120u * e * e / (BD_SLAM * BD_SLAM)), s.yt = f, s.yb = 240 - f;
+    else if (e < BD_OPEN) s.yt = s.yb = 120;
+    else {
+        x = (int32_t)(e - BD_OPEN > 1000u ? 1000u : e - BD_OPEN);
+        f = 120 * x * x / 1000000;
+        s.yt = 120 - f, s.yb = 120 + f;
     }
-    else ui_text(120 - 4 * ui_len(bt_note ? bt_note : BOOT_LINE), 210, bt_note ? bt_note : BOOT_LINE, 1, bt_note ? ui_acc : UI_M);
+    s.wm = e < BD_STAMP ? 0 : e < 3655u ? 1 : 2;
+    s.wo = s.yb - 120;
+    s.eye = e >= BD_EYE && e < BD_OPEN;
+    memset(&s.ey, 0, sizeof s.ey);              /* (the eye's pose: bd_frame) */
+    return s;
+}
+static int bd_same(bd_t a, bd_t b)
+{
+    return a.yt == b.yt && a.yb == b.yb && a.sh == b.sh && a.wm == b.wm && a.wo == b.wo && a.eye == b.eye && bt_eye_same(a.ey, b.ey);
+}
+static uint32_t bd_e, br_boot_run, br_boot_keep;   /* the time the scene is drawn at; the door is running; HOME is behind it: not to be cleared */
+static bd_t bd_last, bd_cur;                    /* what was drawn last; what is being drawn (the eye: the pose that is on the screen) */
+static uint32_t bd_bt;                          /* the eye's half-speed time of the last frame (EYE's bt_e) */
+static void bd_reveal(void)                     /* HOME as it is, as ui_update will draw it (the header, the tiles, the blocks): behind the door as it opens */
+{
+    uint32_t k;
+    ui_head_text();
+    br_head_draw();
+    br_home();
+    for (k = 0; k < 4u; k++) {
+        ui_slab_make(k, &ui_sl[k]);
+        ui_k = k;
+        br_knob_draw();
+    }
+}
+static void bd_slab(int32_t y0, int32_t y1, int32_t edge)   /* a slab, rows y0 .. y1 - 1: concrete, faint lines (the mockup's picture ground), a red edge row */
+{
+    int32_t y;
+    if (y1 <= y0) return;
+    ui_rect(0, y0, 240, y1 - y0, BR_C1);
+    for (y = 10; y < 240; y += 11)
+        if (y >= y0 && y < y1) ui_rect(0, y, 240, 1, BR_C2);
+    if (edge >= y0 && edge < y1 && bd_e >= BD_SLAM) ui_rect(0, edge, 240, 1, ui_acc);
+}
+static void bd_draw(void)                      /* the whole picture at bd_e, as far as the region being drawn reaches */
+{
+    bd_t s = bd_cur;
+    int32_t wx = 120 - br_len(&BRF24, APP_NAME, 1) / 2;
+    if (bd_e >= BD_OPEN) bd_reveal();
+    ui_dy = s.sh;                               /* (the shake: the door, not what is behind it) */
+    bd_slab(0, s.yt, s.yt - 1);
+    bd_slab(s.yb, 240, s.yb);
+    if (s.eye) {
+        ui_eye_tiny = s.ey.tiny;
+        ui_eye(80 + s.ey.jx, 100 + s.ey.jy, s.ey.k, s.ey.dx, s.ey.dy);
+        ui_eye_tiny = 0;
+        if (!s.ey.k) ui_rect(80, 119, 80, 2, ui_acc);   /* (shut: the seam again over the lid) */
+    }
+    if (s.wm && ui_in(wx, 150 + s.wo, br_len(&BRF24, APP_NAME, 1), 22))
+        br_text(wx, 170 + s.wo - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, s.wm == 1 ? ui_acc : UI_K);   /* (GR!MM stamped: red a moment, then black) */
+    if (s.wm && ui_in(0, 184 + s.wo, 240, 14)) {
+        const char *l = bt_note ? bt_note : BOOT_LINE;
+        br_tt(120 - br_tlen(&BRT12, l) / 2, 187 + s.wo - BRT12.capy, l, &BRT12, bt_note ? ui_acc : UI_K);
+    }
+    if (bt_note && !s.wm && ui_in(0, 110, 240, 16))   /* (the factory samples going in: said on the black) */
+        br_tt(120 - br_tlen(&BRT14, bt_note) / 2, 112 - BRT14.capy, bt_note, &BRT14, ui_acc);
+    ui_dy = 0;
+}
+static void bd_start(void)
+{
+    bd_e = 0, bd_last = bd_cur = bd_at(0), bd_bt = 0, br_boot_run = 1;
+    ui_region(0, 0, 240, 240, UI_K, bd_draw);
+}
+static void bd_frame(uint32_t e)                /* a frame at e: where it moved */
+{
+    bd_t a = bd_last, b = bd_at(e);
+    int32_t lo, hi;
+    bd_e = e;
+    if (b.eye) {                                /* the eye's pose, by EYE's own rule: it is drawn again when the pose a frame before it (EYE's e0 against the elapsed time, whole) is not the pose
+                                                 * then: so its frames, one-frame lag at the blink's start and all, are EYE's; shutting it: when it changes */
+        uint32_t eb = e - BD_EYE;
+        bt_eye_t now = bt_eye(eb / 2u);
+        if (e >= BD_SHUT) now = (bt_eye_t){e < 4430u ? 2 : 0, 0, 0, 0, 0, 0};
+        b.ey = !a.eye || (e >= BD_SHUT ? !bt_eye_same(a.ey, now) : !bt_eye_same(bt_eye(bd_bt), bt_eye(eb))) ? now : a.ey;
+        bd_bt = eb / 2u;
+    }
+    bd_cur = b;
+    if (bd_same(a, b)) return;
+    if (a.sh || b.sh) ui_region(0, 0, 240, 240, UI_K, bd_draw);
+    else {
+        if (a.yt != b.yt) {                     /* the top slab's edge: from where it was to where it is */
+            lo = (a.yt < b.yt ? a.yt : b.yt) - 2, hi = (a.yt < b.yt ? b.yt : a.yt) + 2;
+            ui_region(0, lo < 0 ? 0 : lo, 240, (hi > 240 ? 240 : hi) - (lo < 0 ? 0 : lo), UI_K, bd_draw);
+        }
+        if (a.yb != b.yb) {
+            lo = (a.yb < b.yb ? a.yb : b.yb) - 2, hi = (a.yb < b.yb ? b.yb : a.yb) + 2;
+            ui_region(0, lo < 0 ? 0 : lo, 240, (hi > 240 ? 240 : hi) - (lo < 0 ? 0 : lo), UI_K, bd_draw);
+        }
+        if (a.eye != b.eye || !bt_eye_same(a.ey, b.ey)) ui_region(66, 92, 108, 56, UI_K, bd_draw);   /* (the eye, wherever it jolts and trembles) */
+        if (a.wm != b.wm || a.wo != b.wo) {     /* the stamp (and the line), where it was and is */
+            lo = 148 + (a.wo < b.wo ? a.wo : b.wo), hi = 198 + (a.wo < b.wo ? b.wo : a.wo);
+            ui_region(16, lo < 0 ? 0 : lo, 208, (hi > 240 ? 240 : hi) - (lo < 0 ? 0 : lo), UI_K, bd_draw);
+        }
+    }
+    bd_last = b;
+}
+static void bd_end(void)                        /* the door out: HOME alone (the first frame after the intro; ui_update draws it again as it goes on) */
+{
+    bd_e = UI_BOOT_MS, bd_cur = bd_at(UI_BOOT_MS);
+    ui_region(0, 0, 240, 240, UI_K, bd_draw);
+    br_boot_run = 0, br_boot_keep = 1;
 }
 static void ui_boot(void)
 {
     ui_boot_t = fm1_ms, bt_d = bt_e = 0;
+    if (ui_th->bfin) { bd_start(); return; }
     bs_init();
     ui_region(0, 0, 240, 240, UI_K, ui_boot_draw);
 }
@@ -2211,6 +2336,7 @@ static void ui_boot_frame(void)
     uint32_t e = fm1_ms - ui_boot_t, e0 = bt_e, x, i, was = 0, now = 0;   /* (e0: the time last drawn) */
     if (fm1_ms - t < UI_ANIM_MS) return;
     t = fm1_ms;
+    if (ui_th->bfin) { bd_frame(e); return; }
     bt_e = e / 2u;                              /* (what each region shows: as at e; V2: at half speed) */
     if (!bt_eye_same(bt_eye(e0), bt_eye(e)))
         ui_region(72, 40, 96, 52, UI_K, ui_boot_draw);   /* (the eye, wherever it jolts and trembles) */
@@ -2234,7 +2360,7 @@ static void ui_boot_frame(void)
 static int ui_native_all(void) { return 1; }   /* (EYE: every picture is its own) */
 static const ui_theme_t UI_THEMES[] = {         /* (THEME 0, 1 ..: SYSTEM 3's knob; firmware/src/grimm.c sys_sync) */
     {&UI_PAL_EYE, 24, 0, 240, 24, 141, 24, 216, 165, 72, 0, 0, 0, 1, 1, 0, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
-    {&UI_PAL_BRUTAL, 26, 0, 240, 32, 160, 29, 211, 195, 42, 0, 8, 3, 0, 0, 1, 1, br_head_draw, br_knob_draw, br_pic, br_native},   /* BRUTAL */
+    {&UI_PAL_BRUTAL, 29, 0, 240, 32, 160, 29, 211, 195, 42, 0, 8, 3, 0, 0, 1, 1, br_head_draw, br_knob_draw, br_pic, br_native},   /* BRUTAL (the header: the top 29 rows: the bar's 3 + 26) */
 };
 #define NTHEME (sizeof UI_THEMES / sizeof UI_THEMES[0])
 static void ui_theme_set(uint32_t i)            /* the theme i on (its palette; the accent: sys_sync, after it) */
@@ -2257,15 +2383,17 @@ static void ui_update(int32_t oct)
         ui_boot_frame();
         return;
     }
+    if (br_boot_run) bd_end();                  /* (BRUTAL's door: out, HOME behind it) */
     if (all) {
-        if (shown_page == 0xFFFFFFFFu || ui_th != shown_th)
-            lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen, or a new theme: all of it cleared once) */
+        if ((shown_page == 0xFFFFFFFFu && !br_boot_keep) || (ui_th != shown_th && shown_page != 0xFFFFFFFFu))
+            lcd_fill(0, 0, 240, 240, UI_K);     /* (after the boot screen, or a new theme: all of it cleared once; not after BRUTAL's door: HOME is there) */
         else if (shown_page == PG_MIX1 && page != PG_MIX1) {
             lcd_fill(0, ui_th->sy, 240, (int32_t)(240 - ui_th->sy), UI_K);   /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
             if (ui_th->py > ui_th->pyf) lcd_fill(0, ui_th->pyf, 240, (int32_t)(ui_th->py - ui_th->pyf), UI_K);   /* (V3.0: and where its page began above the picture's) */
         }
+        br_boot_keep = 0;
         shown_page = page, shown_acc = ui_acc, shown_th = ui_th;
-        for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '';
+        for (k = 0; k < 4u; k++) ui_slab_shown[k].lab[0] = '\x01';
         pic_key = ~ui_pic_key();
     }
     ui_head_text();
