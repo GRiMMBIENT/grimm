@@ -84,6 +84,9 @@ static void ui_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) { cv
 static void ui_cell(int32_t x, int32_t y, uint16_t c) { ui_rect(PX0 + x * 4, PY0 + y * 4, 4, 4, c); }
 static int32_t ui_text(int32_t x, int32_t y, const char *s, int32_t sc, uint16_t c)   /* pixfont x sc; the end */
 {
+#ifdef DINGHY_HOST
+    if (ui_th && ui_th->bfin) host_ptext++;     /* (tests/brutal_test.py: BRUTAL draws none of EYE's pixfont) */
+#endif
     for (; *s; s++, x += 8 * sc) {
         uint32_t ch = (uint8_t)*s, r, b;
         const uint8_t *g = PIXFONT[(ch >= 32u && ch < 127u ? ch : '?') - 32u];
@@ -1299,11 +1302,15 @@ static int ui_meter_step(uint32_t t)            /* track t's meter, a frame: its
     mx_h[t] = (uint8_t)h;
     return 1;
 }
+static void bp_meter_region(uint32_t t);        /* (brutalp.c: where a meter moved, BRUTAL's) */
 static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL columns (draw: what moved, drawn) */
 {
     uint32_t t;
     for (t = 0; t < NT; t++)
-        if (ui_meter_step(t) && draw && t == sel) ui_regionp(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_th->pic);
+        if (ui_meter_step(t) && draw && t == sel) {
+            if (ui_th->bfin) bp_meter_region(t);
+            else ui_regionp(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_th->pic);
+        }
 }
 /* (V3.0) LEVELS: a track's column is two halves side by side, the LEVEL set on the left, the sound now on the right (this
  * meter); a frame every UI_ANIM_MS redraws only the meters that moved */
@@ -1315,7 +1322,10 @@ static void ui_levels_frame(int draw)
 {
     uint32_t t;
     for (t = 0; t < NT; t++)
-        if (ui_meter_step(t) && draw) ui_regionp(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_th->pic);
+        if (ui_meter_step(t) && draw) {
+            if (ui_th->bfin) bp_meter_region(t);
+            else ui_regionp(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_th->pic);
+        }
 }
 /* (V2) MIXER 1: the whole page six tiles as the knobs' slabs (no slabs under them), LEVEL DELAY REVERB over TAPE
  * GRAIN DRIVE, the selected track's: the name, 8 segments, the value; the one SELECT picks outlined in the accent, its
@@ -2383,6 +2393,7 @@ static void ui_boot_frame(void)
     if (now != was) ui_region(60, 132, 120, 36, UI_K, ui_boot_draw);   /* (a drip a cell longer) */
 }
 
+#include "brutalp.c"                          /* (V3.0) BRUTAL's pictures */
 static int ui_native_all(void) { return 1; }   /* (EYE: every picture is its own) */
 static const ui_theme_t UI_THEMES[] = {         /* (THEME 0, 1 ..: SYSTEM 3's knob; firmware/src/grimm.c sys_sync) */
     {&UI_PAL_EYE, 24, 0, 240, 24, 141, 24, 216, 165, 72, 0, 0, 0, 1, 1, 0, 0, ui_head_draw, ui_slab_draw, ui_pic_draw, ui_native_all},   /* EYE */
@@ -2416,6 +2427,7 @@ static void ui_update(int32_t oct)
         else if (shown_page == PG_MIX1 && page != PG_MIX1) {
             lcd_fill(0, ui_th->sy, 240, (int32_t)(240 - ui_th->sy), UI_K);   /* (V2: MIXER 1's tiles where the slabs and their gaps come) */
             if (ui_th->py > ui_th->pyf) lcd_fill(0, ui_th->pyf, 240, (int32_t)(ui_th->py - ui_th->pyf), UI_K);   /* (V3.0: and where its page began above the picture's) */
+            if (ui_th->sy > ui_th->py + ui_th->ph) lcd_fill(0, ui_th->py + ui_th->ph, 240, (int32_t)(ui_th->sy - ui_th->py - ui_th->ph), UI_K);   /* (.. and the gap above the blocks) */
         }
         br_boot_keep = 0;
         shown_page = page, shown_acc = ui_acc, shown_th = ui_th;

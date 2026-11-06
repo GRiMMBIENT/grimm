@@ -4,7 +4,7 @@
  * edges, no glow; the header a grey bar (the held button's name a black chip at its left, the battery at its right end) with a red tag beside it;
  * the knob blocks concrete, the selected one black with a red frame; each with a thin value bar along its bottom. The pages' logic is EYE's (ui.c):
  * what is shown, when it changes; only the drawing differs. A page's picture is BRUTAL's own (native) or EYE's, moved into BRUTAL's frame, until
- * the pages are drawn here (br_native).
+ * the pages are drawn here (brutalp.c: every page's picture).
  * Included by ui.c (before the themes' table). The fonts (tools/gen_brutalfont.py, firmware/gen/brutal_font.h): Archivo Black, 1 bit, only big (16 and 24 px: the
  * page title if it fits, big values, HOME's numbers, the boot wordmark: its strokes run together smaller); all the small text Terminus Bold (6x12, 8x14,
  * 8x16: the chip, the tag's label, the blocks' labels and the values that do not fit big, the messages). Drawing by the shared functions (ui_rect, ui_region). */
@@ -276,30 +276,4 @@ static void br_home(void)
         ui_rect(x + 7, y + h - 15, w - 14, 7, isel ? BR_SELBG : BR_TRACK);
         if (lv) ui_rect(x + 7, y + h - 15, (w - 14) * lv / 100, 7, isel ? UI_W : trk_quiet >> t & 1u ? UI_M : UI_K);
     }
-}
-#ifdef DINGHY_HOST
-static void br_prim_demo(void)                  /* (tests/theme_test.py: a triangle, a line, a V, a slant, each of a known size) */
-{
-    static const int32_t TRI[6] = {20 * 16, 150 * 16, 80 * 16, 150 * 16, 50 * 16, 100 * 16};   /* base 60, height 50: 1500 pixels */
-    static const int16_t HOR[4] = {100, 40, 200, 40}, VEE[6] = {110, 90, 140, 60, 170, 90}, SLA[4] = {150, 120, 210, 160};
-    br_poly(TRI, 3, UI_W);
-    br_polyline(HOR, 2, 5, UI_W);               /* rows 37 .. 41, columns 97 .. 201 */
-    br_polyline(VEE, 3, 6, UI_W);               /* a point 3 sqrt(2) above (140, 60) */
-    br_polyline(SLA, 2, 4, UI_W);
-}
-#endif
-static int br_native(void)                      /* (the pages BRUTAL draws itself; the others: EYE's picture in its frame) */
-{
-#ifdef DINGHY_HOST
-    if (host_prim) return 1;
-#endif
-    return page == PG_HOME;
-}
-static void br_pic(void)
-{
-#ifdef DINGHY_HOST
-    if (host_prim) { br_prim_demo(); return; }
-#endif
-    if (page == PG_HOME) br_home();
-    else ui_pic_draw();
 }

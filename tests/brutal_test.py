@@ -130,7 +130,7 @@ for n in range(N):
     im = pf(BOOT + 500 * n + 400)
     ok = P(im, 120, 6) in (BAR, RED) and P(im, 1, 100) == BK and P(im, 1, 1) == BK and count(im, EYE_RED) == 0
     if n != 8:                                                 # (MIXER 1: the tiles are the whole page)
-        ok = ok and P(im, 120, 30) == BK and P(im, 120, 31) == BK and P(im, 120, 238) == BK and P(im, 120, 239) == BK and P(im, 6, 198) in (C3, BD, BK)
+        ok = ok and P(im, 120, 30) == BK and P(im, 120, 31) == BK and all(P(im, x, y) == BK for x in (5, 120, 200) for y in (192, 193, 194)) and P(im, 120, 238) == BK and P(im, 120, 239) == BK and P(im, 6, 198) in (C3, BD, BK)
     if not ok:
         bad_pages.append(n)
 check(f"all {N} pages in BRUTAL's frame: the grey header and red tag, black margins and gaps (the header, the picture and the blocks never overlap), the knob blocks, "
@@ -297,5 +297,80 @@ for n in range(N):
         leftovers.append((n, a, b))
 check(f"THEME switched with each of the {N} pages shown (EYE to BRUTAL, back to EYE): the whole panel is cleared and drawn again: not one pixel of the other theme "
       "is left (checked against the colours only that theme has, MIXER 1's ramp too)", not leftovers, f"(page, EYE pixels in BRUTAL, BRUTAL pixels in EYE): {leftovers[:6]}")
+
+# ================================================= the pictures: every page BRUTAL's own (stage by stage), the live values
+psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
+PGN = [n.lower() for n in re.findall(r"PG_(\w+)", re.search(r"enum \{ (PG_SOUND.*?)NPAGE \}", Path("firmware/src/grimm.c").read_text(encoding="utf-8"), re.S).group(1))]
+NATIVE = {"home", "source", "perform", "mix1", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3"}      # (stage 2a)
+in_src = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int br_native"):psrc.index("static void br_pic")])}
+check("the pages BRUTAL draws itself (brutalp.c's br_native) are the ones this test knows: " + " ".join(sorted(NATIVE)), in_src == NATIVE, f"{sorted(in_src ^ NATIVE)}")
+
+
+def ptext(pages):
+    """-> {page: the EYE pixfont texts drawn while it was shown} (a probe before it and after it)"""
+    ev, t = [], BOOT
+    for n in pages:
+        ev += [(t, "probe"), (t + 100, f"page {PGN.index(n)}"), (t + 700, "probe")]
+        t += 900
+    path = OUT / "ptext.txt"
+    path.write_text("".join(f"{a} {b}\n" for a, b in sorted(ev)) + f"{t} end\n")
+    out = subprocess.run([EXE, str(OUT / "ptext"), str(path)], capture_output=True, text=True, check=True, env=dict(os.environ, **ENVB)).stdout
+    v = [int(re.search(r" ptext (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")]
+    return {n: v[2 * i + 1] - v[2 * i] for i, n in enumerate(pages)}
+
+
+pt = ptext(sorted(NATIVE))
+check(f"none of EYE's pixel font is drawn on the {len(NATIVE)} pages BRUTAL draws itself (the header, the picture, the knob blocks: Terminus Bold and Archivo Black only)",
+      not any(pt.values()), f"{[(n, c) for n, c in pt.items() if c]}")
+
+
+def pg(n):
+    return PGN.index(n)
+
+
+def diffpx(a, b, box):
+    wa, da = px(a)
+    _, db = px(b)
+    x0, y0, x1, y1 = box
+    return sum(1 for y in range(y0, y1) for x in range(x0, x1) if da[3 * (y * wa + x):3 * (y * wa + x) + 3] != db[3 * (y * wa + x):3 * (y * wa + x) + 3])
+
+
+# live values: each picture follows the values, not the mockup's examples
+T = [6700, 7700]
+s1 = shots("l_src", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('source')}"), (7000, "enc 2 1")])        # SOURCE: KNOB 1 to FM: the selected tile moves
+a, b = s1(6703), s1(7703)
+check("SOURCE: the track's source is the selected tile (VA black with a red frame); KNOB 1 to FM moves it (the red frame to FM's tile)",
+      P(a, 3, 40) == RED and P(a, 66, 40) == C2 and P(b, 62, 40) == RED and P(b, 6, 40) == C1, str([P(a, 3, 40), P(a, 66, 40), P(b, 62, 40), P(b, 6, 40)]))
+s2 = shots("l_perf", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('perform')}"), (7000, "down 2"), (7050, "keys 1"), (7100, "keys 0"), (7200, "up 2")])
+a, b = s2(6703), s2(7703)
+check("PERFORM: a trick on (FX held + F3: FREEZE) is the selected style (black, red frame); off: concrete", P(a, 3, 40) != RED and P(a, 6, 40) == C1 and P(b, 3, 40) == RED, str([P(a, 3, 40), P(b, 3, 40)]))
+s3 = shots("l_mix1", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('mix1')}"), (6500, "enc 0 1"), (7000, "enc 2 60")])   # SELECT: the DELAY tile; KNOB 1: its send up
+a, b = s3(6703), s3(7703)
+check("MIXER 1: SELECT picks the DELAY tile (a red frame round it); KNOB 1 raises its send: the value and the bar follow (the bar at the tile's bottom filled to the knob)",
+      P(a, 82, 60) == RED and P(b, 82, 60) == RED and P(a, 100, 118) == SELBG and P(b, 100, 118) == BW and P(b, 140, 118) == SELBG and diffpx(a, b, (86, 52, 150, 80)) > 150,
+      str([P(a, 82, 60), P(a, 100, 118), P(b, 100, 118), P(b, 140, 118), diffpx(a, b, (86, 52, 150, 80))]))
+s4 = shots("l_mix2", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('mix2')}"), (7000, "enc 2 30")])
+a, b = s4(6703), s4(7703)
+check("MIXER 2: KNOB 1 moves T1's PAN: its knob on the bar goes right", diffpx(a, b, (8, 60, 60, 80)) > 60 and P(a, 33, 70) == BW and P(b, 33, 70) == SELBG, str([diffpx(a, b, (8, 60, 60, 80)), P(a, 33, 70), P(b, 33, 70)]))
+s5 = shots("l_lev", [6800 + 3, 8800 + 3], 9500, ENVB, [(6000, f"page {pg('levels')}"), (6300, "keys 1"), (7500, "keys 0")])
+a, b = s5(6803), s5(8803)
+check("LEVELS: the sound now is a live meter beside the level set (T1 playing: the meter's cream segments light, in the right bar; the sound over: dark again); the level set is the light bar beside it",
+      count(a, BW, (37, 82, 55, 180)) > 30 and count(b, BW, (37, 82, 55, 180)) == 0 and count(a, BL, (9, 82, 27, 180)) > 100,
+      f"{count(a, BW, (37, 82, 55, 180))} {count(b, BW, (37, 82, 55, 180))} {count(a, BL, (9, 82, 27, 180))}")
+s6 = shots("l_snd", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('sounds')}"), (7000, "enc 2 2")])
+a, b = s6(6703), s6(7703)
+check("SOUNDS: the slot knob moves the selected row (black, a red frame)", P(a, 3, 45) == RED and P(b, 3, 45) != RED and P(b, 3, 70) == RED and diffpx(a, b, (3, 32, 237, 192)) > 300, str([P(a, 3, 45), P(b, 3, 70)]))
+s7 = shots("l_prj", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('projects')}"), (7000, "enc 2 1")])
+a, b = s7(6703), s7(7703)
+check("PROJECTS: four tiles A .. D, the selected one black with a red frame: A, then B after the knob", P(a, 3, 40) == RED and P(a, 125, 40) != RED and P(b, 122, 40) == RED and P(b, 6, 40) != RED, str([P(a, 3, 40), P(b, 122, 40)]))
+s8 = shots("l_pat", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('pattern')}"), (7000, "enc 2 -4")])
+a, b = s8(6703), s8(7703)
+check("PATTERN: the steps big (16, then 12 after KNOB 1 down), the tile A black with a red frame", P(a, 3, 40) == RED and diffpx(a, b, (8, 100, 130, 160)) > 150, str(diffpx(a, b, (8, 100, 130, 160))))
+s9 = shots("l_sys3", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('sys3')}"), (7000, "enc 2 1")])
+a, b = s9(6703), s9(7703)
+check("SYSTEM 3: LATCH, VELOCITY, THEME as three rows with their settings big; KNOB 1 changes LATCH's (FROM SOUND, ALWAYS OFF)", diffpx(a, b, (8, 42, 230, 78)) > 100 and P(a, 120, 100) == C2, str(diffpx(a, b, (8, 42, 230, 78))))
+s10 = shots("l_song", [6700 + 3, 7700 + 3], 8500, ENVB, [(6000, f"page {pg('song')}"), (7000, "enc 5 1")])
+a, b = s10(6703), s10(7703)
+check("SONG: the chain's 16 steps as tiles (the first, shown, black with a red frame), the MODE under them (OFF, then SONG after KNOB 4)", P(a, 3, 40) == RED and diffpx(a, b, (8, 150, 150, 185)) > 100, str(diffpx(a, b, (8, 150, 150, 185))))
 
 sys.exit(1 if bad else 0)

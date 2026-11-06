@@ -313,6 +313,7 @@ static const host_ev_t SCRIPT0[] = {
     {7300, CHORD1, -1, 0, 0, 0, 0, 0},
     {7400, 0, -1, 0, 0, 0, 0, 0},
 };
+static uint32_t host_ptext;                      /* (ui.c ui_text: the pixfont texts drawn while BRUTAL is on) */
 static int host_boot_plain;                    /* (GRIMM_BOOT_PLAIN: EYE's boot screen without the stars and the bats: ui.c) */
 static volatile int host_prim;                  /* (a script's "prim": brutal.c's br_pic draws its demo of the polygon and line drawing) */
 static volatile int32_t host_theme_set = -1;  /* (a script's "theme N": grimm.c's main loop sets it) */
