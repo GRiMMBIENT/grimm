@@ -55,11 +55,20 @@ for glow in (1, 0):
     sheet.save(OUT / f"minimal_boot{'_glow' if glow else ''}.png")
 # every page
 ev, shots, t = [], {}, BOOT
-base = [(i, n) for i, n in enumerate(PG) if n not in ("track",)]
+base = [(i, n) for i, n in enumerate(PG) if n not in ("track", "fmalgo", "fmop", "pdline", "pdenv")]
 for i, n in base:
     ev.append((t, f"page {i}"))
     shots[n] = t + 450
     t += 700
+SRC = ["va", "fm", "sample", "voice", "wheel", "phys", "phase"]
+for e in range(1, 7):                           # (the source-dependent pages once for each source: minimal_sound_<source>.png, FM ALGO and OP for FM, LINE 2 and PHASE ENV for PHASE)
+    ev += [(t, f"page {PG.index('source')}"), (t + 100, "enc 2 1"), (t + 200, f"page {PG.index('sound')}")]
+    shots[f"sound_{SRC[e]}"] = t + 650
+    t += 900
+    for n in (("fmalgo", "fmop") if e == 1 else ("pdline", "pdenv") if e == 6 else ()):
+        ev.append((t, f"page {PG.index(n)}"))
+        shots[n] = t + 450
+        t += 700
 for glow, suf in ((1, ""), (0, "_glow_off")):                   # (GLOW on: minimal_<page>.png, minimal_contact.png; off: minimal_<page>_glow_off.png, minimal_contact_glow_off.png)
     r = run(f"mall{glow}", ev, list(shots.values()), glow, end=t + 400)
     imgs = {n: r[ts_] for n, ts_ in shots.items()}

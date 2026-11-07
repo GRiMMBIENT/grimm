@@ -13,6 +13,7 @@
 #define MN_TRACK RGB(0x34, 0x38, 0x3c)
 #define MN_DIM RGB(0x7c, 0x80, 0x86)
 #define MN_FILL RGB(0x8a, 0x8e, 0x93)
+#define MN_BKEY RGB(0x4a, 0x4e, 0x53)              /* (the black keys of SCALE and CHORD) */
 #define MN_SEL RGB(0x2c, 0x30, 0x33)               /* (the selected tile's fill) */
 #define MN_GLOW (ui_th->bfin == 2 && sy_glow)   /* GLOW on, in MINIMAL */
 

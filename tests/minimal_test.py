@@ -206,8 +206,11 @@ check(f"GLOW on every page: it changes {seen} pixels in all, every one a halo of
 psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
 SHARED = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int bp_min_page"):psrc.index("static int mn_native")])}
 STAGE = {"source", "perform", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3",                                         # (stage 2a)
-         "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound"}                                 # (stage 2b: SOUND for VA, PHASE)
+         "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound",                                 # (stage 2b)
+         "fmalgo", "fmop", "scale", "chord", "arp", "system", "sys2"}                                                                   # (stage 2c: every page but HOME's own, MIXER 1 and SEQ GRID: EYE's layout)
 check("the pages MINIMAL draws with BRUTAL's shared picture code (brutalp.c's bp_min_page) are the ones this test knows: " + " ".join(sorted(SHARED)), SHARED == STAGE, f"{sorted(SHARED ^ STAGE)}")
+check("every page is MINIMAL's own or the shared one but MIXER 1 and SEQ GRID (EYE's layout, kept exactly, in MINIMAL's colours and fonts) and TRACK (no page): "
+      "HOME, " + str(len(SHARED)) + " shared", set(PGN) - SHARED - {"home"} == {"mix1", "grid", "track"}, str(sorted(set(PGN) - SHARED - {"home"})))
 pf = film("pages", [(BOOT + 500 * n, f"page {n}") for n in range(N)], BOOT + 500 * N + 300, EM0)
 bad_pages = []
 for n in range(N):
@@ -223,8 +226,8 @@ for n in range(N):
 out = run("ptext", ev, t + 100, EM0)
 v = [(int(re.search(r" ptext (\d+)", ln).group(1)), int(re.search(r" btext (\d+)", ln).group(1))) for ln in out.splitlines() if ln.startswith("slabvals ")]
 pt = [(PGN[n], v[2 * n + 1][0] - v[2 * n][0], v[2 * n + 1][1] - v[2 * n][1]) for n in range(N)]
-check(f"none of EYE's pixel font is drawn on any of the {N} pages (the header, the pictures, the knob row: Terminus); the pages' pictures' texts go through it ({sum(1 for p in pt if p[2])} pages: the ones still EYE's)",
-      not any(p[1] for p in pt) and sum(1 for p in pt if p[2]) >= N - 2 - len(SHARED) - 3, str([p for p in pt if p[1]]))
+check(f"none of EYE's pixel font is drawn on any of the {N} pages (the header, the pictures, the knob row: Terminus); MIXER 1's and SEQ GRID's texts (EYE's layout) go through it",
+      not any(p[1] for p in pt) and all(p[2] for p in pt if p[0] in ("mix1", "grid")), str([p for p in pt if p[1]]))
 fsrc = Path("firmware/gen/minimal_font.h").read_text(encoding="utf-8")
 check("fonts: only Terminus (the regular 6x12 and 8x14: minimal_font.h; the bold ones: brutal_font.h); the theme uses no Archivo Black and no other face",
       "BRT12R" in fsrc and "BRT14R" in fsrc and "BRF" not in msrc and "br_text(" not in msrc, "")
@@ -475,6 +478,37 @@ check("MASTER: the cutoff is a 1 px amber line (the filter open: at the right), 
 check("TAPE: the reels are hollow (a 2 px frame in the mid grey, a small light hub: black inside), no posts", P(tp, 3 + 35 + 10, 32 + 20 + 30) == BK and P(tp, 3 + 35, 32 + 20 + 30) == MD and P(tp, 3 + 35 + 1, 32 + 20 + 30) == MD and
       P(tp, 3 + 62 + 2, 32 + 47 + 2) == LT and P(tp, 3 + 65 + 1, 32 + 85) == BK, f"{P(tp, 48, 82)} {P(tp, 38, 82)}")
 check("LFO: the dot is a 6 x 6 amber square (36 px) on the curve", count(lf, AMB, (3, 34, 237, 192)) == 36, str(count(lf, AMB, (3, 34, 237, 192))))
+
+# ---- the special pages in MINIMAL's parameters
+# FM ALGO: all 32 algorithms: dark blocks, 1 px grey lines, the OUT bracket 1 px amber, the selected operator MINIMAL's selected tile; nothing below the picture; all different
+ev = [(6000, f"page {PGN.index('source')}"), (6050, "enc 2 1"), (6100, f"page {PGN.index('fmalgo')}"), (6150, "enc 2 -40")]
+ts = []
+for k in range(32):
+    t = 6600 + k * 400
+    ts.append(t)
+    if k:
+        ev.append((t - 300, "enc 2 1"))
+sa = shots("algo32m", ts, ts[-1] + 300, EM0, ev)
+imgs = [sa(t) for t in ts]
+okc = [count(im, DK, (3, 40, 237, 190)) > 800 and count(im, AMB, (3, 40, 237, 190)) > 8 and count(im, MD, (3, 40, 237, 190)) > 20 and count(im, {SEL}, (3, 40, 237, 190)) > 50 and
+       all(P(im, x, y) == BK for x in (5, 120, 200) for y in (193, 194)) for im in imgs]
+check("FM ALGO in MINIMAL: all 32 algorithms drawn (dark blocks, 1 px grey lines, the 1 px amber OUT bracket, the selected operator's tile lighter with its amber underline, nothing below the picture); each "
+      "different from the others", all(okc) and len(set(imgs)) == 32, f"{[k + 1 for k, v in enumerate(okc) if not v]} distinct {len(set(imgs))}")
+# SCALE: the black keys MINIMAL's lighter grey; WHEEL: thin rails and small handles; VOICE: no buttons, the vowel's letter amber on a thin rule
+sc = shots("specm", [6450, 7150, 7850, 8550], 9300, EM0, [(6000, f"page {PGN.index('scale')}"), (6700, f"page {PGN.index('source')}"), (6750, "enc 2 4"), (6800, f"page {PGN.index('sound')}"), (7500, "enc 2 -1"), (7550, "enc 2 -1"), (7600, f"page {PGN.index('sound')}")])
+BKEY = c888(*MN["BKEY"])
+sk1 = sc(6450)
+check("SCALE: the white keys dark tiles, the black ones the lighter grey (#4a4e53), a small light square on each key in the scale, the chord's amber", count(sk1, BKEY, (3, 60, 237, 112)) > 300 and count(sk1, DK, (3, 60, 237, 112)) > 600 and
+      count(sk1, LT, (3, 120, 237, 140)) > 20, f"{count(sk1, BKEY, (3, 60, 237, 112))} {count(sk1, DK, (3, 60, 237, 112))}")
+wf = film("wheelm", [(6000, f"page {PGN.index('source')}"), (6050, "enc 2 4"), (6100, f"page {PGN.index('sound')}")], 7000, EM0)(6700)
+check("WHEEL: the nine drawbars as thin rails (2 px, the dark track grey) with a small handle (14 x 5) each at its level, no fat bars", count(wf, TRACK, (3, 38, 237, 150)) > 9 * 2 * 80 and
+      all(P(wf, 3 + 12 + 24 * k + 9, 32 + 40) == TRACK for k in range(9)) and count(wf, LT, (3, 36, 237, 160)) >= 9 * 14 * 5, f"{count(wf, TRACK, (3, 38, 237, 150))}")
+vf = film("voicem", [(6000, f"page {PGN.index('source')}"), (6050, "enc 2 3"), (6100, f"page {PGN.index('sound')}")], 7000, EM0)(6700)
+check("VOICE: the vowel big in light (Terminus 8x16 scaled 5), the five vowels as letters on a thin rule (the sung one amber), no buttons", count(vf, LT, (3, 38, 160, 150)) > 300 and count(vf, AMB, (180, 38, 237, 70)) > 8 and
+      P(vf, 3 + 188, 32 + 60) == TRACK and P(vf, 3 + 190, 32 + 12) == BK, f"{count(vf, LT, (3, 38, 160, 150))} {P(vf, 191, 92)}")
+v2 = film("sys2m", [(6000, f"page {PGN.index('sys2')}"), (6300, "keys 1")], 8000, EM0)
+y1, y2 = v2(6200), v2(7500)
+check("SYSTEM 2 in MINIMAL: the VOICES row's six segments show a voice in use (light) when a key is held", count(y2, LT, (145, 122, 232, 131)) > count(y1, LT, (145, 122, 232, 131)) + 50, f"{count(y1, LT, (145, 122, 232, 131))} {count(y2, LT, (145, 122, 232, 131))}")
 
 # ---- the theme switch: the whole panel cleared and drawn again, no pixel of the theme left, on any page, between all three themes
 EYEC = set(c888(*c) for c in rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))

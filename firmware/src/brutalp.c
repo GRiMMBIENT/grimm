@@ -600,7 +600,8 @@ static void bp_algo(int32_t so, const char *r)  /* FM: the algorithm's operators
 {
     uint8_t tg[6];
     uint32_t car, o, j;
-    int32_t fbin, fbout, x2[6], dep[6], sl, w, bw, h, pit, yb = 116, nr = 1, lo = 999, hi = -1, n = clamp(trk[sel].fm_alg, 0, 31) + 1;
+    int32_t fbin, fbout, x2[6], dep[6], sl, w, bw, h, pit, yb = 116, nr = 1, lo = 999, hi = -1, n = clamp(trk[sel].fm_alg, 0, 31) + 1, tw = BP_MIN ? 1 : 3, tx = BP_MIN ? 0 : 1;   /* (the lines' width, and where they start) */
+    uint16_t ink = BP_MIN ? UI_M : BP_INK;
     char t[10] = "ALGO ";
     sl = fm_layout((uint32_t)clamp(trk[sel].fm_alg, 0, 31), tg, &car, &fbin, &fbout, x2, dep);
     for (o = 0; o < 6u; o++) nr = dep[o] + 1 > nr ? dep[o] + 1 : nr;
@@ -614,27 +615,27 @@ static void bp_algo(int32_t so, const char *r)  /* FM: the algorithm's operators
         for (j = 0; j < 6u; j++)
             if (tg[o] >> j & 1u) {
                 int32_t xa = FMX(o), xb = FMX(j), ym = FMY(j) - 3, xl = xa < xb ? xa : xb;
-                bp_r(xa - 1, FMY(o) + h, 3, ym - FMY(o) - h + 3, BP_INK);
-                bp_r(xl - 1, ym, (xa > xb ? xa - xb : xb - xa) + 3, 3, BP_INK);
-                bp_r(xb - 1, ym, 3, 4, BP_INK);
+                bp_r(xa - tx, FMY(o) + h, tw, ym - FMY(o) - h + tw, ink);
+                bp_r(xl - tx, ym, (xa > xb ? xa - xb : xb - xa) + tw, tw, ink);
+                bp_r(xb - tx, ym, tw, 4, ink);
             }
     for (o = 0; o < 6u; o++) {
         int32_t x = FMX(o) - bw / 2, y = FMY(o), s = (int32_t)o == so;
         char d[2] = {(char)('1' + o), 0};
         if (car >> o & 1u) {
             lo = FMX(o) < lo ? FMX(o) : lo, hi = FMX(o) > hi ? FMX(o) : hi;
-            bp_r(FMX(o) - 1, y + h, 3, 6, ui_acc);
+            bp_r(FMX(o) - tx, y + h, tw, 6, ui_acc);
         }
         bp_box(x, y, bw, h, BP_C3, s);
         bp_a(FMX(o) - bp_alen(&BRF16, d, 1) / 2, y + (h - bp_acap(&BRF16)) / 2, d, &BRF16, 1, s ? ui_acc : BP_INK);
         if ((int32_t)o == fbin) {               /* (the feedback: a hook on its right) */
-            bp_r(x + bw, y + h / 2 - 1, 6, 3, ui_acc);
-            bp_r(x + bw + 3, y - 5, 3, h / 2 + 5, ui_acc);
-            bp_r(FMX(o), y - 5, x + bw + 6 - FMX(o), 3, ui_acc);
-            bp_r(FMX(o) - 1, y - 5, 3, 5, ui_acc);
+            bp_r(x + bw, y + h / 2 - tx, 6, tw, ui_acc);
+            bp_r(x + bw + 3, y - 5, tw, h / 2 + 5, ui_acc);
+            bp_r(FMX(o), y - 5, x + bw + 6 - FMX(o), tw, ui_acc);
+            bp_r(FMX(o) - tx, y - 5, tw, 5, ui_acc);
         }
     }
-    bp_r(lo - 1, yb + h + 6, hi - lo + 3, 3, ui_acc);   /* OUT */
+    bp_r(lo - tx, yb + h + 6, hi - lo + tw, tw, ui_acc);   /* OUT */
     bp_ttc(120, yb + h + 11, "OUT", &BRT12, UI_M);
 #undef FMX
 #undef FMY
@@ -677,7 +678,10 @@ static void bp_fmop(void)                       /* FM OP: the operator's envelop
     q[0] = 10, q[1] = 148, q[2] = (int16_t)(10 + wa * 4), q[3] = (int16_t)EVY(y1), q[4] = (int16_t)(10 + (wa + wd) * 4), q[5] = (int16_t)EVY(y2);
     q[6] = (int16_t)(10 + (wa + wd + ws) * 4), q[7] = q[5], q[8] = 222, q[9] = (int16_t)EVY(y4);
     bp_pl(q, 5, 5, BP_INK);
-    bp_r(10 + wa * 4 - 4, EVY(y1) - 4, 9, 9, ui_acc);
+    {
+        int32_t ms = BP_MIN ? 5 : 9;           /* (the square at the peak: 9 px; MINIMAL's 5) */
+        bp_r(10 + wa * 4 - ms / 2, EVY(y1) - ms / 2, ms, ms, ui_acc);
+    }
 #undef EVY
 }
 static void bp_fm(void)                         /* FM (SOUND): the algorithm as wired, the PATCH it is from */
@@ -710,10 +714,10 @@ static void bp_sample(void)                     /* the slot's sample (a bar a co
     x1 = x1 > 53 ? 53 : x1;
     for (x = 0; x < 54; x++) {
         int32_t a = (smp_pk[slot][x] ? smp_pk[slot][x] : 1) * 4;
-        bp_r(12 + x * 4, 94 - a, 3, 2 * a + 1, x >= x0 && x <= x1 ? BP_INK : UI_M);
+        bp_r(12 + x * 4 + (BP_MIN ? 1 : 0), 94 - a, BP_MIN ? 2 : 3, 2 * a + 1, x >= x0 && x <= x1 ? BP_INK : UI_M);
     }
-    bp_r(12 + x0 * 4 - 2, 30, 3, 122, ui_acc);
-    bp_r(12 + x1 * 4 + 2, 30, 3, 122, ui_acc);
+    bp_r(12 + x0 * 4 - (BP_MIN ? 1 : 2), 30, BP_MIN ? 1 : 3, 122, ui_acc);
+    bp_r(12 + x1 * 4 + 2, 30, BP_MIN ? 1 : 3, 122, ui_acc);
     bp_tt(12 + x0 * 4 + 3, 33, "START", &BRT12, ui_acc);
     bp_ttr(12 + x1 * 4 + 1, 33, "END", &BRT12, ui_acc);
 }
@@ -725,8 +729,14 @@ static void bp_voice(void)                      /* the vowel (the nearest of A E
     int32_t v = (clamp(p[0], 0, 127) * 4 + 63) / 127, i;
     char t[16], s[24];
     bp_ground(1);
-    bp_a(86 - bp_alen(&BRF24, VW[v], 5) / 2, 20, VW[v], &BRF24, 5, BP_INK);
+    if (BP_MIN) mn_tt(BP_X + 66, BP_Y + 20 - BRT16.capy * 5, VW[v], &BRT16, 5, BP_INK);
+    else bp_a(86 - bp_alen(&BRF24, VW[v], 5) / 2, 20, VW[v], &BRF24, 5, BP_INK);
+    if (BP_MIN) bp_r(188, 9, 1, 145, MN_TRACK);
     for (i = 0; i < 5; i++) {
+        if (BP_MIN) {
+            bp_ttc(209, 9 + i * 29 + 8, VW[i], &BRT16, i == v ? ui_acc : UI_M);
+            continue;
+        }
         bp_box(165, 9 + i * 29, 59, 25, BP_TILE((uint32_t)i), i == v);
         bp_a(194 - bp_alen(&BRF16, VW[i], 1) / 2, 9 + i * 29 + (25 - bp_acap(&BRF16)) / 2, VW[i], &BRF16, 1, i == v ? ui_acc : BP_INK);
     }
@@ -749,8 +759,13 @@ static void bp_wheel(void)                      /* the nine drawbars of the regi
         int32_t lv = DRW_REG[reg][k] - '0', x = 12 + (int32_t)k * 24;
         char d[2];
         if (perc && k == 8u) lv = 0;
-        bp_r(x, 6, 20, 14 + lv * 12, FOOT[k] == 'M' ? UI_M : FOOT[k] == 'L' ? BP_ON : BP_INK);
-        bp_r(x, 6 + lv * 12, 20, 14, (int32_t)k == pk ? ui_acc : BP_INK);
+        if (BP_MIN) {                           /* (MINIMAL: a thin rail, a small handle at the level; the footage's colours none) */
+            bp_r(x + 9, 6, 2, 112, MN_TRACK);
+            bp_r(x + 3, 6 + lv * 14, 14, 5, (int32_t)k == pk ? ui_acc : BP_INK);
+        } else {
+            bp_r(x, 6, 20, 14 + lv * 12, FOOT[k] == 'M' ? UI_M : FOOT[k] == 'L' ? BP_ON : BP_INK);
+            bp_r(x, 6 + lv * 12, 20, 14, (int32_t)k == pk ? ui_acc : BP_INK);
+        }
         d[0] = (char)('0' + lv), d[1] = 0;
         bp_ttc(x + 10, 126, d, &BRT14, BP_INK);
     }
@@ -777,29 +792,41 @@ static void bp_phys(void)                       /* the model's body: a string (a
     bp_ground(1);
     bp_head(N_PHYS_MODEL[md], r, UI_M);
     if (md == PM_MODAL) {                       /* a bar on two cords (its nodes), struck or bowed at its end */
-        bp_r(12, 80, 210, 14, BP_INK);
-        bp_r(60, 94, 3, 24, BP_INK), bp_r(171, 94, 3, 24, BP_INK);
+        if (BP_MIN) bp_r(12, 84, 210, 6, BP_INK), bp_r(60, 90, 1, 28, BP_INK), bp_r(171, 90, 1, 28, BP_INK);
+        else {
+            bp_r(12, 80, 210, 14, BP_INK);
+            bp_r(60, 94, 3, 24, BP_INK), bp_r(171, 94, 3, 24, BP_INK);
+        }
         for (i = 0; i < 3; i++) bp_r(40 + i * (26 + st / 6), 66, 5, 10, UI_M);   /* (STRUCTURE spreads the partials) */
-        bp_r(214, bw ? 64 : 100, 12, 12, ui_acc);
+        bp_r(214, bw ? 64 : 100, BP_MIN ? 6 : 12, BP_MIN ? 6 : 12, ui_acc);
     } else if (md == PM_MEMB) {                 /* a drum head and its rings */
-        bp_ell(117, 92, 92, 50, BP_INK);
-        bp_ell(117, 92, 85, 43, BP_C3);
-        bp_ell(117, 92, 56, 29, UI_M);
-        bp_ell(117, 92, 51, 25, BP_C3);
-        bp_ell(117, 92, 9, 5, BP_INK);
-        bp_r(117 + st * 70 / 127 - 5, 87, 11, 11, ui_acc);
+        if (BP_MIN) {                           /* (MINIMAL: rings, 2 px and 1 px, a small hub, a small strike) */
+            bp_ell(117, 92, 92, 50, UI_M);
+            bp_ell(117, 92, 90, 48, UI_K);
+            bp_ell(117, 92, 56, 29, UI_M);
+            bp_ell(117, 92, 55, 28, UI_K);
+            bp_r(114, 90, 6, 4, BP_INK);
+            bp_r(117 + st * 70 / 127 - 3, 89, 6, 6, ui_acc);
+        } else {
+            bp_ell(117, 92, 92, 50, BP_INK);
+            bp_ell(117, 92, 85, 43, BP_C3);
+            bp_ell(117, 92, 56, 29, UI_M);
+            bp_ell(117, 92, 51, 25, BP_C3);
+            bp_ell(117, 92, 9, 5, BP_INK);
+            bp_r(117 + st * 70 / 127 - 5, 87, 11, 11, ui_acc);
+        }
     } else {                                    /* a string between two posts, its swing; SYMPATH: two more under it */
-        bp_r(12, 60, 14, 56, BP_INK), bp_r(208, 60, 14, 56, BP_INK);
+        bp_r(12, 60, BP_MIN ? 2 : 14, 56, BP_INK), bp_r(BP_MIN ? 220 : 208, 60, BP_MIN ? 2 : 14, 56, BP_INK);
         if (md == PM_SYMP) {
-            bp_r(26, 104, 182, 3, UI_M);
-            bp_r(26, 112, 182, 3, UI_M);
+            bp_r(26, 104, 182, BP_MIN ? 1 : 3, UI_M);
+            bp_r(26, 112, 182, BP_MIN ? 1 : 3, UI_M);
         }
         for (i = 0; i < 15; i++) {
             int32_t a = (sine_i((uint32_t)i * 153391689u) * (3 + bw / 8)) >> 15;   /* (half a sine over 15 points) */
             q[2 * i] = (int16_t)(26 + i * 13), q[2 * i + 1] = (int16_t)(88 - (a < 0 ? -a : a));
         }
         bp_pl(q, 15, 5, BP_INK);
-        bp_r(26 + st * 170 / 127, 60, 14, 56, ui_acc);
+        bp_r(26 + st * 170 / 127, 60, BP_MIN ? 3 : 14, 56, ui_acc);
     }
 }
 
@@ -836,7 +863,7 @@ static void bp_sel(void)                        /* SCALE, CHORD: the keys from t
     for (k = 0; k < 27u; k++)
         if (WI[k % 12u] < 0) {
             int32_t x = 13 + ((int32_t)(k / 12u) * 7 + WI[(k - 1u) % 12u] + 1) * 13 - 5;
-            bp_r(x, 30, 8, 48, BP_INK);
+            bp_r(x, 30, 8, 48, BP_MIN ? MN_BKEY : UI_K);
             if (lit >> k & 1u) bp_r(x + 2, 64, 4, 4, ui_acc);
             else if (sc_in((int32_t)(base + k))) bp_r(x + 2, 64, 4, 4, BP_ON);
         }
@@ -883,7 +910,11 @@ static void bp_arp(void)                        /* what the arpeggiator holds (O
     if (n > 13u && now > 6) from = (uint32_t)now - 6u < n - 13u ? (uint32_t)now - 6u : n - 13u;
     for (i = 0; i < 13u && from + i < n; i++) {
         uint32_t v = chord ? from + i : p[from + i], lv = hi > lo ? (v - lo) * 7u / (hi - lo) : 3u, h = 24u + lv * 12u;
-        bp_r(12 + (int32_t)i * 16, 150 - (int32_t)h, 13, (int32_t)h, (int32_t)(from + i) == now ? ui_acc : BP_INK);
+        if (BP_MIN) {                           /* (MINIMAL: a 2 px cap, a 1 px stem under it) */
+            bp_r(12 + (int32_t)i * 16, 150 - (int32_t)h, 13, 2, (int32_t)(from + i) == now ? ui_acc : BP_INK);
+            bp_r(18 + (int32_t)i * 16, 152 - (int32_t)h, 1, (int32_t)h - 2, MN_TRACK);
+        } else
+            bp_r(12 + (int32_t)i * 16, 150 - (int32_t)h, 13, (int32_t)h, (int32_t)(from + i) == now ? ui_acc : BP_INK);
     }
 }
 
@@ -903,7 +934,7 @@ static void bp_system(void)                     /* COLOUR (the four, the one set
         int32_t x = 3 + i * 58;
         bp_r(x, 4, 54, 36, UI_ACCENTS[i]);
         bp_tt(x + 5, 8, COL_NAME[i], &BRT12, BP_ON);
-        if (i == (int32_t)set.col) bp_r(x, 42, 54, 4, BP_INK);
+        if (i == (int32_t)set.col) bp_r(x, 42, 54, BP_MIN ? 2 : 4, BP_INK);
     }
     mch_text(v, set.mch);
     bp_row(50, 20, 0, "MIDI CHANNEL", v, BP_INK);
@@ -1043,9 +1074,8 @@ static int bp_min_page(void)
     switch (page) {
     case PG_SOURCE: case PG_PERFORM: case PG_MIX2: case PG_LEVELS: case PG_SOUNDS: case PG_PROJECTS: case PG_PATTERN: case PG_SONG: case PG_SYS3:
     case PG_ENV: case PG_LFO: case PG_PDLINE: case PG_PDENV: case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: case PG_MASTER: case PG_DRIVE:
+    case PG_SOUND: case PG_FMALGO: case PG_FMOP: case PG_SCALE: case PG_CHORD: case PG_ARP: case PG_SYSTEM: case PG_SYS2:
         return 1;
-    case PG_SOUND:                              /* (VA and PHASE so far) */
-        return sel_eng() == ENG_VA || sel_eng() == ENG_PHASE;
     default:
         return 0;
     }
