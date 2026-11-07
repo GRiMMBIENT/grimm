@@ -8,43 +8,80 @@
 
 #define BP_X 3                                  /* the picture's corner on the screen, */
 #define BP_Y 32                                 /* its size: 234 x 160 */
-#define BP_TILE(i) ((i) & 1 ? BR_C2 : BR_C1)    /* the tiles' two concretes, alternately */
+#define BP_TILE(i) ((i) & 1 ? BR_C2 : BR_C1)    /* the tiles' two concretes, alternately (below: the theme's) */
+
+/* The pictures are shared by BRUTAL and MINIMAL (V3.0): the theme's parameters are the ink and the ground (BRUTAL: black ink on concrete tiles on a light ground; MINIMAL: light ink on dark
+ * tiles on black), the selected tile (BRUTAL: black with a red frame; MINIMAL: a lighter dark with a 2 px amber underline), the lines' width (5 px; 2), the text (Archivo Black 16 / 24 and Terminus Bold;
+ * Terminus only: the bold for the ink, the regular for the dim, 24 px as Terminus 6x12 doubled, 16 as 8x16), and MINIMAL's GLOW (a halo round the light ink). BRUTAL's drawing is unchanged by it
+ * (tests/brutal_hash_test.py) */
+#define BP_MIN (ui_th->bfin == 2)
+#define BP_INK (BP_MIN ? UI_L : UI_K)           /* the ink on a tile */
+#define BP_ON (BP_MIN ? UI_L : UI_W)            /* the text on a selected or dark tile */
+#define BP_C1 (BP_MIN ? UI_D : BR_C1)           /* the tiles' concretes, the dark of MINIMAL's tile */
+#define BP_C2 (BP_MIN ? UI_D : BR_C2)
+#define BP_C3 (BP_MIN ? UI_D : BR_C3)
+#define BP_TRACK (BP_MIN ? MN_TRACK : BR_TRACK) /* a bar's empty part, a faint line */
+#define BP_SELBG (BP_MIN ? MN_TRACK : BR_SELBG) /* .. on the selected tile */
+#define BP_SELLAB (BP_MIN ? ui_acc : BR_SELLAB) /* the selected tile's label */
+#undef BP_TILE
+#define BP_TILE(i) ((i) & 1 ? BP_C2 : BP_C1)
 
 static void bp_r(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) { ui_rect(BP_X + x, BP_Y + y, w, h, c); }
-static void bp_ground(int light)                /* the picture's ground: the light pages' concrete with its faint lines (every 11 px, as the mockup's) */
+static void bp_ground(int light)                /* the picture's ground: the light pages' concrete with its faint lines (every 11 px, as the mockup's); MINIMAL's is black */
 {
     int32_t y;
-    if (!light) return;
-    bp_r(0, 0, 234, 160, BR_C1);
-    for (y = 10; y < 160; y += 11) bp_r(0, y, 234, 1, BR_C2);
+    if (!light || BP_MIN) return;
+    bp_r(0, 0, 234, 160, BP_C1);
+    for (y = 10; y < 160; y += 11) bp_r(0, y, 234, 1, BP_C2);
 }
-static void bp_box(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t f, int sel)   /* a tile: its colour, or black with a red frame when it is the selected one */
+static void bp_box(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t f, int sel)   /* a tile: its colour, or the selected one (BRUTAL: black with a red frame; MINIMAL: lighter, an amber underline) */
 {
+    if (BP_MIN) {
+        bp_r(x, y, w, h, sel ? MN_SEL : f);
+        if (sel) bp_r(x, y + h - 2, w, 2, ui_acc);
+        return;
+    }
     if (sel) {
         bp_r(x, y, w, h, UI_K);
         bp_r(x, y, w, 2, ui_acc), bp_r(x, y + h - 2, w, 2, ui_acc), bp_r(x, y, 2, h, ui_acc), bp_r(x + w - 2, y, 2, h, ui_acc);
     } else
         bp_r(x, y, w, h, f);
 }
-static void bp_bar(int32_t x, int32_t y, int32_t w, int32_t h, int32_t num, int32_t den, int sel)   /* a bar num / den full: black on the concrete's track (white on black's) */
+static void bp_bar(int32_t x, int32_t y, int32_t w, int32_t h, int32_t num, int32_t den, int sel)   /* a bar num / den full: black on the concrete's track (white on black's; MINIMAL: light, amber selected) */
 {
-    bp_r(x, y, w, h, sel ? BR_SELBG : BR_TRACK);
-    if (num > 0) bp_r(x, y, den > 0 && num < den ? w * num / den : w, h, sel ? UI_W : UI_K);
+    bp_r(x, y, w, h, sel ? BP_SELBG : BP_TRACK);
+    if (num > 0) bp_r(x, y, den > 0 && num < den ? w * num / den : w, h, sel ? (BP_MIN ? ui_acc : UI_W) : BP_INK);
 }
-/* Terminus Bold at (x, y) = the capitals' ink top, left / right / centred on x */
-static void bp_tt(int32_t x, int32_t y, const char *s, const br_tfont_t *f, uint16_t c) { br_tt(BP_X + x, BP_Y + y - f->capy, s, f, c); }
+/* Terminus at (x, y) = the capitals' ink top, left / right / centred on x (MINIMAL: the regular cut for the dim inks) */
+static const br_tfont_t *bp_tf(const br_tfont_t *f, uint16_t c) { return !BP_MIN || (c != UI_M && c != MN_DIM) ? f : f == &BRT12 ? &BRT12R : &BRT14R; }
+static void bp_tt(int32_t x, int32_t y, const char *s, const br_tfont_t *f, uint16_t c)
+{
+    if (BP_MIN) mn_t(BP_X + x, BP_Y + y, s, bp_tf(f, c), c);
+    else br_tt(BP_X + x, BP_Y + y - f->capy, s, f, c);
+}
 static void bp_ttr(int32_t x, int32_t y, const char *s, const br_tfont_t *f, uint16_t c) { bp_tt(x - br_tlen(f, s), y, s, f, c); }
 static void bp_ttc(int32_t x, int32_t y, const char *s, const br_tfont_t *f, uint16_t c) { bp_tt(x - br_tlen(f, s) / 2, y, s, f, c); }
-/* Archivo Black f (16 or 24 px) scaled sc, at (x, y) = the capitals' ink top */
-static void bp_a(int32_t x, int32_t y, const char *s, const br_font_t *f, int32_t sc, uint16_t c) { br_text(BP_X + x, BP_Y + y - br_capy(f) * sc, s, f, sc, c); }
+/* Archivo Black f (16 or 24 px) scaled sc, at (x, y) = the capitals' ink top; MINIMAL's: Terminus Bold, the 24 as 6x12 doubled, the 16 as 8x16 */
+static int32_t bp_alen(const br_font_t *f, const char *s, int32_t sc) { return BP_MIN ? (f == &BRF24 ? 12 : 8) * ui_len(s) * sc : br_len(f, s, sc); }
+static int32_t bp_acap(const br_font_t *f) { return BP_MIN ? (f == &BRF24 ? 16 : 10) : br_cap(f); }
+static int32_t bp_acapy(const br_font_t *f) { return BP_MIN ? (f == &BRF24 ? 4 : 2) : br_capy(f); }
+static void bp_a(int32_t x, int32_t y, const char *s, const br_font_t *f, int32_t sc, uint16_t c)
+{
+    if (BP_MIN) {
+        const br_tfont_t *t = f == &BRF24 ? &BRT12 : &BRT16;
+        int32_t m = (f == &BRF24 ? 2 : 1) * sc;
+        mn_tt(BP_X + x, BP_Y + y - t->capy * m, s, t, m, c);
+    } else
+        br_text(BP_X + x, BP_Y + y - br_capy(f) * sc, s, f, sc, c);
+}
 /* a value: as big as it fits in `avail` px (Archivo 24, 16, then Terminus 16, 14, 12), its capitals' ink ending at yb; a 0 left of x, 1 right of x, 2 centred on x */
 static void bp_val(int32_t x, int32_t yb, const char *s, int32_t avail, uint16_t c, int al)
 {
-    const br_font_t *f = br_len(&BRF24, s, 1) <= avail ? &BRF24 : br_len(&BRF16, s, 1) <= avail ? &BRF16 : 0;
+    const br_font_t *f = bp_alen(&BRF24, s, 1) <= avail ? &BRF24 : bp_alen(&BRF16, s, 1) <= avail ? &BRF16 : 0;
     const br_tfont_t *t = br_tlen(&BRT16, s) <= avail ? &BRT16 : br_tlen(&BRT14, s) <= avail ? &BRT14 : &BRT12;
-    int32_t w = f ? br_len(f, s, 1) : br_tlen(t, s);
+    int32_t w = f ? bp_alen(f, s, 1) : br_tlen(t, s);
     x = al == 1 ? x - w : al == 2 ? x - w / 2 : x;
-    if (f) bp_a(x, yb - br_cap(f), s, f, 1, c);
+    if (f) bp_a(x, yb - bp_acap(f), s, f, 1, c);
     else bp_tt(x, yb - t->cap, s, t, c);
 }
 static void bp_caps(int32_t x, int32_t y, const char *s, uint16_t c) { bp_tt(x, y, s, &BRT12, c); }   /* a small label */
@@ -57,19 +94,19 @@ static void bp_source(void)
     for (i = 0; i < (int32_t)NENG; i++) {
         int32_t x = (i & 3) * 59, y = (i >> 2) * 54;
         bp_box(x, y, 57, 51, BP_TILE(i), i == e);
-        bp_val(x + 28, y + 33, SRC_CODE[i], 52, i == e ? ui_acc : UI_K, 2);
+        bp_val(x + 28, y + 33, SRC_CODE[i], 52, i == e ? ui_acc : BP_INK, 2);
     }
-    bp_box(177, 54, 57, 51, trk[sel].latch ? ui_acc : BR_C2, 0);
-    bp_caps(183, 60, "LATCH", trk[sel].latch ? UI_W : UI_K);
-    bp_val(183, 98, trk[sel].latch ? "ON" : "OFF", 46, trk[sel].latch ? UI_W : UI_K, 0);
-    bp_r(0, 109, 234, 51, BR_C3);
+    bp_box(177, 54, 57, 51, trk[sel].latch ? ui_acc : BP_C2, 0);
+    bp_caps(183, 60, "LATCH", trk[sel].latch ? BP_ON : BP_INK);
+    bp_val(183, 98, trk[sel].latch ? "ON" : "OFF", 46, trk[sel].latch ? BP_ON : BP_INK, 0);
+    bp_r(0, 109, 234, 51, BP_C3);
     if (e == ENG_VOICE) {                       /* (VOICE's TYPE: one singer, or a choir a note) */
-        bp_caps(10, 119, "TYPE", UI_K);
-        bp_val(10, 148, VT_NAME[clamp(trk[sel].vty, 0, NVT - 1)], 120, trk[sel].vty ? ui_acc : UI_K, 0);
+        bp_caps(10, 119, "TYPE", BP_INK);
+        bp_val(10, 148, VT_NAME[clamp(trk[sel].vty, 0, NVT - 1)], 120, trk[sel].vty ? ui_acc : BP_INK, 0);
     }
-    bp_caps(224 - 6 * 5, 119, "GLIDE", UI_K);
+    bp_caps(224 - 6 * 5, 119, "GLIDE", BP_INK);
     if (trk[sel].glide) ui_time(g, 10u * pow2_q16(clamp(trk[sel].glide, 0, 127) * 12)); else put_s(g, "OFF");
-    bp_ttr(224, 134, g, &BRT14, UI_K);
+    bp_ttr(224, 134, g, &BRT14, BP_INK);
 }
 
 /* ---- PERFORM: the eight tricks (FX held + the white keys; on: the selected style), GENERATE's four tracks under them (on: red; the mode, the range, a square flashing as it plays) */
@@ -83,24 +120,24 @@ static void bp_perform(void)
         int32_t x = (i & 3) * 59, y = (i >> 2) * 53;
         int on = i ? (int)(pf_held >> (i - 1) & 1u) : (int)(ge_freeze & 1u);
         bp_box(x, y, 57, 50, BP_TILE(i), on);
-        bp_tt(x + 6, y + 6, KEY[i], &BRT14, on ? ui_acc : UI_K);
-        bp_tt(x + 6, y + 28, NM[i][0], &BRT12, on ? UI_W : UI_K);
-        bp_tt(x + 6, y + 38, NM[i][1], &BRT12, on ? UI_W : UI_K);
+        bp_tt(x + 6, y + 6, KEY[i], &BRT14, on ? ui_acc : BP_INK);
+        bp_tt(x + 6, y + 28, NM[i][0], &BRT12, on ? BP_ON : BP_INK);
+        bp_tt(x + 6, y + 38, NM[i][1], &BRT12, on ? BP_ON : BP_INK);
     }
-    bp_r(0, 109, 234, 51, BR_C3);
-    bp_caps(8, 114, "GENERATE", UI_K);
+    bp_r(0, 109, 234, 51, BP_C3);
+    bp_caps(8, 114, "GENERATE", BP_INK);
     for (i = 0; i < (int32_t)NT; i++) {
         int32_t x = 8 + i * 56, y = 126;
         int on = (int)(gen_on >> i & 1u);
         char r[12], m[4];
-        bp_r(x, y, 50, 20, on ? ui_acc : BR_C2);
+        bp_r(x, y, 50, 20, on ? ui_acc : BP_C2);
         put_u(put_s(r, "T"), (uint32_t)i + 1u);
-        bp_tt(x + 4, y + 6, r, &BRT12, on ? UI_W : UI_K);
+        bp_tt(x + 4, y + 6, r, &BRT12, on ? BP_ON : BP_INK);
         m[0] = GM_NAME[gen_md[i] % NGM][0], m[1] = GM_NAME[gen_md[i] % NGM][1], m[2] = GM_NAME[gen_md[i] % NGM][2], m[3] = 0;
-        bp_tt(x + 22, y + 6, m, &BRT12, on ? UI_W : UI_K);
-        if (gen_fl >> i & 1u) bp_r(x + 42, y + 3, 5, 5, on ? UI_W : UI_K);
+        bp_tt(x + 22, y + 6, m, &BRT12, on ? BP_ON : BP_INK);
+        if (gen_fl >> i & 1u) bp_r(x + 42, y + 3, 5, 5, on ? BP_ON : BP_INK);
         ui_note(put_s(ui_note(r, gen_low((uint32_t)i)), "-"), gen_high((uint32_t)i));
-        bp_tt(x, y + 26, r, &BRT12, UI_K);
+        bp_tt(x, y + 26, r, &BRT12, BP_INK);
     }
 }
 
@@ -117,15 +154,15 @@ static void bp_mix1(void)
     for (i = 0; i < MX_N; i++) {
         int32_t x = BM_X(i), y = BM_Y(i), v = clamp(*mx_tile(sel, i), 0, 127), on = (int32_t)i == mx_sq, f = i == MX_LEVEL ? mx_h[sel] : (v * 8 + 63) / 127;
         int dry = i != MX_LEVEL && trk[sel].fx <= 0;   /* (FX 0 on HOME: the sends do nothing: dim, "FX0") */
-        uint16_t fc = dry ? UI_M : on ? ui_acc : UI_K;
+        uint16_t fc = dry ? UI_M : on ? ui_acc : BP_INK;
         const br_font_t *bf;
         char s[4];
         ui_rect(x, y, MXT_W, MXT_H, UI_K);
         if (on) ui_rect(x, y, MXT_W, 2, ui_acc), ui_rect(x, y + MXT_H - 2, MXT_W, 2, ui_acc), ui_rect(x, y, 2, MXT_H, ui_acc), ui_rect(x + MXT_W - 2, y, 2, MXT_H, ui_acc);
         else ui_rect(x, y, MXT_W, MXT_H, BP_TILE(i));
-        br_tt(x + 6, y + 8 - BRT12.capy, LAB[i], &BRT12, on ? BR_SELLAB : UI_K);
+        br_tt(x + 6, y + 8 - BRT12.capy, LAB[i], &BRT12, on ? BP_SELLAB : BP_INK);
         for (j = 0; j < 8; j++)
-            ui_rect(x + 6 + j * 8, y + 28, 7, 30, j >= f ? (on ? BR_SELBG : BR_TRACK) : i != MX_LEVEL ? fc : on || j >= 6 ? ui_acc : UI_K);
+            ui_rect(x + 6 + j * 8, y + 28, 7, 30, j >= f ? (on ? BP_SELBG : BP_TRACK) : i != MX_LEVEL ? fc : on || j >= 6 ? ui_acc : BP_INK);
         if (i == MX_LEVEL) ui_rect(x + 6 + v * 60 / 127, y + 60, 3, 5, fc);
         ui_3(s, ui_pc(v));
         if (dry) put_s(s, "FX0");
@@ -147,13 +184,13 @@ static void bp_mix2(void)
         int32_t x = t * 59, p = clamp(trk[t].pan, 0, 127), on = t == (int32_t)sel;
         char nm[3] = {'0', (char)('1' + t), 0}, v[6];
         bp_box(x, 0, 57, 160, BP_TILE(t), on);
-        bp_a(x + 6, 6, nm, &BRF16, 1, on ? ui_acc : UI_K);
-        bp_r(x + 6, 36, 45, 6, on ? BR_SELBG : BR_TRACK);
-        bp_r(x + 6 + (45 - 6) * p / 127, 33, 6, 12, on ? UI_W : UI_K);
+        bp_a(x + 6, 6, nm, &BRF16, 1, on ? ui_acc : BP_INK);
+        bp_r(x + 6, 36, 45, 6, on ? BP_SELBG : BP_TRACK);
+        bp_r(x + 6 + (45 - 6) * p / 127, 33, 6, 12, on ? BP_ON : BP_INK);
         if (p == 64) put_s(v, "C"); else put_u(put_s(v, p < 64 ? "L" : "R"), (uint32_t)(p < 64 ? 64 - p : p - 64));
-        bp_tt(x + 6, 50, v, &BRT12, on ? UI_W : UI_K);
-        bp_val(x + 6, 118, FT_NAME[clamp(trk[t].ftype, 0, NFTYPE - 1)], 45, on ? UI_W : UI_K, 0);
-        bp_tt(x + 6, 128, trk[t].fpos ? "POST" : "PRE", &BRT12, on ? UI_W : UI_K);
+        bp_tt(x + 6, 50, v, &BRT12, on ? BP_ON : BP_INK);
+        bp_val(x + 6, 118, FT_NAME[clamp(trk[t].ftype, 0, NFTYPE - 1)], 45, on ? BP_ON : BP_INK, 0);
+        bp_tt(x + 6, 128, trk[t].fpos ? "POST" : "PRE", &BRT12, on ? BP_ON : BP_INK);
     }
 }
 
@@ -169,7 +206,7 @@ static void bp_levels(void)
         bp_tt(x + 6, 6, nm, &BRT14, UI_L);
         bp_tt(x + 30, 6, SRC_CODE[clamp(trk[t].eng, 0, NENG - 1)], &BRT14, UI_M);
         ui_3(v, ui_pc(trk[t].level));
-        bp_val(x + 6, 36, q ? "MUTE" : v, 45, q ? UI_M : UI_W, 0);
+        bp_val(x + 6, 36, q ? "MUTE" : v, 45, q ? UI_M : BP_ON, 0);
         for (j = 0; j < 8; j++) {
             bp_r(x + 6, 50 + (7 - j) * 12, 20, 10, j < f ? (q ? UI_M : UI_L) : UI_K);
             bp_r(x + 31, 50 + (7 - j) * 12, 20, 10, j < (int32_t)mx_h[t] ? ui_meter_col(j) : UI_K);
@@ -182,8 +219,8 @@ static void bp_sounds_row(int32_t i, int on, const char *l, const char *r)
 {
     int32_t y = i * 26;
     bp_box(0, y, 234, 24, BP_TILE((uint32_t)i), on);
-    bp_tt(8, y + 7, l, &BRT14, on ? UI_W : UI_K);
-    bp_ttr(226, y + 7, r, &BRT14, on ? ui_acc : UI_K);
+    bp_tt(8, y + 7, l, &BRT14, on ? BP_ON : BP_INK);
+    bp_ttr(226, y + 7, r, &BRT14, on ? ui_acc : BP_INK);
 }
 static void bp_sounds(void)
 {
@@ -212,9 +249,9 @@ static void bp_projects(void)
         int32_t x = (i & 1) * 119, y = (i >> 1) * 82, on = i == (pj_slot & 3);
         const char *st = seq_recall == i ? "NEXT BAR" : i == slot_cur ? "IN USE" : slot_used((uint32_t)i) ? "SAVED" : "EMPTY";
         char nm[2] = {(char)('A' + i), 0};
-        bp_box(x, y, 115, 78, slot_used((uint32_t)i) ? BR_C1 : BR_C2, on);
-        bp_a(x + 8, y + 10, nm, &BRF16, 3, on ? ui_acc : slot_used((uint32_t)i) ? UI_K : UI_M);
-        bp_ttr(x + 107, y + 62, st, &BRT14, i == slot_cur ? ui_acc : on ? UI_W : UI_K);
+        bp_box(x, y, 115, 78, slot_used((uint32_t)i) ? BP_C1 : BP_C2, on);
+        bp_a(x + 8, y + 10, nm, &BRF16, 3, on ? ui_acc : slot_used((uint32_t)i) ? BP_INK : UI_M);
+        bp_ttr(x + 107, y + 62, st, &BRT14, i == slot_cur ? ui_acc : on ? BP_ON : BP_INK);
     }
 }
 
@@ -228,22 +265,22 @@ static void bp_pattern(void)
         int32_t x = i * 59;
         char nm[2] = {(char)('A' + i), 0};
         bp_box(x, 0, 57, 50, BP_TILE(i), i == 0);
-        bp_a(x + 28 - br_len(&BRF24, nm, 1) / 2, 8, nm, &BRF24, 1, i == 0 ? ui_acc : UI_M);
+        bp_a(x + 28 - bp_alen(&BRF24, nm, 1) / 2, 8, nm, &BRF24, 1, i == 0 ? ui_acc : UI_M);
         if (!i) {
             if (seq_on) put_s(v, "PLAY"); else put_s(put_u(v, (uint32_t)seq_steps(S)), " ST");
-            bp_ttc(x + 28, 36, v, &BRT12, UI_W);
+            bp_ttc(x + 28, 36, v, &BRT12, BP_ON);
         } else
             bp_ttc(x + 28, 36, "EMPTY", &BRT12, UI_M);
     }
-    bp_r(0, 53, 234, 107, BR_C3);
+    bp_r(0, 53, 234, 107, BP_C3);
     put_u(v, (uint32_t)seq_steps(S));
-    bp_a(8, 70, v, &BRF16, 4, UI_K);
-    bp_ttr(226, 62, "STEPS", &BRT12, UI_K);
-    bp_val(226, 100, SEQ_DIV_NAME[clamp(S->div, 0, 7)], 90, UI_K, 1);
+    bp_a(8, 70, v, &BRF16, 4, BP_INK);
+    bp_ttr(226, 62, "STEPS", &BRT12, BP_INK);
+    bp_val(226, 100, SEQ_DIV_NAME[clamp(S->div, 0, 7)], 90, BP_INK, 1);
     put_s(v, "SWING ");
     ui_3(v + 6, ui_pc(S->swing));
-    bp_ttr(226, 122, v, &BRT12, UI_K);
-    bp_ttr(226, 138, SEQ_MODE_NAME[clamp(S->mode, 0, SEQ_NMODE - 1)], &BRT12, UI_K);
+    bp_ttr(226, 122, v, &BRT12, BP_INK);
+    bp_ttr(226, 138, SEQ_MODE_NAME[clamp(S->mode, 0, SEQ_NMODE - 1)], &BRT12, BP_INK);
 }
 
 /* ---- SONG: the chain's 16 steps, 8 a row (its slot's letter, its REPEATS, its number; the step playing or shown black with a red frame; END; the rest empty), the MODE under them */
@@ -254,20 +291,20 @@ static void bp_song(void)
     for (i = 0; i < SONG_N; i++) {
         int32_t x = (i & 7) * 29, y = (i >> 3) * 52, on = i == cur, p = song_pat[i];
         if (i > len) { bp_box(x, y, 27, 50, UI_D, 0); continue; }
-        bp_box(x, y, 27, 50, i == len ? BR_C3 : BP_TILE(i), on);
+        bp_box(x, y, 27, 50, i == len ? BP_C3 : BP_TILE(i), on);
         put_u(b, (uint32_t)i + 1u);
-        bp_tt(x + 4, y + 5, b, &BRT12, on ? UI_W : UI_M);
-        if (i == len) { bp_ttc(x + 13, y + 28, "END", &BRT12, UI_K); continue; }
+        bp_tt(x + 4, y + 5, b, &BRT12, on ? BP_ON : UI_M);
+        if (i == len) { bp_ttc(x + 13, y + 28, "END", &BRT12, BP_INK); continue; }
         b[0] = p >= 0 && p < SONG_END ? (char)('A' + p) : '-', b[1] = 0;
-        bp_a(x + 13 - br_len(&BRF16, b, 1) / 2, y + 16, b, &BRF16, 1, on ? ui_acc : UI_K);
+        bp_a(x + 13 - bp_alen(&BRF16, b, 1) / 2, y + 16, b, &BRF16, 1, on ? ui_acc : BP_INK);
         if (i == song_at && song_rec != 2u) put_u(put_s(put_u(b, song_left), "/"), (uint32_t)clamp(song_rep[i], 1, 16));
         else put_u(put_s(b, "X"), (uint32_t)clamp(song_rep[i], 1, 16));
-        bp_ttc(x + 13, y + 38, b, &BRT12, on ? UI_W : UI_K);
+        bp_ttc(x + 13, y + 38, b, &BRT12, on ? BP_ON : BP_INK);
     }
-    bp_r(0, 108, 234, 52, BR_C3);
-    bp_val(8, 142, SONG_MODE_NAME[clamp(song_mode, 0, NSONGMODE - 1)], 130, UI_K, 0);
+    bp_r(0, 108, 234, 52, BP_C3);
+    bp_val(8, 142, SONG_MODE_NAME[clamp(song_mode, 0, NSONGMODE - 1)], 130, BP_INK, 0);
     put_u(put_s(b, "LEN "), (uint32_t)len);
-    bp_ttr(226, 122, b, &BRT14, UI_K);
+    bp_ttr(226, 122, b, &BRT14, BP_INK);
     if (song_rec) bp_ttr(226, 138, "REC", &BRT14, ui_acc);
 }
 
@@ -279,8 +316,8 @@ static void bp_sys3(void)
     for (i = 0; i < 3; i++) {
         const char *v = i == 0 ? (set.latch & 1u ? "ALWAYS OFF" : "FROM SOUND") : i == 1 ? (set.latch & 2u ? "ON" : "OFF") : THEME_NAME[(set.latch >> 4 & 3u) % THEME_N];
         bp_box(0, i * 54, 234, 52, BP_TILE(i), 0);
-        bp_caps(10, i * 54 + 8, NM[i], UI_K);
-        bp_val(10, i * 54 + 42, v, 214, UI_K, 0);
+        bp_caps(10, i * 54 + 8, NM[i], BP_INK);
+        bp_val(10, i * 54 + 42, v, 214, BP_INK, 0);
     }
 }
 
@@ -290,13 +327,17 @@ static void bp_pl(int16_t *q, uint32_t n, int32_t w, uint16_t c)   /* a line thr
 {
     uint32_t i;
     for (i = 0; i < n; i++) q[2 * i] = (int16_t)(q[2 * i] + BP_X), q[2 * i + 1] = (int16_t)(q[2 * i + 1] + BP_Y);
+    if (BP_MIN) {                               /* (MINIMAL: 2 px, or 1 for the thin ones; GLOW: a halo 1 px round it first, if the ink is a light one) */
+        w = w >= 5 ? 2 : 1;
+        if (mn_lit(c)) br_polyline(q, n, w + 2, mn_mix(c, 1, 3));
+    }
     br_polyline(q, n, w, c);
 }
 static void bp_head(const char *l, const char *r, uint16_t rc)   /* the title, and a note at the right */
 {
     int32_t av = r ? 214 - br_tlen(&BRT12, r) - 12 : 214;
-    if (br_len(&BRF16, l, 1) <= av) bp_a(10, 8, l, &BRF16, 1, UI_K);
-    else bp_tt(10, 9, l, &BRT14, UI_K);
+    if (bp_alen(&BRF16, l, 1) <= av) bp_a(10, 8, l, &BRF16, 1, BP_INK);
+    else bp_tt(10, 9, l, &BRT14, BP_INK);
     if (r) bp_ttr(224, 9, r, &BRT12, rc);
 }
 static void bp_wave(int sq, int32_t p, int32_t o, int32_t w, uint16_t c)   /* VA: a saw (or square) of period p from offset o across the picture (the edges clip it) */
@@ -322,10 +363,10 @@ static void bp_va(void)                         /* the waveform of WAVE; a secon
     const volatile int32_t *p = trk[sel].p[ENG_VA];
     int32_t w = p[0], dt = clamp(p[1], 0, 127) / 16 * 3;
     bp_ground(1);
-    bp_head(w == WAVE_SUPER ? "SUPERSAW" : w == WAVE_SQR ? "SQUARE" : "SAW", 0, UI_K);
-    bp_r(0, 146, 234, 1, BR_TRACK);
-    if (w == WAVE_SUPER) bp_wave(0, 57, 33, 3, UI_M), bp_wave(0, 51, 15, 3, UI_M), bp_wave(0, 54, 0, 5, UI_K);
-    else bp_wave(w == WAVE_SQR, 54 + dt, 9, 3, UI_M), bp_wave(w == WAVE_SQR, 54, 0, 5, UI_K);
+    bp_head(w == WAVE_SUPER ? "SUPERSAW" : w == WAVE_SQR ? "SQUARE" : "SAW", 0, BP_INK);
+    bp_r(0, 146, 234, 1, BP_TRACK);
+    if (w == WAVE_SUPER) bp_wave(0, 57, 33, 3, UI_M), bp_wave(0, 51, 15, 3, UI_M), bp_wave(0, 54, 0, 5, BP_INK);
+    else bp_wave(w == WAVE_SQR, 54 + dt, 9, 3, UI_M), bp_wave(w == WAVE_SQR, 54, 0, 5, BP_INK);
 }
 
 static void bp_phase(void)                      /* the bent waveform of WAVE at DCW, then WAVE2 (or WAVE again) beside it, the bend's point a red square under each */
@@ -342,12 +383,12 @@ static void bp_phase(void)                      /* the bent waveform of WAVE at 
     put_s(put_s(s, "WAVE2 "), u);
     bp_ground(1);
     bp_head(t, s, UI_M);
-    bp_r(0, 85, 234, 1, BR_TRACK);
+    bp_r(0, 85, 234, 1, BP_TRACK);
     for (c = 0; c < 2; c++) {
         int32_t x0 = 12 + c * 110;
         pd_setup(&b, c && w2 ? w2 - 1u : w1, dcw);
         for (i = 0; i < 26; i++) q[2 * i] = (int16_t)(x0 + i * 4), q[2 * i + 1] = (int16_t)(85 - pd_wave(&b, (uint32_t)i * 65535u / 25u) * 50 / 32767);
-        bp_pl(q, 26, 5, c ? UI_M : UI_K);
+        bp_pl(q, 26, 5, c ? UI_M : BP_INK);
         bp_r(x0 + (int32_t)(b.x * 100u / 65535u) - 3, 142, 7, 7, ui_acc);
     }
 }
@@ -361,12 +402,12 @@ static void bp_pdline(void)                     /* (V2) LINE 2: line 1 (black) b
     pd_t b;
     bp_ground(1);
     bp_head("LINE 2", trk[sel].pd_ring ? "RING 1 X 2" : mix ? "MIX 1 + 2" : "LINE 1 ALONE", trk[sel].pd_ring ? ui_acc : UI_M);
-    bp_r(0, 80, 234, 1, BR_TRACK);
+    bp_r(0, 80, 234, 1, BP_TRACK);
     for (c = 0; c < 2; c++) {
         pd_setup(&b, c && w2 ? (uint32_t)w2 - 1u : (uint32_t)clamp(p[0], 0, 7), pd_dcw(c && d2 ? d2 : p[2]));
         for (i = 0; i < 24; i++) q[2 * i] = (int16_t)(12 + c * 112 + i * 4), q[2 * i + 1] = (int16_t)(80 - pd_wave(&b, (uint32_t)i * 65535u / 23u) * 40 / 32767);
-        bp_pl(q, 24, 5, c ? UI_M : UI_K);
-        bp_tt(12 + c * 112, 128, c ? "LINE 2" : "LINE 1", &BRT12, c ? UI_M : UI_K);
+        bp_pl(q, 24, 5, c ? UI_M : BP_INK);
+        bp_tt(12 + c * 112, 128, c ? "LINE 2" : "LINE 1", &BRT12, c ? UI_M : BP_INK);
     }
     bp_tt(12, 146, trk[sel].pd_noise ? "NOISE ON" : "NOISE OFF", &BRT12, trk[sel].pd_noise ? ui_acc : UI_M);
 }
@@ -376,9 +417,9 @@ static void bp_pdenv(void)                      /* (V2) PHASE ENV: DCW (black: u
     int32_t c, i, j;
     int16_t q[2 * 53];
     bp_ground(1);
-    bp_tt(10, 9, trk[sel].pd_de ? "DCW ON" : "DCW OFF", &BRT14, trk[sel].pd_de ? ui_acc : UI_K);
+    bp_tt(10, 9, trk[sel].pd_de ? "DCW ON" : "DCW OFF", &BRT14, trk[sel].pd_de ? ui_acc : BP_INK);
     bp_ttr(224, 9, trk[sel].pd_pe ? "PITCH ON" : "PITCH OFF", &BRT14, trk[sel].pd_pe ? ui_acc : UI_M);
-    bp_r(0, 90, 234, 1, BR_TRACK);
+    bp_r(0, 90, 234, 1, BP_TRACK);
     for (c = 0; c < 2; c++) {                   /* (the grey first: the black over it) */
         int32_t pt = 1 - c, d = pt ? clamp(trk[sel].pd_pe, -64, 63) : clamp(trk[sel].pd_de, 0, 127);
         uint32_t k = env_k(10u * pow2_q16(clamp(pt ? trk[sel].pd_pd : trk[sel].pd_dd, 0, 127) * 15)), l = 65536u;
@@ -387,7 +428,7 @@ static void bp_pdenv(void)                      /* (V2) PHASE ENV: DCW (black: u
             q[2 * i] = (int16_t)(12 + i * 4), q[2 * i + 1] = (int16_t)(base - (int32_t)(((int64_t)span * l) >> 16));
             for (j = 0; j < 32; j++) l -= (uint32_t)mulq16((int32_t)l, k);
         }
-        bp_pl(q, 53, pt ? 3 : 5, pt ? UI_M : UI_K);
+        bp_pl(q, 53, pt ? 3 : 5, pt ? UI_M : BP_INK);
     }
 }
 
@@ -399,7 +440,7 @@ static void bp_env(void)                        /* the shape of the track's ATTA
     int16_t q[10];
     bp_ground(1);
     q[0] = 10, q[1] = 148, q[2] = (int16_t)x1, q[3] = 36, q[4] = (int16_t)x2, q[5] = (int16_t)ys, q[6] = (int16_t)x3, q[7] = (int16_t)ys, q[8] = (int16_t)x4, q[9] = 148;
-    bp_pl(q, 5, 5, UI_K);
+    bp_pl(q, 5, 5, BP_INK);
     bp_ttc((10 + x1) / 2, 9, "A", &BRT16, UI_M);
     bp_ttc((x1 + x2) / 2, 9, "D", &BRT16, UI_M);
     bp_ttc((x2 + x3) / 2, 9, "S", &BRT16, UI_M);
@@ -420,9 +461,9 @@ static void bp_lfo(void)                        /* a cycle of SHAPE across the p
     put_s(l + ui_len(l), " / FREE");
     bp_ground(1);
     bp_head(LFO_SHAPE_NAME[sh], l, UI_M);
-    bp_r(0, 80, 234, 1, BR_TRACK);
+    bp_r(0, 80, 234, 1, BP_TRACK);
     for (x = 0; x < 54u; x++) q[2 * x] = (int16_t)(10u + x * 4u), q[2 * x + 1] = (int16_t)(80 - lfo_val(sh, x) * 55 / 32767);
-    bp_pl(q, 54, 5, trk[sel].lfo_depth > 0 ? UI_K : UI_M);
+    bp_pl(q, 54, 5, trk[sel].lfo_depth > 0 ? BP_INK : UI_M);
     bp_r(10 + (int32_t)dx * 4 - 5, 80 - lfo_val(sh, dx) * 55 / 32767 - 5, 11, 11, ui_acc);
 }
 
@@ -435,13 +476,13 @@ static void bp_tape(void)                       /* the two reels and the tape be
         if (trk[k].tap > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
     bp_ground(1);
     for (r = 0; r < 2; r++) {
-        bp_r(35 + r * 104, 20, 60, 60, UI_K);
-        bp_r(55 + r * 104, 40, 20, 20, BR_C1);
-        bp_r(65 + r * 104, 80, 4, 20, UI_K);
+        bp_r(35 + r * 104, 20, 60, 60, BP_INK);
+        bp_r(55 + r * 104, 40, 20, 20, BP_C1);
+        bp_r(65 + r * 104, 80, 4, 20, BP_INK);
     }
     for (k = 0; k < 17; k++) q[2 * k] = (int16_t)(35 + k * 10), q[2 * k + 1] = (int16_t)(103 + ((sine_i((uint32_t)k * 804212224u) * amp + 16384) >> 15));
-    bp_pl(q, 17, 5, UI_K);
-    if (e > on + 3) bp_a(10, 134, on, &BRF16, 1, UI_K);
+    bp_pl(q, 17, 5, BP_INK);
+    if (e > on + 3) bp_a(10, 134, on, &BRF16, 1, BP_INK);
     else bp_tt(10, 136, "OFF: TURN UP A TAPE TILE", &BRT14, UI_M);
 }
 
@@ -454,15 +495,15 @@ static void bp_grain(void)                      /* the cloud: squares scattered 
     for (i = 0; i < n; i++) {
         int32_t sz = bs / 2 + (int32_t)ui_rnd((uint32_t)bs / 2u + 1u), gx = 117 - sp + (int32_t)ui_rnd((uint32_t)sp * 2u + 1u), gy = 24 + (int32_t)ui_rnd((uint32_t)(127 - sz));
         uint32_t cl = ui_rnd(8);
-        bp_r(gx - sz / 2, gy, sz, sz, cl == 0 ? ui_acc : cl < 5 ? UI_K : UI_M);
+        bp_r(gx - sz / 2, gy, sz, sz, cl == 0 ? ui_acc : cl < 5 ? BP_INK : UI_M);
     }
-    bp_tt(10, 9, "BUFFER 1.25 S", &BRT12, UI_K);
+    bp_tt(10, 9, "BUFFER 1.25 S", &BRT12, BP_INK);
     if (ge_freeze) {
         bp_r(176, 4, 54, 16, ui_acc);
-        bp_ttc(203, 9, "FREEZE", &BRT12, UI_W);
+        bp_ttc(203, 9, "FREEZE", &BRT12, BP_ON);
     } else {
         put_s(put_u(r, (pow2_q16(clamp(ge_size, 0, 127) * 8) * 10u + 32768u) >> 16), " MS");
-        bp_ttr(224, 9, r, &BRT12, UI_K);
+        bp_ttr(224, 9, r, &BRT12, BP_INK);
     }
 }
 
@@ -473,8 +514,8 @@ static void bp_delay(void)                      /* the echoes, smaller each time
     char r[12];
     ui_time(r, DL_MS[clamp(dl_time, 0, 127)] << 16);
     bp_ground(1);
-    bp_head("DELAY", r, UI_K);
-    for (i = 0; i < n; i++, x += 24 + gap) bp_r(x, 150 - HT[i], 24, HT[i], i ? UI_M : UI_K);
+    bp_head("DELAY", r, BP_INK);
+    for (i = 0; i < n; i++, x += 24 + gap) bp_r(x, 150 - HT[i], 24, HT[i], i ? UI_M : BP_INK);
 }
 
 static void bp_space(void)                      /* the reverb's tail, as long as SIZE (INF: it never falls) */
@@ -483,12 +524,12 @@ static void bp_space(void)                      /* the reverb's tail, as long as
     char r[12] = "SIZE ";
     ui_3(r + 5, ui_pc(v));
     bp_ground(1);
-    bp_head("REVERB", v >= RV_INF ? "FREEZE" : r, v >= RV_INF ? ui_acc : UI_K);
+    bp_head("REVERB", v >= RV_INF ? "FREEZE" : r, v >= RV_INF ? ui_acc : BP_INK);
     for (i = 0; i < 26; i++) {
         int32_t h = v >= RV_INF ? 112 : (int32_t)((112u * pow2_q16(-(i * 272) / tl < -3000 ? -3000 : -(i * 272) / tl) + 32768u) >> 16);
         h += ((i * 7) % 3 - 1) * 2;
         h = h < 3 ? 3 : h > 112 ? 112 : h;
-        bp_r(12 + i * 8, 150 - h, 6, h, i < 3 ? UI_K : UI_M);
+        bp_r(12 + i * 8, 150 - h, 6, h, i < 3 ? BP_INK : UI_M);
     }
 }
 
@@ -508,7 +549,7 @@ static void bp_master(void)                     /* the filter's curve: the cutof
         h = h < 8 ? 8 : h > 144 ? 144 : h;
         q[2 * i] = (int16_t)(12 + i * 4), q[2 * i + 1] = (int16_t)(150 - h * 7 / 8);
     }
-    bp_pl(q, 53, 5, UI_K);
+    bp_pl(q, 53, 5, BP_INK);
 }
 
 static void bp_drive(void)                      /* (V2) a sine through it (AMOUNT, TYPE; TONE left out), the clean one grey behind it; (V3.0) under it what is heard */
@@ -519,21 +560,21 @@ static void bp_drive(void)                      /* (V2) a sine through it (AMOUN
     char r[8], m[28] = "DRIVEN:", *e = m + 7;
     ui_3(r, ui_pc(a));
     bp_ground(1);
-    bp_head(DT_NAME[ty], a ? r : "OFF", a ? UI_K : UI_M);
-    bp_r(0, 88, 234, 1, BR_TRACK);
+    bp_head(DT_NAME[ty], a ? r : "OFF", a ? BP_INK : UI_M);
+    bp_r(0, 88, 234, 1, BP_TRACK);
     for (i = 0; i < 53; i++) {
         int32_t x = sine_i((uint32_t)i * 165191050u) * 3 / 4, y = a ? (dr_shape(ty, (x * g) >> 8) * lv) >> 12 : x;
         q[2 * i] = z[2 * i] = (int16_t)(12 + i * 4);
         q[2 * i + 1] = (int16_t)(88 - x * 46 / 32768), z[2 * i + 1] = (int16_t)(88 - y * 46 / 32768);
     }
     bp_pl(q, 53, 3, UI_M);
-    bp_pl(z, 53, 5, a ? UI_K : UI_M);
+    bp_pl(z, 53, 5, a ? BP_INK : UI_M);
     for (k = 0; k < (int32_t)NT; k++)
         if (trk[k].drv > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
     if (!a) put_s(m, "AMOUNT 0: NO DRIVE HEARD");
     else if (clamp(dr_mix, 0, 127) == 0) put_s(m, "MIX 0: NO DRIVE HEARD");
     else if (e == m + 7) put_s(m, "NO DRIVE SEND UP (MIXER 1)");
-    bp_tt(10, 146, m, &BRT12, e > m + 7 && a && dr_mix > 0 ? UI_K : UI_M);
+    bp_tt(10, 146, m, &BRT12, e > m + 7 && a && dr_mix > 0 ? BP_INK : UI_M);
 }
 
 /* ---- stage 2c: the sources' pictures (FM, SAMPLE, VOICE, WHEEL, PHYS), SCALE, CHORD, ARP, GRID, SYSTEM, SYSTEM 2 */
@@ -556,9 +597,9 @@ static void bp_algo(int32_t so, const char *r)  /* FM: the algorithm's operators
         for (j = 0; j < 6u; j++)
             if (tg[o] >> j & 1u) {
                 int32_t xa = FMX(o), xb = FMX(j), ym = FMY(j) - 3, xl = xa < xb ? xa : xb;
-                bp_r(xa - 1, FMY(o) + h, 3, ym - FMY(o) - h + 3, UI_K);
-                bp_r(xl - 1, ym, (xa > xb ? xa - xb : xb - xa) + 3, 3, UI_K);
-                bp_r(xb - 1, ym, 3, 4, UI_K);
+                bp_r(xa - 1, FMY(o) + h, 3, ym - FMY(o) - h + 3, BP_INK);
+                bp_r(xl - 1, ym, (xa > xb ? xa - xb : xb - xa) + 3, 3, BP_INK);
+                bp_r(xb - 1, ym, 3, 4, BP_INK);
             }
     for (o = 0; o < 6u; o++) {
         int32_t x = FMX(o) - bw / 2, y = FMY(o), s = (int32_t)o == so;
@@ -567,8 +608,8 @@ static void bp_algo(int32_t so, const char *r)  /* FM: the algorithm's operators
             lo = FMX(o) < lo ? FMX(o) : lo, hi = FMX(o) > hi ? FMX(o) : hi;
             bp_r(FMX(o) - 1, y + h, 3, 6, ui_acc);
         }
-        bp_box(x, y, bw, h, BR_C3, s);
-        bp_a(FMX(o) - br_len(&BRF16, d, 1) / 2, y + (h - br_cap(&BRF16)) / 2, d, &BRF16, 1, s ? ui_acc : UI_K);
+        bp_box(x, y, bw, h, BP_C3, s);
+        bp_a(FMX(o) - bp_alen(&BRF16, d, 1) / 2, y + (h - bp_acap(&BRF16)) / 2, d, &BRF16, 1, s ? ui_acc : BP_INK);
         if ((int32_t)o == fbin) {               /* (the feedback: a hook on its right) */
             bp_r(x + bw, y + h / 2 - 1, 6, 3, ui_acc);
             bp_r(x + bw + 3, y - 5, 3, h / 2 + 5, ui_acc);
@@ -613,12 +654,12 @@ static void bp_fmop(void)                       /* FM OP: the operator's envelop
     put_u(s + 3, (uint32_t)clamp(fm_op, 0, 5) + 1u);
     fm_ratio_text(put_s(r, "RATIO "), (uint32_t)clamp(fm_op, 0, 5));
     bp_ground(1);
-    bp_head(s, r, UI_K);
+    bp_head(s, r, BP_INK);
     bp_ttr(224, 25, car >> clamp(fm_op, 0, 5) & 1u ? "CARRIER" : "MODULATOR", &BRT12, UI_M);
 #define EVY(e) (36 + ((e) - 3) * 112 / 25)
     q[0] = 10, q[1] = 148, q[2] = (int16_t)(10 + wa * 4), q[3] = (int16_t)EVY(y1), q[4] = (int16_t)(10 + (wa + wd) * 4), q[5] = (int16_t)EVY(y2);
     q[6] = (int16_t)(10 + (wa + wd + ws) * 4), q[7] = q[5], q[8] = 222, q[9] = (int16_t)EVY(y4);
-    bp_pl(q, 5, 5, UI_K);
+    bp_pl(q, 5, 5, BP_INK);
     bp_r(10 + wa * 4 - 4, EVY(y1) - 4, 9, 9, ui_acc);
 #undef EVY
 }
@@ -652,7 +693,7 @@ static void bp_sample(void)                     /* the slot's sample (a bar a co
     x1 = x1 > 53 ? 53 : x1;
     for (x = 0; x < 54; x++) {
         int32_t a = (smp_pk[slot][x] ? smp_pk[slot][x] : 1) * 4;
-        bp_r(12 + x * 4, 94 - a, 3, 2 * a + 1, x >= x0 && x <= x1 ? UI_K : UI_M);
+        bp_r(12 + x * 4, 94 - a, 3, 2 * a + 1, x >= x0 && x <= x1 ? BP_INK : UI_M);
     }
     bp_r(12 + x0 * 4 - 2, 30, 3, 122, ui_acc);
     bp_r(12 + x1 * 4 + 2, 30, 3, 122, ui_acc);
@@ -667,14 +708,14 @@ static void bp_voice(void)                      /* the vowel (the nearest of A E
     int32_t v = (clamp(p[0], 0, 127) * 4 + 63) / 127, i;
     char t[16], s[24];
     bp_ground(1);
-    bp_a(86 - br_len(&BRF24, VW[v], 5) / 2, 20, VW[v], &BRF24, 5, UI_K);
+    bp_a(86 - bp_alen(&BRF24, VW[v], 5) / 2, 20, VW[v], &BRF24, 5, BP_INK);
     for (i = 0; i < 5; i++) {
         bp_box(165, 9 + i * 29, 59, 25, BP_TILE((uint32_t)i), i == v);
-        bp_a(194 - br_len(&BRF16, VW[i], 1) / 2, 9 + i * 29 + (25 - br_cap(&BRF16)) / 2, VW[i], &BRF16, 1, i == v ? ui_acc : UI_K);
+        bp_a(194 - bp_alen(&BRF16, VW[i], 1) / 2, 9 + i * 29 + (25 - bp_acap(&BRF16)) / 2, VW[i], &BRF16, 1, i == v ? ui_acc : BP_INK);
     }
     formant_text(p, 0, t);
     put_s(put_s(s, "VOWEL "), t);
-    bp_tt(10, 128, s, &BRT12, UI_K);
+    bp_tt(10, 128, s, &BRT12, BP_INK);
     formant_text(p, 1, t);
     put_s(put_s(s, "SHIFT "), t);
     bp_tt(10, 142, s, &BRT12, UI_M);
@@ -691,12 +732,12 @@ static void bp_wheel(void)                      /* the nine drawbars of the regi
         int32_t lv = DRW_REG[reg][k] - '0', x = 12 + (int32_t)k * 24;
         char d[2];
         if (perc && k == 8u) lv = 0;
-        bp_r(x, 6, 20, 14 + lv * 12, FOOT[k] == 'M' ? UI_M : FOOT[k] == 'L' ? UI_W : UI_K);
-        bp_r(x, 6 + lv * 12, 20, 14, (int32_t)k == pk ? ui_acc : UI_K);
+        bp_r(x, 6, 20, 14 + lv * 12, FOOT[k] == 'M' ? UI_M : FOOT[k] == 'L' ? BP_ON : BP_INK);
+        bp_r(x, 6 + lv * 12, 20, 14, (int32_t)k == pk ? ui_acc : BP_INK);
         d[0] = (char)('0' + lv), d[1] = 0;
-        bp_ttc(x + 10, 126, d, &BRT14, UI_K);
+        bp_ttc(x + 10, 126, d, &BRT14, BP_INK);
     }
-    bp_tt(10, 146, N_DRW_REG[reg], &BRT12, UI_K);
+    bp_tt(10, 146, N_DRW_REG[reg], &BRT12, BP_INK);
     bp_ttr(224, 146, perc ? N_DRW_PERC[perc] : "PERC OFF", &BRT12, perc ? ui_acc : UI_M);
 }
 
@@ -719,19 +760,19 @@ static void bp_phys(void)                       /* the model's body: a string (a
     bp_ground(1);
     bp_head(N_PHYS_MODEL[md], r, UI_M);
     if (md == PM_MODAL) {                       /* a bar on two cords (its nodes), struck or bowed at its end */
-        bp_r(12, 80, 210, 14, UI_K);
-        bp_r(60, 94, 3, 24, UI_K), bp_r(171, 94, 3, 24, UI_K);
+        bp_r(12, 80, 210, 14, BP_INK);
+        bp_r(60, 94, 3, 24, BP_INK), bp_r(171, 94, 3, 24, BP_INK);
         for (i = 0; i < 3; i++) bp_r(40 + i * (26 + st / 6), 66, 5, 10, UI_M);   /* (STRUCTURE spreads the partials) */
         bp_r(214, bw ? 64 : 100, 12, 12, ui_acc);
     } else if (md == PM_MEMB) {                 /* a drum head and its rings */
-        bp_ell(117, 92, 92, 50, UI_K);
-        bp_ell(117, 92, 85, 43, BR_C3);
+        bp_ell(117, 92, 92, 50, BP_INK);
+        bp_ell(117, 92, 85, 43, BP_C3);
         bp_ell(117, 92, 56, 29, UI_M);
-        bp_ell(117, 92, 51, 25, BR_C3);
-        bp_ell(117, 92, 9, 5, UI_K);
+        bp_ell(117, 92, 51, 25, BP_C3);
+        bp_ell(117, 92, 9, 5, BP_INK);
         bp_r(117 + st * 70 / 127 - 5, 87, 11, 11, ui_acc);
     } else {                                    /* a string between two posts, its swing; SYMPATH: two more under it */
-        bp_r(12, 60, 14, 56, UI_K), bp_r(208, 60, 14, 56, UI_K);
+        bp_r(12, 60, 14, 56, BP_INK), bp_r(208, 60, 14, 56, BP_INK);
         if (md == PM_SYMP) {
             bp_r(26, 104, 182, 3, UI_M);
             bp_r(26, 112, 182, 3, UI_M);
@@ -740,7 +781,7 @@ static void bp_phys(void)                       /* the model's body: a string (a
             int32_t a = (sine_i((uint32_t)i * 153391689u) * (3 + bw / 8)) >> 15;   /* (half a sine over 15 points) */
             q[2 * i] = (int16_t)(26 + i * 13), q[2 * i + 1] = (int16_t)(88 - (a < 0 ? -a : a));
         }
-        bp_pl(q, 15, 5, UI_K);
+        bp_pl(q, 15, 5, BP_INK);
         bp_r(26 + st * 170 / 127, 60, 14, 56, ui_acc);
     }
 }
@@ -771,18 +812,18 @@ static void bp_sel(void)                        /* SCALE, CHORD: the keys from t
     for (k = 0; k < 27u; k++)                   /* the white keys, then the black ones over them */
         if (WI[k % 12u] >= 0) {
             int32_t ix = (int32_t)(k / 12u) * 7 + WI[k % 12u], x = 13 + ix * 13;
-            bp_r(x, 30, 12, 80, ix & 1 ? BR_C2 : BR_C3);
+            bp_r(x, 30, 12, 80, ix & 1 ? BP_C2 : BP_C3);
             if (lit >> k & 1u) bp_r(x + 1, 94, 10, 10, ui_acc);
-            else if (sc_in((int32_t)(base + k))) bp_r(x + 1, 94, 10, 10, UI_K);
+            else if (sc_in((int32_t)(base + k))) bp_r(x + 1, 94, 10, 10, BP_INK);
         }
     for (k = 0; k < 27u; k++)
         if (WI[k % 12u] < 0) {
             int32_t x = 13 + ((int32_t)(k / 12u) * 7 + WI[(k - 1u) % 12u] + 1) * 13 - 5;
-            bp_r(x, 30, 8, 48, UI_K);
+            bp_r(x, 30, 8, 48, BP_INK);
             if (lit >> k & 1u) bp_r(x + 2, 64, 4, 4, ui_acc);
-            else if (sc_in((int32_t)(base + k))) bp_r(x + 2, 64, 4, 4, UI_W);
+            else if (sc_in((int32_t)(base + k))) bp_r(x + 2, 64, 4, 4, BP_ON);
         }
-    bp_val(12, 140, page == PG_CHORD ? sc : cn, 110, page == PG_CHORD ? UI_K : trk[sel].chord ? ui_acc : UI_M, 0);
+    bp_val(12, 140, page == PG_CHORD ? sc : cn, 110, page == PG_CHORD ? BP_INK : trk[sel].chord ? ui_acc : UI_M, 0);
     bp_ttr(224, 131, in, &BRT12, UI_M);
 }
 
@@ -825,15 +866,15 @@ static void bp_arp(void)                        /* what the arpeggiator holds (O
     if (n > 13u && now > 6) from = (uint32_t)now - 6u < n - 13u ? (uint32_t)now - 6u : n - 13u;
     for (i = 0; i < 13u && from + i < n; i++) {
         uint32_t v = chord ? from + i : p[from + i], lv = hi > lo ? (v - lo) * 7u / (hi - lo) : 3u, h = 24u + lv * 12u;
-        bp_r(12 + (int32_t)i * 16, 150 - (int32_t)h, 13, (int32_t)h, (int32_t)(from + i) == now ? ui_acc : UI_K);
+        bp_r(12 + (int32_t)i * 16, 150 - (int32_t)h, 13, (int32_t)h, (int32_t)(from + i) == now ? ui_acc : BP_INK);
     }
 }
 
 static void bp_row(int32_t y, int32_t h, int32_t i, const char *l, const char *v, uint16_t vc)   /* a row of SYSTEM: its name small at the left, its setting big at the right */
 {
     bp_box(0, y, 234, h, BP_TILE((uint32_t)i), 0);
-    bp_tt(8, y + (h - BRT12.cap) / 2, l, &BRT12, UI_K);
-    if (br_len(&BRF16, v, 1) <= 150) bp_a(226 - br_len(&BRF16, v, 1), y + (h - br_cap(&BRF16)) / 2, v, &BRF16, 1, vc);
+    bp_tt(8, y + (h - BRT12.cap) / 2, l, &BRT12, BP_INK);
+    if (bp_alen(&BRF16, v, 1) <= 150) bp_a(226 - bp_alen(&BRF16, v, 1), y + (h - bp_acap(&BRF16)) / 2, v, &BRF16, 1, vc);
     else bp_ttr(226, y + (h - BRT14.cap) / 2, v, &BRT14, vc);
 }
 static void bp_system(void)                     /* COLOUR (the four, the one set underlined in black), then MIDI CHANNEL, TUNE, SCREEN OFF, MIDI LEARN, SEQ MIDI OUT as rows */
@@ -844,17 +885,17 @@ static void bp_system(void)                     /* COLOUR (the four, the one set
     for (i = 0; i < 4; i++) {
         int32_t x = 3 + i * 58;
         bp_r(x, 4, 54, 36, UI_ACCENTS[i]);
-        bp_tt(x + 5, 8, COL_NAME[i], &BRT12, UI_W);
-        if (i == (int32_t)set.col) bp_r(x, 42, 54, 4, UI_K);
+        bp_tt(x + 5, 8, COL_NAME[i], &BRT12, BP_ON);
+        if (i == (int32_t)set.col) bp_r(x, 42, 54, 4, BP_INK);
     }
     mch_text(v, set.mch);
-    bp_row(50, 20, 0, "MIDI CHANNEL", v, UI_K);
+    bp_row(50, 20, 0, "MIDI CHANNEL", v, BP_INK);
     tune_text(v, set.tune);
-    bp_row(72, 20, 1, "TUNE", v, UI_K);
-    bp_row(94, 20, 0, "SCREEN OFF", SCR_NAME[set.scr % 5u], UI_K);
+    bp_row(72, 20, 1, "TUNE", v, BP_INK);
+    bp_row(94, 20, 0, "SCREEN OFF", SCR_NAME[set.scr % 5u], BP_INK);
     put_s(put_u(v, set.nlk), set.nlk == 1u ? " LINK" : " LINKS");
-    bp_row(116, 20, 1, "MIDI LEARN", v, UI_K);
-    bp_row(138, 20, 0, "SEQ MIDI OUT", set.out ? "ON" : "OFF", set.out ? ui_acc : UI_K);
+    bp_row(116, 20, 1, "MIDI LEARN", v, BP_INK);
+    bp_row(138, 20, 0, "SEQ MIDI OUT", set.out ? "ON" : "OFF", set.out ? ui_acc : BP_INK);
 }
 
 static void bp_sys2_region(void)                /* SYSTEM 2's rows under the links (the voices, USB's drops, the CPU): redrawn when they change */
@@ -879,27 +920,27 @@ static void bp_sys2(void)                       /* MIDI LEARN's links (four, "+n
             break;
         }
         put_u(put_s(l, "CC "), L[0]);
-        bp_tt(8, y + 2, l, &BRT12, UI_K);
+        bp_tt(8, y + 2, l, &BRT12, BP_INK);
         link_name(v, L);
-        bp_ttr(226, y + 2, v, &BRT12, UI_K);
+        bp_ttr(226, y + 2, v, &BRT12, BP_INK);
     }
-    bp_box(0, 86, 234, 15, BR_C3, 0);           /* the voices: six segments */
-    bp_tt(8, 90, "VOICES", &BRT12, UI_K);
-    for (j = 0; j < (int32_t)NV; j++) bp_r(226 - ((int32_t)NV - j) * 14, 90, 12, 8, j < (int32_t)voices_used() ? UI_K : BR_TRACK);
-    bp_box(0, 103, 234, 15, BR_C3, 0);
-    bp_tt(8, 107, "USB REC DROPS", &BRT12, UI_K);
+    bp_box(0, 86, 234, 15, BP_C3, 0);           /* the voices: six segments */
+    bp_tt(8, 90, "VOICES", &BRT12, BP_INK);
+    for (j = 0; j < (int32_t)NV; j++) bp_r(226 - ((int32_t)NV - j) * 14, 90, 12, 8, j < (int32_t)voices_used() ? BP_INK : BP_TRACK);
+    bp_box(0, 103, 234, 15, BP_C3, 0);
+    bp_tt(8, 107, "USB REC DROPS", &BRT12, BP_INK);
     put_u(l, sys2_drops());
-    bp_ttr(226, 107, l, &BRT12, sys2_drops() ? ui_acc : UI_K);
+    bp_ttr(226, 107, l, &BRT12, sys2_drops() ? ui_acc : BP_INK);
     for (i = 0; i < 2; i++) {
         uint32_t pc = pct10(i ? cpu_peak : cpu_now);
         int32_t y = 120 + i * 19;
         char s[16];
-        bp_box(0, y, 234, 17, BR_C3, 0);
-        bp_tt(8, y + 2, i ? "CPU PEAK" : "CPU NOW", &BRT12, UI_K);
+        bp_box(0, y, 234, 17, BP_C3, 0);
+        bp_tt(8, y + 2, i ? "CPU PEAK" : "CPU NOW", &BRT12, BP_INK);
         put_s(put_x10(s, pc), "%");
-        bp_ttr(226, y + 2, s, &BRT12, UI_K);
-        bp_r(8, y + 12, 218, 3, BR_TRACK);
-        bp_r(8, y + 12, (int32_t)(218u * (pc > 1000u ? 1000u : pc) / 1000u), 3, pc > 600u ? ui_acc : UI_K);
+        bp_ttr(226, y + 2, s, &BRT12, BP_INK);
+        bp_r(8, y + 12, 218, 3, BP_TRACK);
+        bp_r(8, y + 12, (int32_t)(218u * (pc > 1000u ? 1000u : pc) / 1000u), 3, pc > 600u ? ui_acc : BP_INK);
     }
 }
 
@@ -908,10 +949,10 @@ static void br_prim_demo(void)                  /* (tests/brutal_test.py: a tria
 {
     static const int32_t TRI[6] = {20 * 16, 150 * 16, 80 * 16, 150 * 16, 50 * 16, 100 * 16};   /* base 60, height 50: 1500 pixels */
     static const int16_t HOR[4] = {100, 40, 200, 40}, VEE[6] = {110, 90, 140, 60, 170, 90}, SLA[4] = {150, 120, 210, 160};
-    br_poly(TRI, 3, UI_W);
-    br_polyline(HOR, 2, 5, UI_W);               /* rows 37 .. 41, columns 97 .. 201 */
-    br_polyline(VEE, 3, 6, UI_W);               /* a point 3 sqrt(2) above (140, 60) */
-    br_polyline(SLA, 2, 4, UI_W);
+    br_poly(TRI, 3, BP_ON);
+    br_polyline(HOR, 2, 5, BP_ON);               /* rows 37 .. 41, columns 97 .. 201 */
+    br_polyline(VEE, 3, 6, BP_ON);               /* a point 3 sqrt(2) above (140, 60) */
+    br_polyline(SLA, 2, 4, BP_ON);
 }
 #endif
 
@@ -976,4 +1017,23 @@ static void br_pic(void)
         }
     default: ui_pic_draw();
     }
+}
+
+/* ---- MINIMAL: HOME is its own (minimal.c); the pages whose picture is BRUTAL's shared one in MINIMAL's parameters (stage by stage); MIXER 1 and SEQ GRID keep EYE's layout, EYE's code in MINIMAL's colours;
+ * the rest EYE's pictures in MINIMAL's colours for now */
+static int bp_min_page(void)
+{
+    switch (page) {
+    case PG_SOURCE: case PG_PERFORM: case PG_MIX2: case PG_LEVELS: case PG_SOUNDS: case PG_PROJECTS: case PG_PATTERN: case PG_SONG: case PG_SYS3:
+        return 1;
+    default:
+        return 0;
+    }
+}
+static int mn_native(void) { return page == PG_HOME || bp_min_page(); }
+static void mn_pic(void)
+{
+    if (page == PG_HOME) mn_home();
+    else if (bp_min_page()) br_pic();
+    else ui_pic_draw();
 }

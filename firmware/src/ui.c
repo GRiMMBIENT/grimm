@@ -1319,7 +1319,7 @@ static void ui_mix_frame(int draw)              /* a frame of MIXER 1's LEVEL co
     uint32_t t;
     for (t = 0; t < NT; t++)
         if (ui_meter_step(t) && draw && t == sel) {
-            if (ui_th->bfin == 1) bp_meter_region(t);
+            if (ui_th->bfin && ui_th->native()) bp_meter_region(t);
             else ui_regionp(MXT_X0 + 6, MXT_Y0 + 28, 63, 30, UI_K, ui_th->pic);
         }
 }
@@ -1334,7 +1334,7 @@ static void ui_levels_frame(int draw)
     uint32_t t;
     for (t = 0; t < NT; t++)
         if (ui_meter_step(t) && draw) {
-            if (ui_th->bfin == 1) bp_meter_region(t);
+            if (ui_th->bfin && ui_th->native()) bp_meter_region(t);
             else ui_regionp(LV_X(t) + LV_DX, LV_Y(7) - 1, LV_W, 9 * 8, UI_K, ui_th->pic);
         }
 }
@@ -2490,11 +2490,11 @@ static void ui_update(int32_t oct)
     if (page == PG_LFO && lfo_dot() != dot_shown) {   /* LFO: the dot moved: its two columns where it was, and where
                                                  * it is, drawn again */
         if (dot_shown < 54u) {
-            if (ui_th->bfin == 1) bp_dot_region(dot_shown);
+            if (ui_th->bfin && ui_th->native()) bp_dot_region(dot_shown);
             else ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
         }
         dot_shown = lfo_dot();
-        if (ui_th->bfin == 1) bp_dot_region(dot_shown);
+        if (ui_th->bfin && ui_th->native()) bp_dot_region(dot_shown);
         else ui_regionp(PX0 + (int32_t)dot_shown * 4, PY0, 8, 120, UI_K, ui_th->pic);
     }
     if (page == PG_SYS2) {                      /* SYSTEM 2's CPU row (every ~0.5 s) */
@@ -2504,7 +2504,7 @@ static void ui_update(int32_t oct)
 #endif
         if (st != stat_key) {
             stat_key = st;
-            if (ui_th->bfin == 1) bp_sys2_region();
+            if (ui_th->bfin && ui_th->native()) bp_sys2_region();
             else ui_regionp(PX0, 110, 216, 49, UI_K, ui_th->pic);   /* (rc9: USB's row too; V3.0: the VOICES row over it) */
         }
     }

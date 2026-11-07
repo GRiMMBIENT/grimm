@@ -13,6 +13,7 @@
 #define MN_TRACK RGB(0x34, 0x38, 0x3c)
 #define MN_DIM RGB(0x7c, 0x80, 0x86)
 #define MN_FILL RGB(0x8a, 0x8e, 0x93)
+#define MN_SEL RGB(0x2c, 0x30, 0x33)               /* (the selected tile's fill) */
 #define MN_GLOW (ui_th->bfin == 2 && sy_glow)   /* GLOW on, in MINIMAL */
 
 static const ui_pal_t UI_PAL_MINIMAL = {RGB(0x00, 0x00, 0x00), RGB(0x22, 0x25, 0x28), RGB(0x6a, 0x6e, 0x73), RGB(0xd6, 0xd6, 0xd2), RGB(0xf0, 0xf0, 0xec),
@@ -160,12 +161,6 @@ static void mn_home(void)
         for (i = 0; i < 16 && i < n; i++)
             ui_rect(100 + i * 7, y + 24, 5, 4, i == S->pos && seq_on ? UI_L : P->st[i].note ? (isel ? ui_acc : UI_M) : UI_D);
     }
-}
-static int mn_native(void) { return page == PG_HOME; }
-static void mn_pic(void)
-{
-    if (page == PG_HOME) mn_home();
-    else ui_pic_draw();
 }
 
 /* ---- the boot: a DOT FIELD (UI_BOOT_MS in all, 5.6 s; EYE's is the eye and the bats, BRUTAL's a concrete door). A grid of faint dots (2 px, every 8 px, the mockup's dark grey) fades in from the

@@ -154,7 +154,7 @@ def mixt(t, a, n):                              # minimal.c's mn_mix
 
 
 MID5 = t565(MP[2])
-INKS = [t565(c) for c in MP] + [t565(MN[n]) for n in MN]
+INKS = [t565(c) for c in MP] + [t565(MN[n]) for n in MN if n != "SEL"]      # (the selected tile's fill is no ink)
 INKS += [mixt(t565(c), a, 8) for c in (MP[3], MN["DIM"], MP[5], MN["FILL"]) for a in range(1, 9)]                # (the words fading in, the version line)
 INKS += [tuple(x + y for x, y in zip(mixt(t565(MN["TRACK"]), 4 - n, 4), mixt(t565(MP[3]), n, 4))) for n in range(1, 5)]   # (the dots' ripple)
 LEGIT = {p888(t) for t in INKS}
@@ -203,6 +203,10 @@ check(f"GLOW on every page: it changes {seen} pixels in all, every one a halo of
       "(black text on an amber bar, dark segments, dark rules)", not [x for x in wrong if x[0] != "track"] and seen > 2000, str(wrong[:5]))
 
 # ---- every page in MINIMAL's frame
+psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
+SHARED = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int bp_min_page"):psrc.index("static int mn_native")])}
+STAGE = {"source", "perform", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3"}      # (stage 2a)
+check("the pages MINIMAL draws with BRUTAL's shared picture code (brutalp.c's bp_min_page) are the ones this test knows: " + " ".join(sorted(SHARED)), SHARED == STAGE, f"{sorted(SHARED ^ STAGE)}")
 pf = film("pages", [(BOOT + 500 * n, f"page {n}") for n in range(N)], BOOT + 500 * N + 300, EM0)
 bad_pages = []
 for n in range(N):
@@ -218,8 +222,8 @@ for n in range(N):
 out = run("ptext", ev, t + 100, EM0)
 v = [(int(re.search(r" ptext (\d+)", ln).group(1)), int(re.search(r" btext (\d+)", ln).group(1))) for ln in out.splitlines() if ln.startswith("slabvals ")]
 pt = [(PGN[n], v[2 * n + 1][0] - v[2 * n][0], v[2 * n + 1][1] - v[2 * n][1]) for n in range(N)]
-check(f"none of EYE's pixel font is drawn on any of the {N} pages (the header, the pictures, the knob row: Terminus); the pages' pictures' texts go through it ({sum(1 for p in pt if p[2])} pages)",
-      not any(p[1] for p in pt) and sum(1 for p in pt if p[2]) >= 20, str([p for p in pt if p[1]]))
+check(f"none of EYE's pixel font is drawn on any of the {N} pages (the header, the pictures, the knob row: Terminus); the pages' pictures' texts go through it ({sum(1 for p in pt if p[2])} pages: the ones still EYE's)",
+      not any(p[1] for p in pt) and sum(1 for p in pt if p[2]) >= N - 2 - len(SHARED) - 3, str([p for p in pt if p[1]]))
 fsrc = Path("firmware/gen/minimal_font.h").read_text(encoding="utf-8")
 check("fonts: only Terminus (the regular 6x12 and 8x14: minimal_font.h; the bold ones: brutal_font.h); the theme uses no Archivo Black and no other face",
       "BRT12R" in fsrc and "BRT14R" in fsrc and "BRF" not in msrc and "br_text(" not in msrc, "")
@@ -446,6 +450,18 @@ for t in T_G:
 check(f"the boot with GLOW: the lit dots (the ripple, the eye's outline and iris), the thin eye, the words and the line have a halo ({seen} pixels in these {len(T_G)} frames), every one a halo of a light ink on a dark "
       "pixel; the faint dots (dark) have none", not wrong and seen > 400, str(wrong[:4]))
 
+# ---- the shared pages in MINIMAL's parameters: dark tiles, the selected one a lighter dark with a 2 px amber underline (not BRUTAL's black with a red frame); light ink; the live meter in MINIMAL's colours
+SEL = c888(*MN["SEL"])
+sk = film("srcm", [(6000, f"page {PGN.index('source')}")], 7000, EM0)(6500)
+check("SOURCE: the seven sources as dark tiles, the track's (VA) the selected one: MINIMAL's lighter dark (#2c2f33) with a 2 px amber underline (rows 81 .. 82), its name amber; the others dark (#222528), "
+      "their names light", P(sk, 10, 50) == SEL and P(sk, 10, 81) == AMB and P(sk, 10, 82) == AMB and P(sk, 10, 83) == BK and P(sk, 70, 50) == DK and P(sk, 70, 81) == DK and
+      count(sk, AMB, (3, 32, 60, 80)) > 30 and count(sk, LT, (62, 32, 120, 80)) > 30, f"{P(sk, 10, 50)} {P(sk, 10, 81)} {P(sk, 70, 50)}")
+lk = film("levm", [(6000, f"page {PGN.index('levels')}"), (6300, "keys 1")], 8000, EM0)
+l1, l2 = lk(6200), lk(7500)
+MET = {LT, AMB, c888(*rgbs(msrc[msrc.index("UI_PAL_MINIMAL"):msrc.index("static uint16_t mn_mix")])[7])}   # (the live meter: light, amber, red)
+check("LEVELS: a column a track on a dark tile, the LEVEL set a light bar of 8 segments and the sound now (T1 playing) the live meter beside it in MINIMAL's colours (light, amber, red), dark when silent",
+      count(l1, LT, (36, 82, 56, 182)) == 0 and count(l2, MET, (36, 82, 56, 182)) > 30 and count(l1, LT, (8, 82, 28, 182)) > 80, f"{count(l2, MET, (36, 82, 56, 182))} {count(l1, LT, (8, 82, 28, 182))}")
+
 # ---- the theme switch: the whole panel cleared and drawn again, no pixel of the theme left, on any page, between all three themes
 EYEC = set(c888(*c) for c in rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))
 BRUC = set(c888(*c) for c in rgbs(bsrc[bsrc.index("UI_PAL_BRUTAL = "):bsrc.index("/* ---- the font")])) | {c888(*c) for c in (
@@ -481,5 +497,9 @@ for n in range(N):
             leftovers.append((PGN[n], a, b, got))
 check(f"THEME switched with each of the {N} pages shown, EYE > BRUTAL > MINIMAL > EYE > MINIMAL > BRUTAL > EYE (every ordered pair of the three): the whole panel is cleared and drawn again: not one "
       "pixel of the theme left is on it (checked against the colours only it has, GLOW's halos too)", not [x for x in leftovers if x[0] != "track"], f"(page, from, to, pixels): {leftovers[:6]}")
+
+BRU_ONLY = BRUC - MINC - EYEC
+bru_left = [(PGN[n], count(pf(BOOT + 500 * n + 400), BRU_ONLY)) for n in range(N)]
+check("not a pixel of BRUTAL's own colours (the concretes, the black and the red) on any of the pages in MINIMAL", not [b for b in bru_left if b[1]], str([b for b in bru_left if b[1]][:6]))
 
 sys.exit(1 if bad else 0)

@@ -60,17 +60,18 @@ for i, n in base:
     ev.append((t, f"page {i}"))
     shots[n] = t + 450
     t += 700
-r = run("mall", ev, list(shots.values()), 1, end=t + 400)
-imgs = {n: r[ts_] for n, ts_ in shots.items()}
-for n, im in imgs.items():
-    big(im).save(OUT / f"minimal_{n}.png")
-cols = 6
-rows = (len(imgs) + cols - 1) // cols
-sheet = Image.new("RGB", (cols * 244, rows * 252), (60, 60, 60))
-dr = ImageDraw.Draw(sheet)
-for i, (n, im) in enumerate(imgs.items()):
-    x, y = (i % cols) * 244 + 2, (i // cols) * 252 + 12
-    sheet.paste(im, (x, y))
-    dr.text((x + 2, y - 11), n, fill=(230, 230, 230))
-sheet.save(OUT / "minimal_contact.png")
-print(f"MINIMAL: {len(imgs)} pages, HOME, SYSTEM 3, the boot -> {OUT}/minimal_*.png")
+for glow, suf in ((1, ""), (0, "_glow_off")):                   # (GLOW on: minimal_<page>.png, minimal_contact.png; off: minimal_<page>_glow_off.png, minimal_contact_glow_off.png)
+    r = run(f"mall{glow}", ev, list(shots.values()), glow, end=t + 400)
+    imgs = {n: r[ts_] for n, ts_ in shots.items()}
+    for n, im in imgs.items():
+        big(im).save(OUT / f"minimal_{n}{suf}.png")
+    cols = 6
+    rows = (len(imgs) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * 244, rows * 252), (60, 60, 60))
+    dr = ImageDraw.Draw(sheet)
+    for i, (n, im) in enumerate(imgs.items()):
+        x, y = (i % cols) * 244 + 2, (i // cols) * 252 + 12
+        sheet.paste(im, (x, y))
+        dr.text((x + 2, y - 11), n, fill=(230, 230, 230))
+    sheet.save(OUT / f"minimal_contact{suf}.png")
+print(f"MINIMAL: {len(imgs)} pages (GLOW on and off), HOME, SYSTEM 3, the boot -> {OUT}/minimal_*.png")
