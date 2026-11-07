@@ -91,6 +91,8 @@ python3 tests/brutal_test.py build/host/grimm
 # BRUTAL is pixel-identical through the refactors that share its picture code with MINIMAL (tests/brutal_hash_test.py, tests/data/brutal_screens.sha256)
 python3 tests/brutal_hash_test.py build/host/grimm
 python3 tests/minimal_test.py build/host/grimm
+# the version in the boot intro (just V3.0) and in the SYSTEM pages (the whole stamp), in all three themes (tests/version_line_test.py)
+python3 tests/version_line_test.py
 # GR!MM V3.0: the VA source's filter leaves no DC offset at a low cutoff (dsp.c tsvf_lp rounds): at every cutoff, through each DRIVE
 # type, and with an LFO sweeping the VA's CUTOFF the bass no longer crumbles (tests/va_dc_test.py)
 python3 tests/va_dc_test.py build/host/grimm

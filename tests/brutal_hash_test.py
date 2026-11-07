@@ -15,6 +15,8 @@ from pathlib import Path
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 EXE = ARGS[0] if ARGS else "build/host/grimm"
 MAKE = "--make" in sys.argv
+DUMP = Path(sys.argv[sys.argv.index("--dump") + 1]) if "--dump" in sys.argv else None   # (--dump DIR: every frame as DIR/<label>.ppm, no comparison)
+ARGS = [a for a in ARGS if a != str(DUMP)]
 OUT = Path("build/host/brutalhash")
 OUT.mkdir(parents=True, exist_ok=True)
 GOLD = Path("tests/data/brutal_screens.sha256")
@@ -24,6 +26,9 @@ PG = [n.lower() for n in re.findall(r"PG_(\w+)", re.search(r"enum \{ (PG_SOUND.*
 
 
 def digest(label, ppm):
+    if DUMP:
+        DUMP.mkdir(parents=True, exist_ok=True)
+        (DUMP / f"{label}.ppm").write_bytes(ppm)
     """SHA-256 of a frame; SYSTEM 2's CPU figures move by themselves: its rows 116 .. 189 are left out"""
     if label.startswith("page_sys2"):
         m = re.match(rb"P6\s+(\d+)\s+(\d+)\s+\d+\s", ppm)
@@ -106,6 +111,8 @@ for k, ev in states.items():
 lab = {f"boot_{t}": t + 3 for t in range(0, 5900, 110)}
 got.update(run("boot", [], lab))
 
+if DUMP:
+    sys.exit(0)
 if MAKE:
     GOLD.write_text("".join(f"{k} {v}\n" for k, v in sorted(got.items())), encoding="utf-8")
     print(f"{len(got)} frames -> {GOLD}")

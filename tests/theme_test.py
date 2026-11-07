@@ -18,6 +18,8 @@ from pathlib import Path
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 EXE = ARGS[0] if ARGS else "build/host/grimm"
 MAKE = "--make" in sys.argv
+DUMP = Path(sys.argv[sys.argv.index("--dump") + 1]) if "--dump" in sys.argv else None   # (--dump DIR: every frame as DIR/<name>.ppm, no comparison: to see what a change touched)
+ARGS = [a for a in ARGS if a != str(DUMP)]
 OUT = Path("build/host/theme")
 OUT.mkdir(parents=True, exist_ok=True)
 GOLD = Path("tests/data/eye_screens.sha256")
@@ -62,6 +64,9 @@ SYS2 = {"page11", "state@15000", "state@15250"}          # SYSTEM 2 shows the CP
 
 
 def sha(name, ppm):
+    if DUMP:
+        DUMP.mkdir(parents=True, exist_ok=True)
+        (DUMP / f"{name.replace('@', '_')}.ppm").write_bytes(ppm)
     if name in SYS2:
         w, d = px(ppm)
         d = bytearray(d)
@@ -91,6 +96,9 @@ def eye_hashes():
     return res
 
 
+if DUMP:
+    eye_hashes()
+    sys.exit(0)
 if MAKE:
     GOLD.write_text("".join(f"{k} {v}\n" for k, v in sorted(eye_hashes().items())))
     print(f"made {GOLD}")

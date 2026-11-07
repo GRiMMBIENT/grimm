@@ -2200,8 +2200,15 @@ static void bs_draw(uint32_t e)
             ui_rect(x, y, 3, 3, s == 2u ? UI_L : s == 1u || i % 3u == 0u ? UI_M : UI_D);
     }
 }
-#define BOOT_LINE "FM-1 / DEATHDREAM / V" APP_VER
-static const char *bt_note;                     /* the boot screen's last line, if not BOOT_LINE ("INSTALLING SAMPLES") */
+static const char *boot_line(char *b)           /* the intro's line (in b, 40 characters at most): "FM-1 / DEATHDREAM / V3.0": the version as far as the build's stamp (3.0-d1234 is "3.0"; the stamp is on the SYSTEM pages) */
+{
+    char *e = put_s(b, "FM-1 / DEATHDREAM / V");
+    const char *v = APP_VER;
+    for (; *v && *v != '-' && e < b + 38; v++) *e++ = *v;
+    *e = 0;
+    return b;
+}
+static const char *bt_note;                     /* the boot screen's last line, if not the version ("INSTALLING SAMPLES") */
 static int32_t bt_len(uint32_t x) { return DRIP[x] * (int32_t)bt_d / (int32_t)UI_BOOT_MS; }   /* a drip's cells now */
 static void ui_boot_draw(void)                  /* Boot: the stars, the eye, the bats, GR!MM, the drips */
 {
@@ -2222,7 +2229,11 @@ static void ui_boot_draw(void)                  /* Boot: the stars, the eye, the
     for (y = 0; y < 10; y++)
         for (x = 0; x < 30; x++)
             if (!y || y <= bt_len((uint32_t)x)) ui_rect(60 + x * 4, 128 + y * 4, 4, 4, y ? ui_acc : UI_M);
-    ui_text(120 - 4 * ui_len(bt_note ? bt_note : BOOT_LINE), 210, bt_note ? bt_note : BOOT_LINE, 1, bt_note ? ui_acc : UI_M);
+    {
+        char vb[40];
+        const char *l = bt_note ? bt_note : boot_line(vb);
+        ui_text(120 - 4 * ui_len(l), 210, l, 1, bt_note ? ui_acc : UI_M);
+    }
 }
 /* ---- (V3.0) BRUTAL's boot: a concrete door (UI_BOOT_MS in all, 5.6 s; EYE's is the eye and the bats above). 0 .. 0.8 s two slabs slide in from the top and the
  * bottom, faster and faster, and slam shut at the middle, a 2 px shake and a thin red seam where they meet; then EYE's eye opens in the seam (the seam is its eyelid:
@@ -2325,7 +2336,8 @@ static void bd_draw(void)                      /* the whole picture at bd_e, as 
     if (s.wm && ui_in(wx, 150 + s.wo, br_len(&BRF24, APP_NAME, 1), 22))
         br_text(wx, 170 + s.wo - br_cap(&BRF24) - br_capy(&BRF24), APP_NAME, &BRF24, 1, s.wm == 1 ? ui_acc : UI_K);   /* (GR!MM stamped: red a moment, then black) */
     if (s.wm && ui_in(0, 184 + s.wo, 240, 14)) {
-        const char *l = bt_note ? bt_note : BOOT_LINE;
+        char vb[40];
+        const char *l = bt_note ? bt_note : boot_line(vb);
         br_tt(120 - br_tlen(&BRT12, l) / 2, 187 + s.wo - BRT12.capy, l, &BRT12, bt_note ? ui_acc : UI_K);
     }
     if (bt_note && !s.wm && ui_in(0, 110, 240, 16))   /* (the factory samples going in: said on the black) */

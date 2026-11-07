@@ -292,7 +292,7 @@ static void mb_draw(void)                       /* the whole boot picture, as fa
         char vb[12] = "V";
         const char *l = bt_note;
         int32_t n;
-        for (n = 0; !l && n < 10 && APP_VER[n] && APP_VER[n] != '-'; n++) vb[n + 1] = APP_VER[n], vb[n + 2] = 0;   /* (just V3.0: the build's stamp is on the SYSTEM pages' header) */
+        for (n = 0; !l && n < 10 && APP_VER[n] && APP_VER[n] != '-'; n++) vb[n + 1] = APP_VER[n], vb[n + 2] = 0;   /* (just V3.0, as EYE's and BRUTAL's: the build's stamp is on the SYSTEM pages' header) */
         if (!l) l = vb;
         mn_t(120 - br_tlen(&BRT12R, l) / 2, 146, l, &BRT12R, mn_mix(bt_note ? ui_acc : MN_DIM, bt_note ? 8u : mb_b, 8));
     }

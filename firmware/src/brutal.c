@@ -235,6 +235,16 @@ static void br_head_draw(void)
     if (ui_bat >= 0) br_bat_draw(3 + 175 - 5 - 16, 12);
     ui_rect(181, 3, 56, 26, ui_acc);            /* the tag */
     br_tag(lab, val);
+    if (page == PG_SYSTEM || page == PG_SYS2 || page == PG_SYS3) {   /* (the SYSTEM pages: the build's whole stamp, in two lines: "V3.0", "-d1234": which build is installed) */
+        const char *v = APP_VER;
+        int32_t n = 1;
+        b[0] = 'V';
+        for (; *v && *v != '-' && n < 8; v++) b[n++] = *v;
+        b[n] = 0;
+        br_tt(187, 6 - BRT12.capy, b, &BRT12, UI_W);
+        br_tt(187, 17 - BRT12.capy, *v ? v : "", &BRT12, UI_W);
+        return;
+    }
     br_tt(187, 5 - BRT12.capy, lab, &BRT12, UI_W);
     if (br_len(&BRF16, val, 1) <= 44) br_text(187, 15 - br_capy(&BRF16), val, &BRF16, 1, UI_W);
     else br_tt(187, 15 - BRT14.capy, val, &BRT14, UI_W);
