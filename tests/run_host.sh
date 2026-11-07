@@ -88,6 +88,8 @@ python3 tests/theme_test.py build/host/grimm
 # GR!MM V3.0 THEMES, stage 1: BRUTAL: THEME saved and read before the boot screen, HOME, the knob blocks, messages, chips, every page in its frame, the polygon and line drawing (tests/brutal_test.py)
 python3 tests/brutal_test.py build/host/grimm
 # GR!MM V3.0 THEMES: MINIMAL: THEME and GLOW saved, the header, the knob row, HOME, GLOW's halos, the boot (EYE's eye frame for frame), every page, the switch between all three themes (tests/minimal_test.py)
+# BRUTAL is pixel-identical through the refactors that share its picture code with MINIMAL (tests/brutal_hash_test.py, tests/data/brutal_screens.sha256)
+python3 tests/brutal_hash_test.py build/host/grimm
 python3 tests/minimal_test.py build/host/grimm
 # GR!MM V3.0: the VA source's filter leaves no DC offset at a low cutoff (dsp.c tsvf_lp rounds): at every cutoff, through each DRIVE
 # type, and with an LFO sweeping the VA's CUTOFF the bass no longer crumbles (tests/va_dc_test.py)
