@@ -93,6 +93,23 @@ python3 tests/brutal_hash_test.py build/host/grimm
 python3 tests/minimal_test.py build/host/grimm
 # the version in the boot intro (just V3.0) and in the SYSTEM pages (the whole stamp), in all three themes (tests/version_line_test.py)
 python3 tests/version_line_test.py
+# GR!MM V3.0: the two flash chips (UC25HQ80 0xB36014, Puya P25Q80 0x856014): the app's storage on a simulated chip (tests/flash_chip_test.c); the same test with a firmware that accepts only 0x856014 must
+# fail (it is a real test); no source compares the id but through FL_JEDEC_OK (firmware/hal/fm1_flash_id.h)
+cc -O1 -Wall -Wno-unused-function -fsanitize=address,undefined -o build/host/flash_chip_test tests/flash_chip_test.c
+build/host/flash_chip_test
+cc -O1 -Wno-unused-function -D'FL_JEDEC_OK(id)=((id)==0x856014u)' -o build/host/flash_chip_old tests/flash_chip_test.c
+if build/host/flash_chip_old > build/host/flash_chip_old.txt; then
+    echo "  FAIL  flash chip: a firmware that accepts only 0x856014 passed the test (the test does not test)"
+    exit 1
+else
+    echo "  ok    flash chip: the same test with an id check for 0x856014 only fails ($(grep -c FAIL build/host/flash_chip_old.txt) checks): a firmware that only knows the old chip keeps its saves in RAM"
+fi
+if grep -rnE "(==|!=)[[:space:]]*0x(856014|B36014|b36014)" firmware tools web/*.js tests/*.py 2>/dev/null | grep -v "fm1_flash_id.h"; then
+    echo "  FAIL  flash chip: a source compares the flash id itself (use FL_JEDEC_OK)"
+    exit 1
+else
+    echo "  ok    flash chip: no source compares the flash id but through FL_JEDEC_OK (the app, the USB rescue, the update loader; the tools and the editor never check it)"
+fi
 # GR!MM V3.0: the VA source's filter leaves no DC offset at a low cutoff (dsp.c tsvf_lp rounds): at every cutoff, through each DRIVE
 # type, and with an LFO sweeping the VA's CUTOFF the bass no longer crumbles (tests/va_dc_test.py)
 python3 tests/va_dc_test.py build/host/grimm

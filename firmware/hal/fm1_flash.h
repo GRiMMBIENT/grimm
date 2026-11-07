@@ -12,6 +12,7 @@
 #pragma once
 #include <stdint.h>
 #include "fm1_xip.h"
+#include "fm1_flash_id.h"                     /* (GR!MM V3.0: FL_JEDEC_OK: both chips) */
 
 #define RAMFN  __attribute__((section(".ram_text"), noinline, used))
 #define RAMINL static inline __attribute__((always_inline))
@@ -143,7 +144,7 @@ RAMINL int fl_wait_ready(uint32_t max_us, uint32_t *took_us)
 
 /* ---- entry points: IRQs OFF, args/buffers in RAM ---- */
 
-static RAMFN uint32_t fl_jedec_ram(void)                 /* expect 0x856014 */
+static RAMFN uint32_t fl_jedec_ram(void)                 /* 0x856014 or 0xB36014 (FL_JEDEC_OK) */
 {
     fl_saved_t s; uint32_t id;
     if (fl_enter(&s)) return 0;
@@ -153,6 +154,8 @@ static RAMFN uint32_t fl_jedec_ram(void)                 /* expect 0x856014 */
     fl_exit(&s);
     return id;
 }
+
+static int fl_chip_ok(void) { return FL_JEDEC_OK(FL_FAR(fl_jedec_ram)()) ? 1 : 0; }   /* the chip is one of the two (GR!MM V3.0) */
 
 static RAMFN uint32_t fl_status_ram(void)                /* SR1 | SR2 << 8 */
 {

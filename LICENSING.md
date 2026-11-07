@@ -11,6 +11,8 @@ SLOOP. Everything below that is not marked as a GR!MM change is theirs.
 
 ## Who made what
 
+(The flash chip's id, V3.0: `firmware/hal/fm1_flash_id.h` and its use in `platform.c`, `recovery.c`, `firmware/loader/loader.c` accept the UC25HQ80 (0xB36014) beside the Puya P25Q80 (0x856014): the macro `FL_JEDEC_OK` and the way it is used follow SLOOP 2.8.5 by isod89 (<https://github.com/isod89/sloop-fm1>, GPL-3.0-only, its `fm1_flash_id.h`); the problem was reported in hugelton/Felucca issue 319; Dinghy, OberVave, sloopDX, Clipper and ChoralRoot made the same fix.)
+
 | | |
 | --- | --- |
 | The platform: `firmware/hal/`, `firmware/loader/`, `crt0.S`, `app.ld`, `firmware/src/` (`usb.c`, `ota.c`, `recovery.c`, `lcd.c`, `gfx.c`, `libc.c`, `bootguard.h`, `uac_fir.h`), `tools/` (`build.py`, `fm1pkg_make.py`, `fm1_install.py`, `lz4blk.py`, `get_toolchain.sh`, `gen_tables.py`, `sampleio.py`, `gen_uac_fir.py`: SLOOP's, after Felucca 1.1.5's, it makes `uac_fir.h`) | Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments ([Felucca](https://github.com/hugelton/Felucca)), with the changes of [SLOOP](https://github.com/isod89/sloop-fm1) (isod89). `firmware/gen/felucca_font.h` (the Terminus font, below) was made by Felucca's / SLOOP's `tools/gen_font.py`, which is not in this tree: see [SLOOP](https://github.com/isod89/sloop-fm1) |

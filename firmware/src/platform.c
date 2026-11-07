@@ -151,35 +151,14 @@ static void rt_flush(void)
  * sample area: 0x97000..0xDF000, in what Felucca and its family keep their data in (0x97000..0xFBFFF: theirs, not
  * ours; a firmware finds its own magic missing and starts fresh), below the update's staging area (0xE0000). An
  * update writes the flash up to 0x93000 only: the samples stay. XIP reads it as plain data (fl_plain_window_init) */
-#define SETTINGS_AT 0x000FC000u                 /* one 4 KiB sector of Felucca's globals area */
-#define SAMPLE_AREA 0x00097000u                 /* GR!MM: the sample slots (samples.c) */
-#define SAMPLE_AREA_LEN 0x00048000u             /* 288 KiB: up to 0xDF000 */
-/* GR!MM's saves (store.c): six sectors where Felucca keeps data an app writes (its storage.c flash map: its preset banks'
- * last sector, its autosave pair and voice bank above the update's staging, its globals beside the settings), none in the
- * sample area */
-#define SAVE_NSECT 6u
-static const uint32_t SAVE_SECT[SAVE_NSECT] = {0xDF000u, 0xE5000u, 0xE6000u, 0xE7000u, 0xFD000u, 0xFE000u};
+#include "flash_map.h"                       /* (SETTINGS_AT, SAMPLE_AREA, SAVE_SECT ..) */
 #define FL_RANGE_OK(off, n) (FL_IN(off, n, FL_OTA_LO, FL_OTA_HI) || FL_IN(off, n, SETTINGS_AT, SETTINGS_AT + 0x1000u) || \
                              FL_IN(off, n, SAMPLE_AREA, SAMPLE_AREA + SAMPLE_AREA_LEN) || FL_IN(off, n, 0xDF000u, 0xE0000u) || \
                              FL_IN(off, n, 0xE5000u, 0xE8000u) || FL_IN(off, n, 0xFD000u, 0xFF000u))
 #include "fm1_flash.h"
 static uint8_t flash_ok;
-static int st_read(uint32_t off, void *dst, uint32_t n)
-{
-    uint8_t *d = dst;
-    while (n) {
-        uint32_t k = n > 256u ? 256u : n, f = irq_save();
-        int rc = FL_FAR(fl_read_ram)(off, d, k);
-        irq_restore(f);
-        if (rc)
-            return rc;
-        off += k;
-        d += k;
-        n -= k;
-    }
-    return 0;
-}
-
+static int st_read(uint32_t off, void *dst, uint32_t n);   /* (flash_store.c) */
+static void flash_probe(void);
 static uint8_t recovery_active;
 #define OTA_IDENTITY (recovery_active ? "FM-1_000" : FELUCCA_ID)
 #include "ota.c"
@@ -226,74 +205,7 @@ static void ota_commit(const uint8_t *parm)
 }
 #include "recovery.c"
 
-/* ---- settings: [magic][length][crc32] then the bytes; settings_save erases the sector (~50 ms with
- * the interrupts off: the sound drops out), so save when nothing plays, not on every knob step */
-#define SETTINGS_MAGIC 0x59474E44u              /* "DNGY" */
-static uint32_t crc32(const uint8_t *p, uint32_t n)
-{
-    uint32_t c = 0xFFFFFFFFu, k;
-    while (n--) {
-        c ^= *p++;
-        for (k = 0; k < 8u; k++)
-            c = c & 1u ? (c >> 1) ^ 0xEDB88320u : c >> 1;
-    }
-    return ~c;
-}
-static int settings_load(void *p, uint32_t n)   /* 0: loaded; else p is untouched */
-{
-    static uint8_t buf[256];
-    uint32_t h[3];
-    if (!flash_ok || n > sizeof buf || st_read(SETTINGS_AT, h, sizeof h) || h[0] != SETTINGS_MAGIC || h[1] != n)
-        return -1;
-    if (st_read(SETTINGS_AT + sizeof h, buf, n) || crc32(buf, n) != h[2])
-        return -1;
-    memcpy(p, buf, n);
-    return 0;
-}
-static int settings_save(const void *p, uint32_t n)   /* p in RAM, n <= 256 */
-{
-    uint32_t h[3] = {SETTINGS_MAGIC, n, 0}, took;
-    int rc;
-    if (!flash_ok || n > 256u)
-        return -1;
-    h[2] = crc32(p, n);
-    if ((rc = fl_erase4k(SETTINGS_AT, &took)) != 0)
-        return rc;
-    if ((rc = fl_write(SETTINGS_AT + sizeof h, p, n)) != 0)
-        return rc;
-    return fl_write(SETTINGS_AT, (const uint8_t *)h, sizeof h);   /* the header last: a cut save stays invalid */
-}
-
-/* ---- GR!MM: the sample area (samples.c) and SysEx for the app. An erase or a write stops everything (the
- * interrupts are off, ~50 ms an erase): only while nothing sounds */
-static const uint8_t *sample_flash(void) { return flash_ok ? fm1_xip_ptr(SAMPLE_AREA) : 0; }   /* 0: no flash */
-static int sample_flash_erase(uint32_t off)     /* the 4 KiB sector at off (in the area) */
-{
-    uint32_t took;
-    if (!flash_ok || (off & 0xFFFu) || off >= SAMPLE_AREA_LEN)
-        return -8;
-    fm1_wdt_feed();                             /* (a slot is 18 erases, RESTORE 72: the watchdog fed between) */
-    return fl_erase4k(SAMPLE_AREA + off, &took);
-}
-static int sample_flash_write(uint32_t off, const void *p, uint32_t n)   /* p in RAM; into erased flash */
-{
-    if (!flash_ok || off >= SAMPLE_AREA_LEN || n > SAMPLE_AREA_LEN - off)
-        return -8;
-    return fl_write(SAMPLE_AREA + off, (const uint8_t *)p, n);
-}
-/* GR!MM's saves (store.c): sector i of SAVE_SECT, read through XIP; an erase (~50 ms) or a write stops the audio a moment */
-static const uint8_t *save_flash(uint32_t i) { return flash_ok && i < SAVE_NSECT ? fm1_xip_ptr(SAVE_SECT[i]) : 0; }
-static int save_flash_erase(uint32_t i)
-{
-    uint32_t took;
-    if (!flash_ok || i >= SAVE_NSECT) return -8;
-    return fl_erase4k(SAVE_SECT[i], &took);
-}
-static int save_flash_write(uint32_t i, uint32_t off, const void *p, uint32_t n)   /* p in RAM; into erased flash */
-{
-    if (!flash_ok || i >= SAVE_NSECT || off >= 4096u || n > 4096u - off) return -8;
-    return fl_write(SAVE_SECT[i] + off, (const uint8_t *)p, n);
-}
+#include "flash_store.c"                     /* (V3.0: the settings, the samples and the saves in the flash: its own file, so a host test runs them on a simulated chip) */
 /* a SysEx frame F0 7D .. F7 (7D: the non-commercial ID; the 7-bit bytes between F0 and F7) is the app's: it takes
  * it with sysex_get / sysex_done (from the main loop) and answers with sysex_send (F0 .. F7, 7-bit). The updater's
  * frames (00 59 ..) are the platform's as before. A frame of the app's left for a second goes: the updater's next
@@ -556,7 +468,7 @@ void fm1_cstart(void)
     fm1_boot.p3_rst = (uint8_t)p3;
     if (boot_mode == BOOT_RECOVERY || recovery_key())
         recovery_main();                        /* OCT- at power-on: the USB rescue */
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+    flash_probe();                              /* (either chip: FL_JEDEC_OK) */
     if (flash_ok)
         fl_plain_window_init();                 /* GR!MM: the flash above 0x93000 (the samples) reads plain through XIP */
     ota_boot_cleanup();

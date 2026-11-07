@@ -67,7 +67,7 @@ DRAW = [f for f in funcs if re.search(r"draw|^pic_|^br_|^mn_|^ui_native", f)]   
 RAMT = [f for f in funcs if f.startswith(("rt_flash", "fl_", "spi_", "flash_")) and not calls[f]]
 TARGETS = {"app_audio": ENG, "voice_begin": BEG, "app_main": TXT, "ui_region": DRAW, "ui_update": DRAW, "ui_slab_make": TXT,   # (ui_update: the theme's header, pictures, blocks)
            "fl_write": RAMT, "st_read": RAMT, "st_write": RAMT, "ota_erase": RAMT, "sample_flash_erase": RAMT,
-           "settings_save": RAMT}
+           "settings_save": RAMT, "flash_probe": RAMT}      # (flash_probe: the chip's id, in RAM)
 unknown = [f for f in funcs if ind[f] and f not in TARGETS and f != "fm1_cstart"]
 memo, path = {}, {}
 
