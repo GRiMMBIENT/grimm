@@ -25,11 +25,16 @@ static uint16_t mn_mix(uint16_t c, uint32_t a, uint32_t n)   /* c, a parts in n 
 {
     return (uint16_t)((((c >> 11) * a / n) << 11) | ((((c >> 5) & 63u) * a / n) << 5) | ((c & 31u) * a / n));
 }
+static uint32_t mn_lum(uint16_t c) { return ((c >> 11) * 8u + ((c >> 5) & 63u) * 4u + (c & 31u) * 8u) / 3u; }   /* a colour's brightness, 0 .. 255 */
+static int mn_lit(uint16_t c)                   /* does this ink glow: GLOW on, and the ink as bright as the mid grey or brighter (dark and black ink never) */
+{
+    return MN_GLOW && mn_lum(c) >= mn_lum(UI_M);
+}
 /* Terminus at (x, y) = the cell's top, in f, each pixel sc pixels, in c; with GLOW the halo first (every pixel of the ink 1 px round it, a third of the colour); the end */
 static int32_t mn_tt(int32_t x, int32_t y, const char *s, const br_tfont_t *f, int32_t sc, uint16_t c)
 {
     int32_t x0 = x, pass;
-    for (pass = MN_GLOW ? 0 : 1; pass < 2; pass++) {
+    for (pass = mn_lit(c) ? 0 : 1; pass < 2; pass++) {
         const char *p = s;
         uint16_t col = pass ? c : mn_mix(c, 1, 3);
         int32_t g = pass ? 0 : 1;
@@ -57,9 +62,9 @@ static int32_t mn_tr(int32_t x, int32_t y, const char *s, const br_tfont_t *f, u
 {
     return mn_t(x - br_tlen(f, s), y, s, f, c);
 }
-static void mn_line(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)   /* a rule (with GLOW: a halo each side) */
+static void mn_line(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)   /* a rule (with GLOW, if it is a light one: a halo each side) */
 {
-    if (MN_GLOW) ui_rect(x - (w > h ? 0 : 1), y - (w > h ? 1 : 0), w + (w > h ? 0 : 2), h + (w > h ? 2 : 0), mn_mix(c, 1, 3));
+    if (mn_lit(c)) ui_rect(x - (w > h ? 0 : 1), y - (w > h ? 1 : 0), w + (w > h ? 0 : 2), h + (w > h ? 2 : 0), mn_mix(c, 1, 3));
     ui_rect(x, y, w, h, c);
 }
 
@@ -162,15 +167,26 @@ static void mn_pic(void)
     else ui_pic_draw();
 }
 
-/* ---- the boot: EYE's eye (the same frames at the same times: its pose from bt_eye, as the boot's redraws follow EYE's own rule) as a thin outline (1 px round its shape; with GLOW the halo)
- * with the iris amber, white and black, on black; then GR!MM fades in (3.6 .. 4.2 s), a thin line, as wide as the word, draws out from its middle (4.2 .. 4.8 s), the version line fades in (4.4 .. 5.0 s); then, at UI_BOOT_MS,
- * a clean cut to HOME. No bats, no stars, no drips */
-static uint32_t mb_a, mb_l, mb_b;               /* the wordmark's brightness (0 .. 8), the line's length (px, 0 .. 64), the version line's brightness */
-static void mn_eye(int32_t x, int32_t y, bt_eye_t e)   /* the eye at x, y (EYE's 5 px cells): the outline of its shape, the iris */
+/* ---- the boot: a DOT FIELD (UI_BOOT_MS in all, 5.6 s; EYE's is the eye and the bats, BRUTAL's a concrete door). A grid of faint dots (2 px, every 8 px, the mockup's dark grey) fades in from the
+ * middle out (0 .. 0.55 s); a ripple runs out from the centre (0.3 .. 1.65 s): the dots it passes brighten, then settle back; the eye forms out of the dots (1.0 .. 1.6 s): the dots along the open
+ * eye's outline brighten one by one, clockwise from the left, then its iris's, amber; at MB_EYE (1.65 s) it becomes the thin outline eye (shut) and EYE's own motion starts, frame for frame on
+ * EYE's 55 ms grid (its clock starts at MB_EYE, 30 frames in: frame n of this is frame n - 30 of EYE's; opens, trembles, looks round, blinks); GR!MM fades in under it (3.2 .. 3.8 s: the dots
+ * under the words go), a line draws out under it (3.7 .. 4.2 s), the version line fades in (3.9 .. 4.5 s); at 4.8 s the eye shuts, from 4.9 s the dots fade out from the edges inward (a ring at
+ * a time); at UI_BOOT_MS a clean cut to HOME. A dot is worked out from the time (mb_v: no buffer); each frame draws again only the dots whose value changed, a 6 x 6 px region each, the eye's
+ * region when its pose changed, the words' where they moved. GLOW: the lit dots and the eye glow (the faint ones, being dark, never) */
+#define MB_FORM 1000u                           /* the eye's outline begins to form, */
+#define MB_EYE 1650u                            /* the thin eye takes over (30 x UI_ANIM_MS: its frames are EYE's), */
+#define MB_TXT 3200u                            /* GR!MM begins to fade in, */
+#define MB_SHUT 4800u                           /* the eye shuts (half, then all), */
+#define MB_FO 4900u                             /* the dots fade out: the outermost ring first */
+static uint32_t mb_a, mb_l, mb_b, mb_e, mb_bt, mb_eye, mb_sup;   /* the wordmark's brightness (0 .. 8), the line's length (px, 0 .. 64), the version line's brightness; the time drawn, the eye's
+                                                 * half-speed time of the last frame, the thin eye is up, the dots under the words are off */
+static bt_eye_t mb_ey;                          /* the eye's pose on the screen */
+static void mn_eye(int32_t x, int32_t y, bt_eye_t e)   /* the thin eye at x, y (EYE's 5 px cells): the outline of its shape, the iris */
 {
     int32_t r, c, pass;
     if (!ui_in(x - 1, y - 1, 82, 42)) return;
-    for (pass = MN_GLOW ? 0 : 1; pass < 2; pass++) {
+    for (pass = mn_lit(UI_L) ? 0 : 1; pass < 2; pass++) {
         int32_t g = pass ? 0 : 1;
         uint16_t col = pass ? UI_L : mn_mix(UI_L, 1, 3);
         for (r = 0; r < 8; r++) {
@@ -200,11 +216,75 @@ static void mn_eye(int32_t x, int32_t y, bt_eye_t e)   /* the eye at x, y (EYE's
         }
     }
 }
+static uint32_t mb_pa(int32_t dx, int32_t dy)   /* an angle round the eye, clockwise from the left: 0 .. 1023 (west 0, north 256, east 512, south 768) */
+{
+    int32_t ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy, s = ax + ay;
+    if (!s) return 0;
+    if (dx < 0 && dy <= 0) return (uint32_t)(256 * ay / s);
+    if (dx >= 0 && dy < 0) return (uint32_t)(256 + 256 * ax / s);
+    if (dx > 0 && dy >= 0) return (uint32_t)(512 + 256 * ay / s);
+    return (uint32_t)(768 + 256 * ax / s);
+}
+static int32_t mb_form(int32_t x, int32_t y)    /* the dot at x, y against the open eye (at 80, 48): 1 on its outline, 2 on its iris, else 0 */
+{
+    int32_t c, r, ir, ic;
+    char ch;
+    if (x + 1 < 80 || y + 1 < 48) return 0;
+    c = (x + 1 - 80) / 5, r = (y + 1 - 48) / 5;
+    if (c > 15 || r > 7 || EYE[r][c] == '.') return 0;
+    ir = r - 2, ic = c - 5;
+    ch = ir >= 0 && ir < 4 && ic >= 0 && ic < 6 ? ui_iris[0][ir][ic] : '.';
+    if (ch == 'a' || ch == 'w') return 2;
+    if (ch == 'k') return 0;
+    return r == 0 || r == 7 || c == 0 || c == 15 || EYE[r - 1][c] == '.' || EYE[r + 1][c] == '.' || EYE[r][c - 1] == '.' || EYE[r][c + 1] == '.' ? 1 : 0;
+}
+/* the value of the dot i, j at time e (sup: the dots under the words are off): 0 black, 1 .. 8 the faint grey at that eighth (the fade in and out), 9 .. 12 the ripple's four brightnesses, 13 the
+ * eye's outline, 14 its iris */
+static uint32_t mb_v(int32_t i, int32_t j, uint32_t e, uint32_t sup)
+{
+    int32_t x = 4 + 8 * i, y = 4 + 8 * j, dx = x + 1 - 120, dy = y + 1 - 120, d = br_isqrt(dx * dx + dy * dy), ei = (int32_t)e, f, v, ring = i < 29 - i ? i : 29 - i;
+    ring = j < ring ? j : ring;
+    ring = 29 - j < ring ? 29 - j : ring;
+    v = (ei - d * 2) * 8 / 200;                 /* (in: from the middle out) */
+    v = v < 0 ? 0 : v > 8 ? 8 : v;
+    f = (ei - (int32_t)MB_FO - ring * 40) * 8 / 80;   /* (out: from the edges in) */
+    f = 8 - (f < 0 ? 0 : f > 8 ? 8 : f);
+    v = f < v ? f : v;
+    if (!v || (sup && x >= 24 && x < 216 && y >= 96 && y < 160)) return 0;
+    if (ei >= 300 && ei < 1700) {               /* (the ripple: its front brightest, 28 px of tail) */
+        int32_t r = (ei - 300) * 17 / 100, k;
+        for (k = 4; k > 0; k--)
+            if (d <= r - (4 - k) * 7 && d > r - (5 - k) * 7) { v = 8 + k; break; }
+    }
+    if (e >= MB_FORM && e < MB_EYE && (f = mb_form(x, y))) {   /* (the eye forms: the outline, then the iris) */
+        uint32_t pa = mb_pa(x + 1 - 120, y + 1 - 68);
+        if (e >= (f == 1 ? MB_FORM + pa * 500u / 1024u : 1450u + pa * 150u / 1024u)) v = f == 1 ? 13 : 14;
+    }
+    return (uint32_t)v;
+}
+static uint16_t mb_col(uint32_t v)
+{
+    if (v <= 8u) return mn_mix(MN_TRACK, v, 8);
+    if (v <= 12u) return (uint16_t)(mn_mix(MN_TRACK, 12u - v, 4) + mn_mix(UI_L, v - 8u, 4));
+    return v == 13u ? UI_L : ui_acc;
+}
 static void mb_draw(void)                       /* the whole boot picture, as far as the region being drawn reaches */
 {
-    int32_t i;
+    int32_t i, j;
     char s[2] = {0, 0};
-    mn_eye(80 + bt_eye(bt_e).jx, 48 + bt_eye(bt_e).jy, bt_eye(bt_e));
+    for (j = 0; j < 30; j++)
+        for (i = 0; i < 30; i++) {
+            int32_t x = 4 + 8 * i, y = 4 + 8 * j;
+            uint32_t v;
+            uint16_t c;
+            if (!ui_in(x - 1, y - 1, 4, 4)) continue;
+            v = mb_v(i, j, mb_e, mb_sup);
+            if (!v) continue;
+            c = mb_col(v);
+            if (mn_lit(c)) ui_rect(x - 1, y - 1, 4, 4, mn_mix(c, 1, 3));
+            ui_rect(x, y, 2, 2, c);
+        }
+    if (mb_eye) mn_eye(80 + mb_ey.jx, 48 + mb_ey.jy, mb_ey);
     if (mb_a && ui_in(52, 98, 136, 28))
         for (i = 0; i < 5; i++) {
             s[0] = "GR!MM"[i];
@@ -218,15 +298,28 @@ static void mb_draw(void)                       /* the whole boot picture, as fa
 }
 static void mb_start(void)
 {
-    bt_e = 0, mb_a = mb_l = mb_b = 0;
+    mb_e = 0, mb_bt = 0, mb_eye = 0, mb_a = mb_l = mb_b = 0, mb_sup = bt_note != 0;
     ui_region(0, 0, 240, 240, UI_K, mb_draw);
 }
 static void mb_frame(uint32_t e)                /* a frame at e: where it moved */
 {
-    uint32_t e0 = bt_e, a = e < 3600u ? 0u : e >= 4200u ? 8u : (e - 3600u) * 8u / 600u, l = e < 4200u ? 0u : e >= 4800u ? 64u : (e - 4200u) * 64u / 600u;
-    uint32_t b = e < 4400u ? 0u : e >= 5000u ? 8u : (e - 4400u) * 8u / 600u;
-    bt_e = e / 2u;                              /* (the eye at half speed, as EYE's: and drawn again by EYE's own rule) */
-    if (!bt_eye_same(bt_eye(e0), bt_eye(e))) ui_region(70, 38, 100, 56, UI_K, mb_draw);
+    uint32_t e0 = mb_e, sup0 = mb_sup, a = e < MB_TXT ? 0u : e >= MB_TXT + 600u ? 8u : (e - MB_TXT) * 8u / 600u;
+    uint32_t l = e < 3700u ? 0u : e >= 4200u ? 64u : (e - 3700u) * 64u / 500u, b = e < 3900u ? 0u : e >= 4500u ? 8u : (e - 3900u) * 8u / 600u;
+    int32_t i, j;
+    mb_e = e, mb_sup = e >= MB_TXT || bt_note != 0;
+    for (j = 0; j < 30; j++)                    /* the dots that changed */
+        for (i = 0; i < 30; i++)
+            if (mb_v(i, j, e0, sup0) != mb_v(i, j, e, mb_sup)) ui_region(4 + 8 * i - 2, 4 + 8 * j - 2, 6, 6, UI_K, mb_draw);
+    if (e >= MB_EYE) {                          /* the eye: EYE's own rule (drawn again when the pose a frame before it is not the pose now), from its clock's start; shut at the end */
+        uint32_t eb = e - MB_EYE;
+        bt_eye_t now = e >= MB_FO ? (bt_eye_t){0, 0, 0, 0, 0, 0} : e >= MB_SHUT ? (bt_eye_t){2, 0, 0, 0, 0, 0} : bt_eye(eb / 2u);
+        int redraw = !mb_eye || (e >= MB_SHUT ? !bt_eye_same(mb_ey, now) : !bt_eye_same(bt_eye(mb_bt), bt_eye(eb)));
+        mb_bt = eb / 2u;
+        if (redraw) {
+            mb_ey = now, mb_eye = 1;
+            ui_region(70, 38, 100, 56, UI_K, mb_draw);
+        }
+    }
     if (a != mb_a) mb_a = a, ui_region(50, 94, 140, 36, UI_K, mb_draw);
     if (l != mb_l) {
         mb_l = l;

@@ -43,13 +43,13 @@ for glow, nm in ((1, "minimal_home_glow_on"), (0, "minimal_home_glow_off")):
 for glow in (1, 0):
     im = run(f"ms{glow}", [(BOOT, f"page {PG.index('sys3')}")], [BOOT + 400], glow)[BOOT + 400]
     big(im).save(OUT / f"minimal_sys3_glow_{'on' if glow else 'off'}.png")
-# the boot: frames at 0.3, 1.0, 1.6, 2.2, 3.0, 3.8, 4.3, 4.7, 5.2 s
-ts = [300, 1000, 1600, 2200, 3000, 3800, 4300, 4700, 5200]
+# the boot (the dot field): frames at 0.3, 0.8, 1.5, 2.5, 4.0, 5.0 s
+ts = [300, 800, 1500, 2500, 4000, 5000]
 for glow in (1, 0):
     fr = run(f"mb{glow}", [], [t + 3 for t in ts], glow, end=5900)
     for t in ts:
         big(fr[t + 3]).save(OUT / f"minimal_boot{'_glow' if glow else ''}_{t}.png")
-    sheet = Image.new("RGB", (3 * 244, 3 * 244), (60, 60, 60))
+    sheet = Image.new("RGB", (3 * 244, 2 * 244), (60, 60, 60))
     for i, t in enumerate(ts):
         sheet.paste(fr[t + 3], ((i % 3) * 244 + 2, (i // 3) * 244 + 2))
     sheet.save(OUT / f"minimal_boot{'_glow' if glow else ''}.png")

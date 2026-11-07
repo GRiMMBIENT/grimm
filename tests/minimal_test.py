@@ -137,11 +137,35 @@ check("a message (CHORD ON) is the whole header's text, bold, amber (the rule st
       f"{count(m1, AMB, (0, 0, 240, 27))} {count(m1, LT, (0, 0, 240, 27))} {count(m2, LT, (0, 0, 240, 27))}")
 
 # ---- GLOW: a halo, a third of the colour, 1 px round the text and the lines; none without it; switched on a page: redrawn whole
-HL = ({halo(*c) for c in MP[:6]} | {halo(*MN[n]) for n in MN}) - {BK, DK, MD, LT, WH, AMB, RULE, TRACK, DIM, FILL}
+def t565(c):                                    # a colour (r, g, b) as the display has it: 5, 6, 5 bits
+    return (c[0] >> 3, c[1] >> 2, c[2] >> 3)
+
+
+def p888(t):
+    return (t[0] * 255 // 31, t[1] * 255 // 63, t[2] * 255 // 31)
+
+
+def lum5(t):                                    # minimal.c's mn_lum
+    return (t[0] * 8 + t[1] * 4 + t[2] * 8) // 3
+
+
+def mixt(t, a, n):                              # minimal.c's mn_mix
+    return (t[0] * a // n, t[1] * a // n, t[2] * a // n)
+
+
+MID5 = t565(MP[2])
+INKS = [t565(c) for c in MP] + [t565(MN[n]) for n in MN]
+INKS += [mixt(t565(c), a, 8) for c in (MP[3], MN["DIM"], MP[5], MN["FILL"]) for a in range(1, 9)]                # (the words fading in, the version line)
+INKS += [tuple(x + y for x, y in zip(mixt(t565(MN["TRACK"]), 4 - n, 4), mixt(t565(MP[3]), n, 4))) for n in range(1, 5)]   # (the dots' ripple)
+LEGIT = {p888(t) for t in INKS}
+BRIGHT = [t for t in INKS if lum5(t) >= lum5(MID5)]
+HLB = {p888(mixt(t, 1, 3)) for t in BRIGHT} - LEGIT              # (the halos of the ink as bright as the mid grey or brighter)
+HLD = {p888(mixt(t, 1, 3)) for t in INKS if lum5(t) < lum5(MID5)} - LEGIT   # (what a dark ink's would be: none may be there)
+HL = HLB
 gh = film("glowhome", [], 7000, EM)(6500)
 nh = film("noglowhome", [], 7000, EM0)(6500)
-check(f"GLOW: with it the text has a halo (the colour a third as bright, 1 px round every pixel of it: {count(gh, HL)} pixels of it on HOME), the rule too; without it none ({count(nh, HL)})",
-      count(gh, HL) > 300 and count(nh, HL) == 0 and P(gh, 100, 26) == halo(*MN["RULE"]) and P(gh, 100, 28) == halo(*MN["RULE"]) and P(nh, 100, 26) == BK, f"{count(gh, HL)} {count(nh, HL)}")
+check(f"GLOW: with it the light text has a halo (the colour a third as bright, 1 px round every pixel of it: {count(gh, HL)} pixels of it on HOME); without it none ({count(nh, HL)}); the rule, "
+      "dark, has none", count(gh, HL) > 300 and count(nh, HL) == 0 and P(gh, 100, 26) == BK and P(gh, 100, 28) == BK and P(gh, 100, 27) == RULE, f"{count(gh, HL)} {count(nh, HL)}")
 ev, ts = [], []
 for n in range(N):
     ev += [(BOOT + 1200 * n, f"page {n}"), (BOOT + 1200 * n + 400, "glow 0"), (BOOT + 1200 * n + 800, "glow 1")]
@@ -155,6 +179,28 @@ for n in range(N):
         left.append((PGN[n], count(a, HL), count(b, HL), count(c, HL)))
 check(f"GLOW switched off and on with each of the {N} pages shown: the halo is gone from the whole page at once (none of its colours left), and back at once",
       not [x for x in left if x[0] not in ("track",)], f"(page, with, off, on again): {left[:6]}")
+
+
+# the rule: with GLOW on, every pixel that differs from the same page with it off is a halo of a light ink (a third of a colour as bright as the mid grey or brighter) on a dark pixel: no halo round any
+# ink darker than the mid grey (black text on an amber bar, dark segments, dark rules), on every page
+ev = [(BOOT + 700 * n, f"page {n}") for n in range(N)]
+ts = [BOOT + 700 * n + 450 for n in range(N)]
+ga = shots("glowa", ts, BOOT + 700 * N + 300, EM, ev)
+gb = shots("glowb", ts, BOOT + 700 * N + 300, EM0, ev)
+wrong, seen = [], 0
+for n in range(N):
+    w, da = px(ga(ts[n]))
+    _, db = px(gb(ts[n]))
+    for k in range(w * 240):
+        a, b = tuple(da[3 * k:3 * k + 3]), tuple(db[3 * k:3 * k + 3])
+        if a != b:
+            if (PGN[n] == "sys2" and 116 <= k // w < 190) or (PGN[n] == "sys3" and k // w >= 195 and k % w >= 177):   # (the CPU's figures move by themselves; GLOW's own knob reads ON, OFF)
+                continue
+            seen += 1
+            if a not in HLB or lum5(t565(b)) >= lum5(MID5):
+                wrong.append((PGN[n], k % w, k // w, a, b))
+check(f"GLOW on every page: it changes {seen} pixels in all, every one a halo of a light ink (a third of a colour at least as bright as the mid grey) on a dark pixel; none round a dark or black ink "
+      "(black text on an amber bar, dark segments, dark rules)", not [x for x in wrong if x[0] != "track"] and seen > 2000, str(wrong[:5]))
 
 # ---- every page in MINIMAL's frame
 pf = film("pages", [(BOOT + 500 * n, f"page {n}") for n in range(N)], BOOT + 500 * N + 300, EM0)
@@ -238,59 +284,147 @@ def mini_eye(pose):
         if EYE_ROWS[r][c] in ".l" or (d == k and k < 4):
             continue
         ir, ic = r - 2 - dy, c - 5 - dx
-        if 0 <= ir < 4 and 0 <= ic < 6 and IRIS[tiny][ir][ic] in "aw":
+        if 0 <= ir < 4 and 0 <= ic < 6 and IRIS[tiny][ir][ic] in "awk":
             for i in range(3):
                 for j in range(3):
-                    out[(x0 + c * 5 + 1 + i, y0 + r * 5 + 1 + j)] = AMB if IRIS[tiny][ir][ic] == "a" else WH
+                    out[(x0 + c * 5 + 1 + i, y0 + r * 5 + 1 + j)] = AMB if IRIS[tiny][ir][ic] == "a" else WH if IRIS[tiny][ir][ic] == "w" else BK
     return out
 
 
-ME = list(range(2, 64))                                          # (the boot's frames, 55 ms apart: 0.1 s .. 3.5 s: shut, a flutter, startled wide open, looking round, the blink)
+MB_EYE = 1650                                                    # (the thin eye's clock starts: 30 frames of 55 ms in: frame n of the boot is frame n - 30 of EYE's)
+DOTS = [(4 + 8 * i, 4 + 8 * j) for j in range(30) for i in range(30)]
+RING = lambda x, y: min((x - 4) // 8, 29 - (x - 4) // 8, (y - 4) // 8, 29 - (y - 4) // 8)
+ME = list(range(2, 56))                                          # (EYE's frames, 55 ms apart: 0.1 s .. 3.5 s: shut, a flutter, startled wide open, looking round, the blink)
 es = shots("bye", [55 * m + 3 for m in ME], 4000, {"GRIMM_BOOT_PLAIN": "1"})   # (EYE's intro without its stars and bats: the eye alone)
-bs = shots("byb", [55 * m + 3 for m in ME], 6000, EM0)
-bad_px, no_pose, poses, outside = [], [], set(), 0
+bs = shots("byb", [MB_EYE + 55 * m + 3 for m in ME], 5500, EM0)
+EX0, EY0, EX1, EY1 = 70, 38, 172, 96                             # (the eye's region)
+dots_in_box = {(x + a, y + b): TRACK for x, y in DOTS for a in (0, 1) for b in (0, 1) if EX0 <= x + a < EX1 and EY0 <= y + b < EY1}
+bad_px, no_pose, poses = [], [], set()
 for m in ME:
-    ie, ib = es(55 * m + 3), bs(55 * m + 3)
+    ie, ib = es(55 * m + 3), bs(MB_EYE + 55 * m + 3)
     pose = match_eye(ie)
     if pose is None:
         no_pose.append(m)
         continue
     poses.add(pose)
     w, d = px(ib)
-    got = {(x, y): tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]) for y in range(38, 96) for x in range(70, 172) if tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]) != BK}
-    if got != mini_eye(pose):
+    got = {(x, y): tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]) for y in range(EY0, EY1) for x in range(EX0, EX1) if tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]) != BK}
+    exp = dict(dots_in_box)
+    exp.update(mini_eye(pose))
+    exp = {k: v for k, v in exp.items() if v != BK}                  # (the pupil, black, covers the dots under it)
+    if got != exp:
         bad_px.append(m)
         if len(bad_px) == 1:
-            ex = mini_eye(pose)
-            print("   first difference (frame", m, pose, "): drawn not expected", sorted(set(got) - set(ex))[:8], "expected not drawn", sorted(set(ex) - set(got))[:8], len(got), len(ex))
-    outside += sum(1 for y in range(240) for x in range(240) if not (70 <= x < 172 and 38 <= y < 96) and tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]) != BK)
-check(f"the boot's eye is EYE's, frame for frame: {len(ME)} frames (0.1 .. 3.5 s: shut, a flutter, startled wide open, looking round, the blink; {len(poses)} different poses, each found in EYE's frame "
-      "cell by cell): MINIMAL's frame is exactly the 1 px outline round that shape and the iris (amber, white, black) in the same cells, nothing else",
-      not no_pose and not bad_px and len(poses) >= 8, f"EYE's pose unknown at {no_pose[:6]}; differs at {bad_px[:8]}; {len(poses)} poses")
-check("no bats, no stars, no drips: nothing on the screen but the eye until GR!MM comes (3.6 s)", outside == 0, str(outside))
-BT = [3000, 3700, 3900, 4100, 4300, 4500, 4700, 5100, 5500]
-bt = shots("bt", [t + 3 for t in BT], 6300, EM0)
-f30, f37, f39, f41, f43, f45, f47, f51, f55 = (bt(t + 3) for t in BT)
+            print("   first difference (frame", m, pose, "): drawn not expected", sorted(set(got) - set(exp))[:8], "expected not drawn", sorted(set(exp) - set(got))[:8],
+                  [(k, got[k], exp[k]) for k in sorted(set(got) & set(exp)) if got[k] != exp[k]][:4])
+check(f"the boot's eye is EYE's, frame for frame: {len(ME)} frames (EYE's 0.1 .. 3.5 s: shut, a flutter, startled wide open, looking round, the blink; {len(poses)} different poses, each found in EYE's frame "
+      "cell by cell), 1.65 s later in the dot field (30 frames of the 55 ms grid): MINIMAL's eye region is exactly the faint dots and the 1 px outline round that shape with the iris (amber, white, black) "
+      "in the same cells", not no_pose and not bad_px and len(poses) >= 8, f"EYE's pose unknown at {no_pose[:6]}; differs at {bad_px[:8]}; {len(poses)} poses")
+# the dots
+dt = shots("dots", [53, 153, 303, 603, 803, 1203, 1403, 1598, 2503, 3003, 4003, 4303], 4400, EM0)
+d53, d153, d303, d603, d803, d1203, d1403, d1598, d2503, d3003, d4003, d4303 = (dt(t) for t in (53, 153, 303, 603, 803, 1203, 1403, 1598, 2503, 3003, 4003, 4303))
+
+
+def lit_dots(im, box=(0, 0, 240, 240)):
+    w, d = px(im)
+    return [(x, y) for x, y in DOTS if box[0] <= x < box[2] and box[1] <= y < box[3] and tuple(d[3 * (y * w + x):3 * (y * w + x) + 3]) != BK]
+
+
+check("the dot field fades in from the middle out: at 0.05 s a few dots, the middle first (the dot at the centre is there, a corner one not), at 0.15 s more, at 0.3 s more, all 900 at 0.6 s",
+      0 <= len(lit_dots(d53)) < len(lit_dots(d153)) < len(lit_dots(d303)) < 900 and (124, 124) in lit_dots(d153) and (4, 4) not in lit_dots(d153) and len(lit_dots(d603)) == 900,
+      f"{[len(lit_dots(x)) for x in (d53, d153, d303, d603)]}")
+w_, dd = px(d803)
+cols = {(x, y): tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) for x, y in DOTS}
+ripple = [(x, y) for (x, y), c in cols.items() if c != TRACK]
+dist = lambda x, y: ((x + 1 - 120) ** 2 + (y + 1 - 120) ** 2) ** 0.5
+check(f"a ripple runs out from the centre (0.8 s: {len(ripple)} dots brightened, all in a ring about 85 px out, 28 px wide, the brightest at its outer edge); the dots inside it are back to the faint grey",
+      40 <= len(ripple) <= 200 and all(50 <= dist(x, y) <= 100 for x, y in ripple) and all(cols[(x, y)] == TRACK for x, y in DOTS if dist(x, y) < 50),
+      f"{len(ripple)} {sorted(set(round(dist(x, y)) for x, y in ripple))[:3]}")
+def form(x, y):                                 # minimal.c's mb_form: the dot against the open eye (at 80, 48): 1 on its outline, 2 on its iris
+    if x + 1 < 80 or y + 1 < 48:
+        return 0
+    c, r = (x + 1 - 80) // 5, (y + 1 - 48) // 5
+    if c > 15 or r > 7 or EYE_ROWS[r][c] == ".":
+        return 0
+    ir, ic = r - 2, c - 5
+    ch = IRIS[0][ir][ic] if 0 <= ir < 4 and 0 <= ic < 6 else "."
+    if ch in "aw":
+        return 2
+    if ch == "k":
+        return 0
+    return 1 if r in (0, 7) or c in (0, 15) or any(EYE_ROWS[r + a][c + b] == "." for a, b in ((-1, 0), (1, 0), (0, -1), (0, 1))) else 0
+
+
+OUTLINE = [(x, y) for x, y in DOTS if form(x, y) == 1]
+nl = lambda im: sum(1 for x, y in OUTLINE if P(im, x, y) == LT)
+check(f"the eye forms out of the dots: the dots along the open eye's outline ({len(OUTLINE)} of them) brighten one by one (light grey: {nl(d1203)} at 1.2 s, {nl(d1403)} at 1.4 s), all of them by 1.6 s "
+      f"({nl(d1598)}), and the iris's amber ({sum(1 for x, y in DOTS if P(d1598, x, y) == AMB)} dots) with them",
+      0 < nl(d1203) < nl(d1403) < nl(d1598) == len(OUTLINE) and sum(1 for x, y in DOTS if P(d1598, x, y) == AMB) >= 6, f"{nl(d1203)} {nl(d1403)} {nl(d1598)} {len(OUTLINE)}")
+w_, dd = px(d2503)
+rest = {(x, y) for y in range(240) for x in range(240) if tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) != BK and not (EX0 <= x < EX1 and EY0 <= y < EY1)}
+want = {(x + a, y + b) for x, y in DOTS for a in (0, 1) for b in (0, 1) if not (EX0 <= x + a < EX1 and EY0 <= y + b < EY1)}
+check("2.5 s: nothing on the screen outside the eye but the faint dots (2 px, every 8 px, the faint grey): no ripple, no bats, no stars, no drips", rest == want and all(P(d2503, x, y) == TRACK for x, y in DOTS if y > 100), f"{len(rest ^ want)}")
+
+
 def mix565(c, a):                               # mn_mix(c, a, 8) as a pixel
     return ((c[0] >> 3) * a // 8 * 255 // 31, (c[1] >> 2) * a // 8 * 255 // 63, (c[2] >> 3) * a // 8 * 255 // 31)
 
 
+BT = [3000, 3500, 3700, 3900, 4300, 4500, 5100]
+bt = shots("bt", [t + 3 for t in BT], 6300, EM0)
+f30, f35, f37, f39, f43, f45, f51 = (bt(t + 3) for t in BT)
 wm = lambda im: count(im, {mix565(MP[3], a) for a in range(1, 9)}, (52, 98, 188, 126))
 lin = lambda im: count(im, FILL, (50, 134, 190, 135))
 ver = lambda im: count(im, {mix565(MN["DIM"], a) for a in range(1, 9)}, (0, 144, 240, 160))
-check("GR!MM fades in (3.6 .. 4.2 s: none at 3.0 s, dim at 3.9 s, full light by 4.3 s), in the middle of the screen, Terminus Bold 2x",
-      wm(f30) == 0 and 0 < wm(f39) and count(f39, LT, (52, 98, 188, 126)) == 0 and count(f43, LT, (52, 98, 188, 126)) > 150,
-      f"{wm(f30)} {wm(f39)} {count(f43, LT, (52, 98, 188, 126))}")
+check("GR!MM fades in under the eye (3.2 .. 3.8 s: none at 3.0 s, dim at 3.5 s, full light by 4.3 s), Terminus Bold 2x, the dots under the words gone (the field is there at 3.0 s, not in the words' box at 4.3 s)",
+      wm(f30) == 0 and 0 < wm(f35) and count(f35, LT, (52, 98, 188, 126)) == 0 and count(f43, LT, (52, 98, 188, 126)) > 150 and count(f30, TRACK, (24, 96, 216, 160)) > 100 and
+      count(f43, TRACK, (24, 96, 216, 160)) == 0, f"{wm(f30)} {wm(f35)} {count(f43, LT, (52, 98, 188, 126))} {count(f30, TRACK, (24, 96, 216, 160))} {count(f43, TRACK, (24, 96, 216, 160))}")
 xs = [x for x in range(240) if P(f51, x, 134) == FILL]
-check("a thin line draws out from the middle under it (4.2 .. 4.8 s): none at 4.1 s, 1 px, growing, as wide as the word (128 px) when done (4.8 s); the version line fades in after it (4.4 .. 5.0 s) and is there at 5.1 s",
-      lin(f41) == 0 and 0 < lin(f45) < lin(f47) < 128 and len(xs) == 128 and xs[0] == 56 and xs[-1] == 183 and ver(f51) > 40 and ver(f43) == 0, f"{lin(f41)} {lin(f45)} {lin(f47)} {len(xs)} {ver(f51)} {ver(f43)}")
-hh = shots("bh", [5500 + 3, 5700 + 3, 5900 + 3, 7000 + 3], 7500, EM0)
-b55, b57, b59, b70 = hh(5503), hh(5703), hh(5903), hh(7003)
-check("the boot is as long as the others' (5.6 s): at 5.5 s it is still on (the eye, GR!MM, the line); then a clean cut to HOME: at 5.7 s the screen is HOME and nothing of the boot is left on it (the same as 7 s)",
-      count(b55, AMB, (70, 38, 172, 96)) > 20 and P(b55, 100, 27) == BK and b57 == b70 and b59 == b70 and P(b57, 100, 27) == RULE, f"{b57 == b70} {b59 == b70}")
-bgl = shots("bgl", [3000 + 3, 5100 + 3], 5500, dict(EM, GRIMM_BOOT_PLAIN="1"))
-check("with GLOW the boot has its halo too (the eye's outline, the word, the line), as the text and lines do; without it none", count(bgl(3003), HL) > 80 and count(bt(3003), HL) == 0 and count(bgl(5103), HL) > 200,
-      f"{count(bgl(3003), HL)} {count(bgl(5103), HL)}")
+check("a thin line draws out from the middle under it (3.7 .. 4.2 s): none at 3.7 s, 1 px, growing (3.9 s), as wide as the word (128 px) when done; the version line fades in after it (3.9 .. 4.5 s): none "
+      "at 3.5 s, there at 5.1 s", lin(f37) == 0 and 0 < lin(f39) < 128 and lin(f43) == 128 and len(xs) == 128 and xs[0] == 56 and xs[-1] == 183 and ver(f35) == 0 and ver(f51) > 40 and ver(f39) < ver(f45),
+      f"{lin(f37)} {lin(f39)} {lin(f43)} {len(xs)} {ver(f51)}")
+# the end: the eye shuts, the dots fade out from the edges inward, then a clean cut to HOME
+sh = shots("bend", [4953, 5253, 5353, 5503, 5703, 5903, 7003], 7500, EM0)
+e49, e52, e54, e55, e57, e59, e70 = (sh(t) for t in (4953, 5253, 5353, 5503, 5703, 5903, 7003))
+shut = mini_eye((0, 0, 0, 0, 0, 0))
+w_, dd = px(e49)
+got = {(x, y): tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) for y in range(EY0, EY1) for x in range(EX0, EX1) if tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) != BK}
+exp = dict(dots_in_box)
+exp.update(shut)
+exp = {k: v for k, v in exp.items() if v != BK}
+check("4.8 .. 4.9 s the eye shuts (the thin outline: a flat bar, no iris), GR!MM and the version line stay", got == exp and count(e49, LT, (52, 98, 188, 126)) > 150 and ver(e49) > 40, f"{len(set(got) ^ set(exp))}")
+free = lambda x, y: not (24 <= x < 216 and 96 <= y < 160)             # (the words' box: no dots)
+gone = lambda im, rings: all(P(im, x, y) == BK for x, y in DOTS if RING(x, y) in rings and free(x, y))
+there = lambda im, rings: sum(1 for x, y in DOTS if RING(x, y) in rings and free(x, y) and P(im, x, y) != BK)
+check("the dots fade out from the edges inward, a ring at a time (4.9 .. 5.5 s): at 5.25 s the outer five rings are gone and the inner ones (9 on) all there; at 5.35 s the outer eight are gone, the ring 11 still there",
+      gone(e52, range(0, 5)) and there(e52, range(9, 15)) == sum(1 for x, y in DOTS if RING(x, y) in range(9, 15) and free(x, y)) and gone(e54, range(0, 9)) and there(e54, range(11, 12)) > 0,
+      f"{there(e52, range(9, 15))}")
+check("the boot is as long as the others' (5.6 s): at 5.5 s it is still on (the words, the line, the version line); then a clean cut to HOME: at 5.7 s the screen is HOME and nothing of the boot is left on it "
+      "(the same as at 7 s)", count(e55, LT, (52, 98, 188, 126)) > 150 and P(e55, 100, 27) == BK and e57 == e70 and e59 == e70 and P(e57, 100, 27) == RULE, f"{e57 == e70} {e59 == e70}")
+# only what changes is drawn: while nothing moves (the eye open, the words there, 4.72 .. 4.79 s) not one pixel is sent to the display
+out = run("bidle", [(4740, "probe"), (4790, "probe")], 5000, EM0)
+lp = [int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")]
+check(f"only what changes is drawn: from 4.74 s to 4.79 s, nothing moving, not one pixel is sent to the display ({lp[1] - lp[0]} px); a frame of the ripple (0.8 s) sends only the dots that changed",
+      len(lp) == 2 and lp[1] == lp[0], str(lp))
+out = run("brip", [(790, "probe"), (850, "probe")], 1000, EM0)
+lp = [int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")]
+check(f"a frame or two of the ripple (0.79 .. 0.85 s) sends {lp[1] - lp[0]} px: the dots that changed, 36 px each, not the screen (57,600)", 0 < lp[1] - lp[0] < 12000, str(lp))
+# GLOW: the lit dots and the eye glow, the faint ones never (the rule above, on the boot's frames: what it changes is a halo of a light ink on a dark pixel)
+T_G = [803, 1403, 1598, 2503, 4303, 4953]
+bg1 = shots("bgl1", T_G, 5200, EM)
+bg0 = shots("bgl0", T_G, 5200, EM0)
+seen, wrong = 0, []
+for t in T_G:
+    w, da = px(bg1(t))
+    _, db = px(bg0(t))
+    for k in range(w * 240):
+        a, b = tuple(da[3 * k:3 * k + 3]), tuple(db[3 * k:3 * k + 3])
+        if a != b:
+            seen += 1
+            if a not in HLB or lum5(t565(b)) >= lum5(MID5):
+                wrong.append((t, k % w, k // w, a, b))
+check(f"the boot with GLOW: the lit dots (the ripple, the eye's outline and iris), the thin eye, the words and the line have a halo ({seen} pixels in these {len(T_G)} frames), every one a halo of a light ink on a dark "
+      "pixel; the faint dots (dark) have none", not wrong and seen > 400, str(wrong[:4]))
 
 # ---- the theme switch: the whole panel cleared and drawn again, no pixel of the theme left, on any page, between all three themes
 EYEC = set(c888(*c) for c in rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))
