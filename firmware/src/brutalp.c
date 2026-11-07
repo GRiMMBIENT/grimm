@@ -464,7 +464,10 @@ static void bp_lfo(void)                        /* a cycle of SHAPE across the p
     bp_r(0, 80, 234, 1, BP_TRACK);
     for (x = 0; x < 54u; x++) q[2 * x] = (int16_t)(10u + x * 4u), q[2 * x + 1] = (int16_t)(80 - lfo_val(sh, x) * 55 / 32767);
     bp_pl(q, 54, 5, trk[sel].lfo_depth > 0 ? BP_INK : UI_M);
-    bp_r(10 + (int32_t)dx * 4 - 5, 80 - lfo_val(sh, dx) * 55 / 32767 - 5, 11, 11, ui_acc);
+    {
+        int32_t ds = BP_MIN ? 6 : 11;           /* (the dot: 11 px; MINIMAL's 6) */
+        bp_r(10 + (int32_t)dx * 4 - ds / 2, 80 - lfo_val(sh, dx) * 55 / 32767 - ds / 2, ds, ds, ui_acc);
+    }
 }
 
 static void bp_tape(void)                       /* the two reels and the tape between them, its wobble WOW; the tracks on it */
@@ -476,6 +479,12 @@ static void bp_tape(void)                       /* the two reels and the tape be
         if (trk[k].tap > 0 && trk[k].fx > 0) *e++ = ' ', *e++ = 'T', *e++ = (char)('1' + k), *e = 0;
     bp_ground(1);
     for (r = 0; r < 2; r++) {
+        if (BP_MIN) {                           /* (MINIMAL: a reel a 2 px frame in the mid grey, a small hub; no posts) */
+            bp_r(35 + r * 104, 20, 60, 60, UI_M);
+            bp_r(37 + r * 104, 22, 56, 56, UI_K);
+            bp_r(62 + r * 104, 47, 6, 6, BP_INK);
+            continue;
+        }
         bp_r(35 + r * 104, 20, 60, 60, BP_INK);
         bp_r(55 + r * 104, 40, 20, 20, BP_C1);
         bp_r(65 + r * 104, 80, 4, 20, BP_INK);
@@ -495,6 +504,7 @@ static void bp_grain(void)                      /* the cloud: squares scattered 
     for (i = 0; i < n; i++) {
         int32_t sz = bs / 2 + (int32_t)ui_rnd((uint32_t)bs / 2u + 1u), gx = 117 - sp + (int32_t)ui_rnd((uint32_t)sp * 2u + 1u), gy = 24 + (int32_t)ui_rnd((uint32_t)(127 - sz));
         uint32_t cl = ui_rnd(8);
+        if (BP_MIN) sz = (sz + 1) / 2;          /* (MINIMAL's grains: half the size) */
         bp_r(gx - sz / 2, gy, sz, sz, cl == 0 ? ui_acc : cl < 5 ? BP_INK : UI_M);
     }
     bp_tt(10, 9, "BUFFER 1.25 S", &BRT12, BP_INK);
@@ -515,7 +525,13 @@ static void bp_delay(void)                      /* the echoes, smaller each time
     ui_time(r, DL_MS[clamp(dl_time, 0, 127)] << 16);
     bp_ground(1);
     bp_head("DELAY", r, BP_INK);
-    for (i = 0; i < n; i++, x += 24 + gap) bp_r(x, 150 - HT[i], 24, HT[i], i ? UI_M : BP_INK);
+    for (i = 0; i < n; i++, x += 24 + gap) {
+        if (BP_MIN) {                           /* (MINIMAL: a thin stem and a small cap on it, the first echo's cap amber) */
+            bp_r(x + 11, 150 - HT[i], 2, HT[i], i ? UI_M : BP_INK);
+            bp_r(x + 9, 150 - HT[i], 6, 2, i ? UI_M : ui_acc);
+        } else
+            bp_r(x, 150 - HT[i], 24, HT[i], i ? UI_M : BP_INK);
+    }
 }
 
 static void bp_space(void)                      /* the reverb's tail, as long as SIZE (INF: it never falls) */
@@ -529,7 +545,8 @@ static void bp_space(void)                      /* the reverb's tail, as long as
         int32_t h = v >= RV_INF ? 112 : (int32_t)((112u * pow2_q16(-(i * 272) / tl < -3000 ? -3000 : -(i * 272) / tl) + 32768u) >> 16);
         h += ((i * 7) % 3 - 1) * 2;
         h = h < 3 ? 3 : h > 112 ? 112 : h;
-        bp_r(12 + i * 8, 150 - h, 6, h, i < 3 ? BP_INK : UI_M);
+        if (BP_MIN) bp_r(13 + i * 8, 150 - h, 2, h, i < 3 ? BP_INK : UI_M);   /* (MINIMAL: thin stems) */
+        else bp_r(12 + i * 8, 150 - h, 6, h, i < 3 ? BP_INK : UI_M);
     }
 }
 
@@ -540,7 +557,7 @@ static void bp_master(void)                     /* the filter's curve: the cutof
     int16_t q[2 * 53];
     bp_ground(1);
     bp_head(FT_NAME[ty], open ? "OPEN" : MP_NAME[clamp(mf_pos, 0, NMPOS - 1)], open ? ui_acc : UI_M);
-    bp_r(12 + c * 210 / 127 - 1, 30, 3, 122, ui_acc);
+    bp_r(12 + c * 210 / 127 - (BP_MIN ? 0 : 1), 30, BP_MIN ? 1 : 3, 122, ui_acc);   /* (the cutoff: MINIMAL's 1 px) */
     for (i = 0; i < 53; i++) {
         int32_t f = i * 127 / 52, d = ty == FT_HP ? c - f : f - c, h;
         if (ty == FT_BP) d = d < 0 ? -d : d;
@@ -1025,7 +1042,10 @@ static int bp_min_page(void)
 {
     switch (page) {
     case PG_SOURCE: case PG_PERFORM: case PG_MIX2: case PG_LEVELS: case PG_SOUNDS: case PG_PROJECTS: case PG_PATTERN: case PG_SONG: case PG_SYS3:
+    case PG_ENV: case PG_LFO: case PG_PDLINE: case PG_PDENV: case PG_TAPE: case PG_GRAIN: case PG_DELAY: case PG_SPACE: case PG_MASTER: case PG_DRIVE:
         return 1;
+    case PG_SOUND:                              /* (VA and PHASE so far) */
+        return sel_eng() == ENG_VA || sel_eng() == ENG_PHASE;
     default:
         return 0;
     }

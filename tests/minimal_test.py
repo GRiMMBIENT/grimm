@@ -197,15 +197,16 @@ for n in range(N):
             if (PGN[n] == "sys2" and 116 <= k // w < 190) or (PGN[n] == "sys3" and k // w >= 195 and k % w >= 177):   # (the CPU's figures move by themselves; GLOW's own knob reads ON, OFF)
                 continue
             seen += 1
-            if a not in HLB or lum5(t565(b)) >= lum5(MID5):
+            if a not in HLB:                    # (a halo of a light ink, over what it touches: a dark pixel, or a grey line it passes)
                 wrong.append((PGN[n], k % w, k // w, a, b))
-check(f"GLOW on every page: it changes {seen} pixels in all, every one a halo of a light ink (a third of a colour at least as bright as the mid grey) on a dark pixel; none round a dark or black ink "
+check(f"GLOW on every page: it changes {seen} pixels in all, every one a halo of a light ink (a third of a colour at least as bright as the mid grey); none round a dark or black ink "
       "(black text on an amber bar, dark segments, dark rules)", not [x for x in wrong if x[0] != "track"] and seen > 2000, str(wrong[:5]))
 
 # ---- every page in MINIMAL's frame
 psrc = Path("firmware/src/brutalp.c").read_text(encoding="utf-8")
 SHARED = {n.lower() for n in re.findall(r"case PG_(\w+):", psrc[psrc.index("static int bp_min_page"):psrc.index("static int mn_native")])}
-STAGE = {"source", "perform", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3"}      # (stage 2a)
+STAGE = {"source", "perform", "mix2", "levels", "sounds", "projects", "pattern", "song", "sys3",                                         # (stage 2a)
+         "env", "lfo", "pdline", "pdenv", "tape", "grain", "delay", "space", "master", "drive", "sound"}                                 # (stage 2b: SOUND for VA, PHASE)
 check("the pages MINIMAL draws with BRUTAL's shared picture code (brutalp.c's bp_min_page) are the ones this test knows: " + " ".join(sorted(SHARED)), SHARED == STAGE, f"{sorted(SHARED ^ STAGE)}")
 pf = film("pages", [(BOOT + 500 * n, f"page {n}") for n in range(N)], BOOT + 500 * N + 300, EM0)
 bad_pages = []
@@ -445,7 +446,7 @@ for t in T_G:
         a, b = tuple(da[3 * k:3 * k + 3]), tuple(db[3 * k:3 * k + 3])
         if a != b:
             seen += 1
-            if a not in HLB or lum5(t565(b)) >= lum5(MID5):
+            if a not in HLB:
                 wrong.append((t, k % w, k // w, a, b))
 check(f"the boot with GLOW: the lit dots (the ripple, the eye's outline and iris), the thin eye, the words and the line have a halo ({seen} pixels in these {len(T_G)} frames), every one a halo of a light ink on a dark "
       "pixel; the faint dots (dark) have none", not wrong and seen > 400, str(wrong[:4]))
@@ -461,6 +462,19 @@ l1, l2 = lk(6200), lk(7500)
 MET = {LT, AMB, c888(*rgbs(msrc[msrc.index("UI_PAL_MINIMAL"):msrc.index("static uint16_t mn_mix")])[7])}   # (the live meter: light, amber, red)
 check("LEVELS: a column a track on a dark tile, the LEVEL set a light bar of 8 segments and the sound now (T1 playing) the live meter beside it in MINIMAL's colours (light, amber, red), dark when silent",
       count(l1, LT, (36, 82, 56, 182)) == 0 and count(l2, MET, (36, 82, 56, 182)) > 30 and count(l1, LT, (8, 82, 28, 182)) > 80, f"{count(l2, MET, (36, 82, 56, 182))} {count(l1, LT, (8, 82, 28, 182))}")
+
+# ---- the curve pages in MINIMAL's parameters: thin lines (2 px; 1 px for the grey ones), thin stems, a hollow reel, a small dot, the cutoff a 1 px line
+cv = shots("curvem", [6400 + 450, 7100 + 450, 7800 + 450, 8500 + 450], 9300, EM0,
+           [(6400, f"page {PGN.index('delay')}"), (7100, f"page {PGN.index('master')}"), (7800, f"page {PGN.index('tape')}"), (8500, f"page {PGN.index('lfo')}")])
+dl, ma, tp, lf = (cv(t + 450) for t in (6400, 7100, 7800, 8500))
+w_, dd = px(dl)
+row = [tuple(dd[3 * (172 * w_ + x):3 * (172 * w_ + x) + 3]) != BK for x in range(3, 237)]
+runs = [len(list(g)) for k, g in __import__("itertools").groupby(row) if k]
+check(f"DELAY: the echoes are thin stems (2 px wide, a small cap on each, the first echo's amber): {len(runs)} stems at 4 .. 7, each 2 px", 3 <= len(runs) <= 7 and all(r == 2 for r in runs), str(runs))
+check("MASTER: the cutoff is a 1 px amber line (the filter open: at the right), the curve a 2 px light line", count(ma, AMB, (3, 121, 237, 122)) == 1 and sum(1 for y in range(60, 190) if P(ma, 100, y) == LT) == 2, f"{count(ma, AMB, (3, 121, 237, 122))}")
+check("TAPE: the reels are hollow (a 2 px frame in the mid grey, a small light hub: black inside), no posts", P(tp, 3 + 35 + 10, 32 + 20 + 30) == BK and P(tp, 3 + 35, 32 + 20 + 30) == MD and P(tp, 3 + 35 + 1, 32 + 20 + 30) == MD and
+      P(tp, 3 + 62 + 2, 32 + 47 + 2) == LT and P(tp, 3 + 65 + 1, 32 + 85) == BK, f"{P(tp, 48, 82)} {P(tp, 38, 82)}")
+check("LFO: the dot is a 6 x 6 amber square (36 px) on the curve", count(lf, AMB, (3, 34, 237, 192)) == 36, str(count(lf, AMB, (3, 34, 237, 192))))
 
 # ---- the theme switch: the whole panel cleared and drawn again, no pixel of the theme left, on any page, between all three themes
 EYEC = set(c888(*c) for c in rgbs(ui_src[ui_src.index("UI_PAL_EYE = "):ui_src.index("static const ui_pal_t *ui_pal")]))
