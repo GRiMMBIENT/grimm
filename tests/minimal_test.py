@@ -333,13 +333,20 @@ def lit_dots(im, box=(0, 0, 240, 240)):
 check("the dot field fades in from the middle out: at 0.05 s a few dots, the middle first (the dot at the centre is there, a corner one not), at 0.15 s more, at 0.3 s more, all 900 at 0.6 s",
       0 <= len(lit_dots(d53)) < len(lit_dots(d153)) < len(lit_dots(d303)) < 900 and (124, 124) in lit_dots(d153) and (4, 4) not in lit_dots(d153) and len(lit_dots(d603)) == 900,
       f"{[len(lit_dots(x)) for x in (d53, d153, d303, d603)]}")
-w_, dd = px(d803)
+w_, dd = px(d603)
 cols = {(x, y): tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) for x, y in DOTS}
 ripple = [(x, y) for (x, y), c in cols.items() if c != TRACK]
 dist = lambda x, y: ((x + 1 - 120) ** 2 + (y + 1 - 120) ** 2) ** 0.5
-check(f"a ripple runs out from the centre (0.8 s: {len(ripple)} dots brightened, all in a ring about 85 px out, 28 px wide, the brightest at its outer edge); the dots inside it are back to the faint grey",
-      40 <= len(ripple) <= 200 and all(50 <= dist(x, y) <= 100 for x, y in ripple) and all(cols[(x, y)] == TRACK for x, y in DOTS if dist(x, y) < 50),
-      f"{len(ripple)} {sorted(set(round(dist(x, y)) for x, y in ripple))[:3]}")
+check(f"a ripple runs out from the centre, fast (240 px a second: at 0.6 s its front is about 70 px out: {len(ripple)} dots brightened, all in a ring 45 .. 78 px out, the brightest at its outer edge); "
+      "the dots inside it are back to the faint grey", 40 <= len(ripple) <= 200 and all(45 <= dist(x, y) <= 78 for x, y in ripple) and max(dist(x, y) for x, y in ripple) >= 62 and
+      all(cols[(x, y)] == TRACK for x, y in DOTS if dist(x, y) < 45), f"{len(ripple)} {sorted(set(round(dist(x, y)) for x, y in ripple))[:3]}")
+w_, dd = px(d1203)
+check("the ripple has crossed the whole field by 1.2 s (about 0.8 s after it left the centre): not a dot is brightened by it any more (all faint, or the eye's outline dots)",
+      all(tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) in (TRACK, LT, AMB) for x, y in DOTS), "")
+# the dots' own clock: a frame every 33 ms (the ripple moves in steps of 8 px: in 110 ms three or four steps, not two)
+rc = shots("rclock", list(range(600, 711, 11)), 800, EM0)
+nimg = len({rc(t) for t in range(600, 711, 11)})
+check(f"the dots run on their own clock, 33 ms a frame (30 a second): in 110 ms of the ripple {nimg} different frames (3 or 4; EYE's 55 ms grid would give 2)", nimg in (3, 4), str(nimg))
 def form(x, y):                                 # minimal.c's mb_form: the dot against the open eye (at 80, 48): 1 on its outline, 2 on its iris
     if x + 1 < 80 or y + 1 < 48:
         return 0
@@ -381,8 +388,21 @@ check("GR!MM fades in under the eye (3.2 .. 3.8 s: none at 3.0 s, dim at 3.5 s, 
       count(f43, TRACK, (24, 96, 216, 160)) == 0, f"{wm(f30)} {wm(f35)} {count(f43, LT, (52, 98, 188, 126))} {count(f30, TRACK, (24, 96, 216, 160))} {count(f43, TRACK, (24, 96, 216, 160))}")
 xs = [x for x in range(240) if P(f51, x, 134) == FILL]
 check("a thin line draws out from the middle under it (3.7 .. 4.2 s): none at 3.7 s, 1 px, growing (3.9 s), as wide as the word (128 px) when done; the version line fades in after it (3.9 .. 4.5 s): none "
-      "at 3.5 s, there at 5.1 s", lin(f37) == 0 and 0 < lin(f39) < 128 and lin(f43) == 128 and len(xs) == 128 and xs[0] == 56 and xs[-1] == 183 and ver(f35) == 0 and ver(f51) > 40 and ver(f39) < ver(f45),
+      "at 3.5 s, there at 5.1 s", lin(f37) == 0 and 0 < lin(f39) < 128 and lin(f43) == 128 and len(xs) == 128 and xs[0] == 56 and xs[-1] == 183 and ver(f35) == 0 and ver(f51) > 12 and ver(f39) < ver(f45),
       f"{lin(f37)} {lin(f39)} {lin(f43)} {len(xs)} {ver(f51)}")
+vx = [x for y in range(144, 160) for x in range(240) if P(f51, x, y) != BK and P(f51, x, y) not in {TRACK}]
+check("the intro's version line is just V3.0 (APP_VER without its -dXXXX stamp: 'V' and the digits up to the dash), Terminus Regular, in the middle: its ink between x 100 and 140", 12 < len(vx) and min(vx) >= 100 and max(vx) <= 140, f"{min(vx)} {max(vx)}")
+sysh = film("syshead", [(6000, f"page {PGN.index('sys3')}"), (6400, f"page {PGN.index('system')}"), (6800, f"page {PGN.index('sys2')}")], 7400, EM0)
+hx = [[x for y in range(5, 25) for x in range(150, 240) if P(im, x, y) == LT] for im in (sysh(6300), sysh(6700), sysh(7200))]
+check("the SYSTEM pages' header in MINIMAL has the build's whole stamp (VER 3.0-dev here: the tag's value, 8 px a character, ends at 236 and starts at 180) so the installed build can be told; the intro shows only V3.0",
+      all(h and 178 <= min(h) <= 184 and max(h) >= 230 for h in hx), str([(min(h), max(h)) for h in hx if h]))
+out = run("bworst", [], 5800, EM0)
+ms = [ln for ln in out.splitlines() if ln.startswith("mbstat ")]
+wp, wr = (int(re.search(r": (\d+) px in (\d+) regions", ms[-1]).group(1)), int(re.search(r": (\d+) px in (\d+) regions", ms[-1]).group(2))) if ms else (0, 0)
+spi = wp * 16 / 12e6 * 1000                                        # (ms: 16 bits a pixel at 12 MHz, the panel's SPI: lcd.c LCD_BAUD 4)
+ovh = wr * 0.060                                                   # (ms: each region's window and commands, 60 us apiece: pessimistic)
+check(f"the worst frame of the dots (the fade-in at 0.36 s: {wp} px in {wr} regions, {wr} runs of dots): {spi:.1f} ms of pixels at the panel's 12 MHz SPI, {ovh:.1f} ms of window set-up "
+      f"(60 us a region, pessimistic): {spi + ovh:.1f} ms of a 33 ms frame", ms and spi + ovh < 20.0, f"{spi + ovh:.1f} ms")
 # the end: the eye shuts, the dots fade out from the edges inward, then a clean cut to HOME
 sh = shots("bend", [4953, 5253, 5353, 5503, 5703, 5903, 7003], 7500, EM0)
 e49, e52, e54, e55, e57, e59, e70 = (sh(t) for t in (4953, 5253, 5353, 5503, 5703, 5903, 7003))
@@ -392,7 +412,7 @@ got = {(x, y): tuple(dd[3 * (y * w_ + x):3 * (y * w_ + x) + 3]) for y in range(E
 exp = dict(dots_in_box)
 exp.update(shut)
 exp = {k: v for k, v in exp.items() if v != BK}
-check("4.8 .. 4.9 s the eye shuts (the thin outline: a flat bar, no iris), GR!MM and the version line stay", got == exp and count(e49, LT, (52, 98, 188, 126)) > 150 and ver(e49) > 40, f"{len(set(got) ^ set(exp))}")
+check("4.8 .. 4.9 s the eye shuts (the thin outline: a flat bar, no iris), GR!MM and the version line stay", got == exp and count(e49, LT, (52, 98, 188, 126)) > 150 and ver(e49) > 12, f"{len(set(got) ^ set(exp))}")
 free = lambda x, y: not (24 <= x < 216 and 96 <= y < 160)             # (the words' box: no dots)
 gone = lambda im, rings: all(P(im, x, y) == BK for x, y in DOTS if RING(x, y) in rings and free(x, y))
 there = lambda im, rings: sum(1 for x, y in DOTS if RING(x, y) in rings and free(x, y) and P(im, x, y) != BK)
@@ -408,7 +428,7 @@ check(f"only what changes is drawn: from 4.74 s to 4.79 s, nothing moving, not o
       len(lp) == 2 and lp[1] == lp[0], str(lp))
 out = run("brip", [(790, "probe"), (850, "probe")], 1000, EM0)
 lp = [int(re.search(r" lcdpx (\d+)", ln).group(1)) for ln in out.splitlines() if ln.startswith("slabvals ")]
-check(f"a frame or two of the ripple (0.79 .. 0.85 s) sends {lp[1] - lp[0]} px: the dots that changed, 36 px each, not the screen (57,600)", 0 < lp[1] - lp[0] < 12000, str(lp))
+check(f"a frame or two of the ripple (0.79 .. 0.85 s) sends {lp[1] - lp[0]} px: the dots that changed, in runs, not the screen (57,600)", 0 < lp[1] - lp[0] < 20000, str(lp))
 # GLOW: the lit dots and the eye glow, the faint ones never (the rule above, on the boot's frames: what it changes is a halo of a light ink on a dark pixel)
 T_G = [803, 1403, 1598, 2503, 4303, 4953]
 bg1 = shots("bgl1", T_G, 5200, EM)

@@ -2390,6 +2390,7 @@ static void ui_boot_frame(void)
 {
     static uint32_t t;
     uint32_t e = fm1_ms - ui_boot_t, e0 = bt_e, x, i, was = 0, now = 0;   /* (e0: the time last drawn) */
+    if (ui_th->bfin == 2 && fm1_ms - mb_td >= 33u) { mb_td = fm1_ms; mb_dots(e); }   /* (MINIMAL's dots: their own clock, 33 ms; its eye keeps EYE's grid) */
     if (fm1_ms - t < UI_ANIM_MS) return;
     t = fm1_ms;
     if (ui_th->bfin == 1) { bd_frame(e); return; }

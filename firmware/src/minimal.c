@@ -104,6 +104,7 @@ static void mn_head_draw(void)
         return;
     }
     br_tag(lab, val);
+    if (page == PG_SYSTEM || page == PG_SYS2 || page == PG_SYS3) put_s(val, APP_VER);   /* (the build's whole stamp, 3.0-d1234: which build is installed) */
     tx = 236 - br_tlen(&BRT12R, lab) - 6 - br_tlen(&BRT16, val);
     mn_t(tx, 10, lab, &BRT12R, MN_DIM);
     mn_t(tx + br_tlen(&BRT12R, lab) + 6, 9, val, &BRT16, UI_L);
@@ -179,7 +180,7 @@ static void mn_pic(void)
 #define MB_TXT 3200u                            /* GR!MM begins to fade in, */
 #define MB_SHUT 4800u                           /* the eye shuts (half, then all), */
 #define MB_FO 4900u                             /* the dots fade out: the outermost ring first */
-static uint32_t mb_a, mb_l, mb_b, mb_e, mb_bt, mb_eye, mb_sup;   /* the wordmark's brightness (0 .. 8), the line's length (px, 0 .. 64), the version line's brightness; the time drawn, the eye's
+static uint32_t mb_a, mb_l, mb_b, mb_de, mb_td, mb_bt, mb_eye, mb_sup;   /* the wordmark's brightness (0 .. 8), the line's length (px, 0 .. 64), the version line's brightness; the time the dots were drawn at, when, the eye's
                                                  * half-speed time of the last frame, the thin eye is up, the dots under the words are off */
 static bt_eye_t mb_ey;                          /* the eye's pose on the screen */
 static void mn_eye(int32_t x, int32_t y, bt_eye_t e)   /* the thin eye at x, y (EYE's 5 px cells): the outline of its shape, the iris */
@@ -238,23 +239,23 @@ static int32_t mb_form(int32_t x, int32_t y)    /* the dot at x, y against the o
     if (ch == 'k') return 0;
     return r == 0 || r == 7 || c == 0 || c == 15 || EYE[r - 1][c] == '.' || EYE[r + 1][c] == '.' || EYE[r][c - 1] == '.' || EYE[r][c + 1] == '.' ? 1 : 0;
 }
-/* the value of the dot i, j at time e (sup: the dots under the words are off): 0 black, 1 .. 8 the faint grey at that eighth (the fade in and out), 9 .. 12 the ripple's four brightnesses, 13 the
+/* the value of the dot i, j at time e (sup: the dots under the words are off): 0 black, 1 .. 8 the faint grey at that eighth (the fade in and out: 4, 8), 10 .. 12 the ripple's three brightnesses, 13 the
  * eye's outline, 14 its iris */
 static uint32_t mb_v(int32_t i, int32_t j, uint32_t e, uint32_t sup)
 {
-    int32_t x = 4 + 8 * i, y = 4 + 8 * j, dx = x + 1 - 120, dy = y + 1 - 120, d = br_isqrt(dx * dx + dy * dy), ei = (int32_t)e, f, v, ring = i < 29 - i ? i : 29 - i;
+    int32_t x = 4 + 8 * i, y = 4 + 8 * j, dx = x + 1 - 120, dy = y + 1 - 120, d2 = dx * dx + dy * dy, ei = (int32_t)e, f, v, ring = i < 29 - i ? i : 29 - i, t = ei / 3, u = ei < 60 ? -1 : (ei - 60) / 3;
     ring = j < ring ? j : ring;
     ring = 29 - j < ring ? 29 - j : ring;
-    v = (ei - d * 2) * 8 / 200;                 /* (in: from the middle out) */
-    v = v < 0 ? 0 : v > 8 ? 8 : v;
-    f = (ei - (int32_t)MB_FO - ring * 40) * 8 / 80;   /* (out: from the edges in) */
-    f = 8 - (f < 0 ? 0 : f > 8 ? 8 : f);
+    v = d2 > t * t ? 0 : u >= 0 && d2 <= u * u ? 8 : 4;   /* (in: a front 333 px a second from the middle out, two steps, 60 ms apart: so few dots change in a frame; no root: squares) */
+    f = ei < (int32_t)MB_FO + ring * 40 ? 8 : ei < (int32_t)MB_FO + ring * 40 + 40 ? 4 : 0;   /* (out: from the edges in, two steps) */
     v = f < v ? f : v;
     if (!v || (sup && x >= 24 && x < 216 && y >= 96 && y < 160)) return 0;
-    if (ei >= 300 && ei < 1700) {               /* (the ripple: its front brightest, 28 px of tail) */
-        int32_t r = (ei - 300) * 17 / 100, k;
-        for (k = 4; k > 0; k--)
-            if (d <= r - (4 - k) * 7 && d > r - (5 - k) * 7) { v = 8 + k; break; }
+    if (ei >= 300 && ei < 1100) {               /* (the ripple: 240 px a second, its front brightest, three steps, 18 px of tail) */
+        int32_t r = (ei - 300) * 24 / 100, k, hi, lo;
+        for (k = 3; k > 0; k--) {
+            hi = r - (3 - k) * 6, lo = hi - 6;
+            if (hi >= 0 && d2 <= hi * hi && (lo < 0 || d2 > lo * lo)) { v = 9 + k; break; }
+        }
     }
     if (e >= MB_FORM && e < MB_EYE && (f = mb_form(x, y))) {   /* (the eye forms: the outline, then the iris) */
         uint32_t pa = mb_pa(x + 1 - 120, y + 1 - 68);
@@ -278,7 +279,7 @@ static void mb_draw(void)                       /* the whole boot picture, as fa
             uint32_t v;
             uint16_t c;
             if (!ui_in(x - 1, y - 1, 4, 4)) continue;
-            v = mb_v(i, j, mb_e, mb_sup);
+            v = mb_v(i, j, mb_de, mb_sup);
             if (!v) continue;
             c = mb_col(v);
             if (mn_lit(c)) ui_rect(x - 1, y - 1, 4, 4, mn_mix(c, 1, 3));
@@ -292,24 +293,52 @@ static void mb_draw(void)                       /* the whole boot picture, as fa
         }
     if (mb_l) mn_line(120 - (int32_t)mb_l, 134, 2 * (int32_t)mb_l, 1, MN_FILL);
     if (mb_b || bt_note) {
-        const char *l = bt_note ? bt_note : BOOT_LINE;
+        char vb[12] = "V";
+        const char *l = bt_note;
+        int32_t n;
+        for (n = 0; !l && n < 10 && APP_VER[n] && APP_VER[n] != '-'; n++) vb[n + 1] = APP_VER[n], vb[n + 2] = 0;   /* (just V3.0: the build's stamp is on the SYSTEM pages' header) */
+        if (!l) l = vb;
         mn_t(120 - br_tlen(&BRT12R, l) / 2, 146, l, &BRT12R, mn_mix(bt_note ? ui_acc : MN_DIM, bt_note ? 8u : mb_b, 8));
     }
 }
 static void mb_start(void)
 {
-    mb_e = 0, mb_bt = 0, mb_eye = 0, mb_a = mb_l = mb_b = 0, mb_sup = bt_note != 0;
+    mb_de = 0, mb_bt = 0, mb_eye = 0, mb_a = mb_l = mb_b = 0, mb_sup = bt_note != 0, mb_td = 0;
     ui_region(0, 0, 240, 240, UI_K, mb_draw);
 }
-static void mb_frame(uint32_t e)                /* a frame at e: where it moved */
+static void mb_dots(uint32_t e)                 /* a frame of the dots (every 33 ms, their own clock): where a run of dots in a row changed, one region over the run (4 px high: a dot 2 px, the halo's 1 px
+                                                 * round it); no buffer: each dot's value is worked out from the time it was drawn at and now */
 {
-    uint32_t e0 = mb_e, sup0 = mb_sup, a = e < MB_TXT ? 0u : e >= MB_TXT + 600u ? 8u : (e - MB_TXT) * 8u / 600u;
+    uint32_t e0 = mb_de, sup0 = mb_sup;
+    int32_t i, j, n;
+#ifdef DINGHY_HOST
+    static uint32_t worst;
+    uint32_t px0 = host_lcd_px, rg = 0, nd = 0;
+#endif
+    mb_de = e, mb_sup = e >= MB_TXT || bt_note != 0;
+    for (j = 0; j < 30; j++)
+        for (i = 0; i < 30;) {
+            if (mb_v(i, j, e0, sup0) == mb_v(i, j, e, mb_sup)) { i++; continue; }
+            for (n = 1; i + n < 30 && mb_v(i + n, j, e0, sup0) != mb_v(i + n, j, e, mb_sup); n++)
+                ;
+            ui_region(4 + 8 * i - 1, 4 + 8 * j - 1, 8 * (n - 1) + 4, 4, UI_K, mb_draw);
+#ifdef DINGHY_HOST
+            rg++, nd += (uint32_t)n;
+#endif
+            i += n;
+        }
+#ifdef DINGHY_HOST
+    if (host_lcd_px - px0 + rg * 40u > worst) {  /* (tests/minimal_test.py: the worst frame of the dots, its pixels, its regions: the time it takes is the pixels at the display's rate, 16 bits at 12 MHz,
+                                                 * and each region's set-up) */
+        worst = host_lcd_px - px0 + rg * 40u;
+        printf("mbstat %u ms: %u px in %u regions, %u dots\n", e, host_lcd_px - px0, rg, nd);
+    }
+#endif
+}
+static void mb_frame(uint32_t e)                /* a frame on EYE's 55 ms grid: the eye, the words, the line */
+{
+    uint32_t a = e < MB_TXT ? 0u : e >= MB_TXT + 600u ? 8u : (e - MB_TXT) * 8u / 600u;
     uint32_t l = e < 3700u ? 0u : e >= 4200u ? 64u : (e - 3700u) * 64u / 500u, b = e < 3900u ? 0u : e >= 4500u ? 8u : (e - 3900u) * 8u / 600u;
-    int32_t i, j;
-    mb_e = e, mb_sup = e >= MB_TXT || bt_note != 0;
-    for (j = 0; j < 30; j++)                    /* the dots that changed */
-        for (i = 0; i < 30; i++)
-            if (mb_v(i, j, e0, sup0) != mb_v(i, j, e, mb_sup)) ui_region(4 + 8 * i - 2, 4 + 8 * j - 2, 6, 6, UI_K, mb_draw);
     if (e >= MB_EYE) {                          /* the eye: EYE's own rule (drawn again when the pose a frame before it is not the pose now), from its clock's start; shut at the end */
         uint32_t eb = e - MB_EYE;
         bt_eye_t now = e >= MB_FO ? (bt_eye_t){0, 0, 0, 0, 0, 0} : e >= MB_SHUT ? (bt_eye_t){2, 0, 0, 0, 0, 0} : bt_eye(eb / 2u);
