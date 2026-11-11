@@ -555,8 +555,9 @@ void fm1_cstart(void)
     fm1_guard_enable(FM1_GUARD_STACK | FM1_GUARD_WRITE | FM1_GUARD_BUS | FM1_GUARD_PC);
     fm1_boot.p3_rst = (uint8_t)p3;
     if (boot_mode == BOOT_RECOVERY || recovery_key())
-        recovery_main();                        /* OCT- at power-on: the USB rescue */
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+        recovery_main();                    
+    uint32_t id = FL_FAR(fl_jedec_ram)();    /* OCT- at power-on: the USB rescue */
+    flash_ok = (id) == 0x856014u || (id) == 0xB36014u;
     if (flash_ok)
         fl_plain_window_init();                 /* GR!MM: the flash above 0x93000 (the samples) reads plain through XIP */
     ota_boot_cleanup();
