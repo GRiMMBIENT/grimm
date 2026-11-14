@@ -121,3 +121,5 @@ Looking for the old version? GR!MM V1.0 is still on the [releases page](https://
 
 GPL-3.0. See [LICENSE](LICENSE). The four factory samples are CC0 1.0: free to use for anything. The choir wavetables are made from VocalSet, CC BY 4.0 (credit above and in [LICENSING.md](LICENSING.md)). Bugs and questions:
 open an issue on this repository.
+
+You can also try GR!MM in the browser, no flashing needed, in the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
